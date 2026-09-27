@@ -267,7 +267,7 @@ let charts = [];
 function gate() {
   if (!configured) return `<div class="card center"><h2>ยังไม่ได้ตั้งค่า Firebase</h2><p>ใส่ค่า config ในไฟล์ <code>firebase-config.js</code> ตามขั้นตอนใน README.md</p></div>`;
   if (user === undefined) return `<div class="center"><p>กำลังโหลด…</p></div>`;
-  if (!user) return `<div class="card center"><h2>TDEE Tracker</h2><p>เข้าสู่ระบบด้วยบัญชี Google ของต้นหรือพัช</p><button class="btn" id="loginBtn">เข้าสู่ระบบด้วย Google</button></div>`;
+  if (!user) return `<div class="card center"><h2>TDEE Tracker</h2><p>เข้าสู่ระบบด้วยบัญชี Google ที่ตั้งสิทธิ์ไว้</p><button class="btn" id="loginBtn">เข้าสู่ระบบด้วย Google</button></div>`;
   if (dbError) return `<div class="card center"><h2>เข้าไม่ได้</h2><p>${esc(dbError)}</p><button class="ghost" id="logoutBtn2">เปลี่ยนบัญชี</button></div>`;
   if (loaded.size < IDS.length) return `<div class="center"><p>กำลังโหลดข้อมูล…</p></div>`;
   return '';

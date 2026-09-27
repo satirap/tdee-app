@@ -9,7 +9,8 @@ Static site on GitHub Pages + Firebase (Google login + Firestore).
 2. **Build → Authentication → Get started → Sign-in method → Google → Enable**
 3. **Build → Firestore Database → Create database** → choose region `asia-southeast1` (Singapore) → **Production mode**
 4. **Firestore → Rules** tab → copy the contents of `firestore.rules`, replace
-   `TON_EMAIL@gmail.com` and `PACH_EMAIL@gmail.com` with both people's real Gmail addresses → **Publish**
+   `YOUR_EMAIL@gmail.com` with the Gmail of the person who records for both → **Publish**
+   (only this account can log in; to add people later, change `==` to `in ['a@gmail.com', 'b@gmail.com']`)
 5. **Project settings (⚙️) → Your apps → Web (`</>`)** → register an app (Hosting not needed)
    → copy the `firebaseConfig` values into `firebase-config.js`
 6. **Authentication → Settings → Authorized domains → Add domain** → `<your-github-username>.github.io`
