@@ -35,5 +35,5 @@ Then open http://localhost:8000 .
 
 ## Data
 
-- `vault/{pin}/people/ton` and `vault/{pin}/people/pach` in Firestore — profile, goals, activities, weight entries
+- `vault/{pin}/people/ton` and `vault/{pin}/people/patt` in Firestore — profile, goals, activities, weight entries
 - Use the Export button at the bottom of the page to back up to JSON periodically

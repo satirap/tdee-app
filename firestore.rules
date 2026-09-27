@@ -1,12 +1,12 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Data lives at vault/{pin}/people/{ton|pach}. Only the real PIN is allowed,
+    // Data lives at vault/{pin}/people/{ton|patt}. Only the real PIN is allowed,
     // so a wrong PIN is rejected by Firebase itself.
     // Replace YOUR_PIN in the Firebase console (Firestore → Rules) only —
     // don't commit the real PIN to this public repo.
     match /vault/{pin}/people/{personId} {
-      allow read, write: if pin == 'YOUR_PIN' && personId in ['ton', 'pach'];
+      allow read, write: if pin == 'YOUR_PIN' && personId in ['ton', 'patt'];
     }
   }
 }

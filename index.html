@@ -11,21 +11,21 @@
 <style>
 :root{
   --bg:#f6f5f2; --surface:#ffffff; --surface-2:#f0eee9; --text:#1d1c1a; --muted:#6b6862;
-  --border:#e2dfd8; --ton:#2f6fdb; --pach:#e0613f; --good:#1f8a5b; --warn:#b7791f; --danger:#c43d3d;
-  --ton-soft:rgba(47,111,219,.12); --pach-soft:rgba(224,97,63,.12);
+  --border:#e2dfd8; --ton:#2f6fdb; --patt:#e0613f; --good:#1f8a5b; --warn:#b7791f; --danger:#c43d3d;
+  --ton-soft:rgba(47,111,219,.12); --patt-soft:rgba(224,97,63,.12);
   --radius:14px;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     --bg:#141413; --surface:#1e1d1b; --surface-2:#282724; --text:#eceae4; --muted:#9d9a92;
-    --border:#34322e; --ton:#6b9bf0; --pach:#f08766; --good:#4cc38a; --warn:#e0a84a; --danger:#ef6b6b;
-    --ton-soft:rgba(107,155,240,.16); --pach-soft:rgba(240,135,102,.16);
+    --border:#34322e; --ton:#6b9bf0; --patt:#f08766; --good:#4cc38a; --warn:#e0a84a; --danger:#ef6b6b;
+    --ton-soft:rgba(107,155,240,.16); --patt-soft:rgba(240,135,102,.16);
   }
 }
 :root[data-theme="dark"]{
   --bg:#141413; --surface:#1e1d1b; --surface-2:#282724; --text:#eceae4; --muted:#9d9a92;
-  --border:#34322e; --ton:#6b9bf0; --pach:#f08766; --good:#4cc38a; --warn:#e0a84a; --danger:#ef6b6b;
-  --ton-soft:rgba(107,155,240,.16); --pach-soft:rgba(240,135,102,.16);
+  --border:#34322e; --ton:#6b9bf0; --patt:#f08766; --good:#4cc38a; --warn:#e0a84a; --danger:#ef6b6b;
+  --ton-soft:rgba(107,155,240,.16); --patt-soft:rgba(240,135,102,.16);
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font-family:"IBM Plex Sans Thai",system-ui,sans-serif;font-size:15px;line-height:1.55}
@@ -103,7 +103,7 @@ footer{margin-top:24px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;fo
     <nav class="tabs hidden" id="tabs">
       <button data-tab="overview">ภาพรวม</button>
       <button data-tab="ton">ต้น</button>
-      <button data-tab="pach">พัช</button>
+      <button data-tab="patt">พัช</button>
     </nav>
   </header>
   <main id="app"></main>
@@ -122,7 +122,7 @@ import { firebaseConfig } from './firebase-config.js';
 
 const PREF_KEY = 'tdee-prefs-v1';
 const PIN_KEY = 'tdee-pin';
-const IDS = ['ton', 'pach'];
+const IDS = ['ton', 'patt'];
 const KCAL_PER_KG = 7700;
 const JOBS = {
   office: { f: 1.2,  label: 'นั่งโต๊ะเป็นหลัก (office)' },
@@ -148,7 +148,7 @@ function defaults() {
         ],
         entries: []
       },
-      pach: {
+      patt: {
         name: 'พัช', sex: '', age: '', height: '', goalWeight: '', deficit: 500, job: 'office',
         activities: [
           { id: uid(), name: 'เดินเร็ว', mode: 'met', kcal: 180, met: 4.3, minutes: 45, perWeek: 3 }
@@ -159,7 +159,7 @@ function defaults() {
   };
 }
 
-// Person data lives in Firestore (people/ton, people/pach); tab & chart mode are per-device prefs.
+// Person data lives in Firestore (people/ton, people/patt); tab & chart mode are per-device prefs.
 let S = defaults();
 try { Object.assign(S, JSON.parse(localStorage.getItem(PREF_KEY)) || {}); } catch {}
 const configured = firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith('YOUR');
@@ -277,8 +277,8 @@ function trend(p) {
 }
 
 // ---------- rendering ----------
-const C = id => id === 'ton' ? 'var(--ton)' : 'var(--pach)';
-const CS = id => id === 'ton' ? 'var(--ton-soft)' : 'var(--pach-soft)';
+const C = id => id === 'ton' ? 'var(--ton)' : 'var(--patt)';
+const CS = id => id === 'ton' ? 'var(--ton-soft)' : 'var(--patt-soft)';
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 let charts = [];
 
@@ -314,13 +314,13 @@ function render() {
   const app = document.getElementById('app');
   if (S.tab === 'overview') {
     app.innerHTML = `
-      <div class="grid g2">${['ton', 'pach'].map(summaryCard).join('')}</div>
+      <div class="grid g2">${['ton', 'patt'].map(summaryCard).join('')}</div>
       <div class="card" style="margin-top:14px">
         <div class="person-head"><h2 style="margin:0">กราฟน้ำหนัก</h2>${modeSeg()}</div>
         <div class="chart-box"><canvas id="chartAll"></canvas></div>
         <div class="note">จุด = น้ำหนักที่ชั่งจริง · เส้น = ค่าเฉลี่ย 7 วัน (ตัด noise จากน้ำ/เกลือ) · โหมด % ใช้เทียบความคืบหน้าของสองคนอย่างยุติธรรม</div>
       </div>`;
-    drawChart('chartAll', ['ton', 'pach']);
+    drawChart('chartAll', ['ton', 'patt']);
   } else {
     app.innerHTML = personPage(S.tab);
     drawChart('chartOne', [S.tab]);
@@ -512,7 +512,7 @@ function drawChart(canvasId, ids) {
   ids.forEach(id => {
     const p = S.people[id], e = sorted(p);
     if (!e.length) return;
-    const col = css(id === 'ton' ? '--ton' : '--pach');
+    const col = css(id === 'ton' ? '--ton' : '--patt');
     const base = +e[0].weight;
     const val = w => pct ? (w - base) / base * 100 : w;
     const ma = movingAvg(e);
@@ -583,7 +583,7 @@ document.getElementById('importFile').onchange = async ev => {
   const f = ev.target.files[0]; if (!f) return;
   try {
     const data = JSON.parse(await f.text());
-    if (!data.people?.ton || !data.people?.pach) throw 0;
+    if (!data.people?.ton || !data.people?.patt) throw 0;
     if (confirm('แทนที่ข้อมูลของทั้งสองคนด้วยไฟล์นี้?')) { S.people = data.people; save(); render(); }
   } catch { alert('ไฟล์ไม่ถูกต้อง'); }
   ev.target.value = '';
