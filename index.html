@@ -13,6 +13,7 @@
   --bg:#f6f5f2; --surface:#ffffff; --surface-2:#f0eee9; --text:#1d1c1a; --muted:#6b6862;
   --border:#e2dfd8; --ton:#2f6fdb; --patt:#e0613f; --good:#1f8a5b; --warn:#b7791f; --danger:#c43d3d;
   --ton-soft:rgba(47,111,219,.12); --patt-soft:rgba(224,97,63,.12);
+  --prot:#1f8a5b; --carb:#c9941a; --fat:#8a63d2;
   --radius:14px;
 }
 @media (prefers-color-scheme: dark){
@@ -20,12 +21,14 @@
     --bg:#141413; --surface:#1e1d1b; --surface-2:#282724; --text:#eceae4; --muted:#9d9a92;
     --border:#34322e; --ton:#6b9bf0; --patt:#f08766; --good:#4cc38a; --warn:#e0a84a; --danger:#ef6b6b;
     --ton-soft:rgba(107,155,240,.16); --patt-soft:rgba(240,135,102,.16);
+    --prot:#4cc38a; --carb:#e6b949; --fat:#a98bf0;
   }
 }
 :root[data-theme="dark"]{
   --bg:#141413; --surface:#1e1d1b; --surface-2:#282724; --text:#eceae4; --muted:#9d9a92;
   --border:#34322e; --ton:#6b9bf0; --patt:#f08766; --good:#4cc38a; --warn:#e0a84a; --danger:#ef6b6b;
   --ton-soft:rgba(107,155,240,.16); --patt-soft:rgba(240,135,102,.16);
+  --prot:#4cc38a; --carb:#e6b949; --fat:#a98bf0;
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font-family:"IBM Plex Sans Thai",system-ui,sans-serif;font-size:15px;line-height:1.55}
@@ -67,6 +70,22 @@ button.x:hover{color:var(--danger)}
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
 .chips button{font:inherit;font-size:13px;border:1px solid var(--border);background:transparent;color:var(--text);border-radius:99px;padding:3px 11px;cursor:pointer}
 .chips button.on{background:var(--c);border-color:var(--c);color:#fff}
+.stack{display:flex;height:14px;border-radius:99px;overflow:hidden;margin:10px 0 8px;gap:2px}
+.stack i{display:block;height:100%}
+.macros{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.macro{background:var(--surface-2);border-radius:10px;padding:9px 11px;border-top:3px solid var(--m)}
+.macro .l{font-size:12px;color:var(--muted)}
+.macro .g{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+.macro .k{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.foods{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.foods button{font:inherit;font-size:13px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:9px;padding:5px 10px;cursor:pointer;text-align:left;line-height:1.3}
+.foods button small{display:block;color:var(--muted);font-size:11px}
+.foods button:hover{border-color:var(--prot)}
+.eaten{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.eaten span{font-size:12px;background:var(--surface-2);border-radius:99px;padding:2px 4px 2px 10px}
+.meter{margin:8px 0}
+.meter .row{justify-content:space-between;font-size:13px}
+.meter .bar i{background:var(--m)}
 .breakdown{font-size:13px;color:var(--muted);line-height:1.8}
 .breakdown b{color:var(--text);font-variant-numeric:tabular-nums}
 .muted{color:var(--muted)} .good{color:var(--good)} .bad{color:var(--danger)} .warn{color:var(--warn)}
@@ -254,6 +273,38 @@ function calc(p, weight) {
   return { w, bmr, base, weekly, exPct, exPerDay, tdee, target, floor, bmi, expectedRate: Math.max(0, tdee - Math.max(target, floor)) * 7 / KCAL_PER_KG };
 }
 
+// Protein = g/kg bodyweight; fat = % of calories (WHO/IOM AMDR 20–35%); carbs = whatever is left.
+function macros(p) {
+  const r = calc(p);
+  if (!r) return null;
+  const kcal = Math.max(r.target, r.floor);
+  const perKg = +(p.proteinPerKg ?? 1), fatPct = +(p.fatPct ?? 30);
+  const protG = r.w * perKg, protK = protG * 4;
+  const fatK = kcal * fatPct / 100, fatG = fatK / 9;
+  const carbK = Math.max(0, kcal - protK - fatK), carbG = carbK / 4;
+  const pct = k => k / kcal * 100;
+  return { kcal, perKg, fatPct, w: r.w,
+    prot: { g: protG, k: protK, pct: pct(protK) },
+    carb: { g: carbG, k: carbK, pct: pct(carbK) },
+    fat: { g: fatG, k: fatK, pct: pct(fatK) } };
+}
+
+// Protein per typical serving (cooked weight), rough Thai-food reference values.
+const FOODS = [
+  { name: 'อกไก่ 100 ก.', p: 31, kcal: 165 },
+  { name: 'ไข่ต้ม 1 ฟอง', p: 6, kcal: 75 },
+  { name: 'ไข่ขาว 1 ฟอง', p: 4, kcal: 17 },
+  { name: 'หมูสันใน 100 ก.', p: 26, kcal: 145 },
+  { name: 'ปลานิล 100 ก.', p: 26, kcal: 130 },
+  { name: 'กุ้ง 100 ก.', p: 24, kcal: 100 },
+  { name: 'เต้าหู้แข็ง 100 ก.', p: 15, kcal: 145 },
+  { name: 'นมจืด 200 มล.', p: 6, kcal: 125 },
+  { name: 'กรีกโยเกิร์ต 150 ก.', p: 15, kcal: 90 },
+  { name: 'เวย์ 1 สกู๊ป', p: 24, kcal: 120 },
+  { name: 'ข้าวสวย 1 ทัพพี', p: 1.5, kcal: 80 }
+];
+const todayItems = p => p.today?.date === todayStr() ? p.today.items : [];
+
 function movingAvg(entries, win = 7) {
   return entries.map(e => {
     const t = dayMs(e.date);
@@ -369,12 +420,75 @@ function calorieBlock(id) {
     ${low ? `<div class="alert">เป้าคำนวณได้ ${fmt(r.target)} kcal ต่ำกว่าขั้นต่ำที่แนะนำ (${r.floor}) จึงแสดงเป็น ${r.floor} แทน · ลองลด “ลดวันละ” ลง</div>` : ''}`;
 }
 
+function macroBlock(id, compact = false) {
+  const p = S.people[id], m = macros(p);
+  if (!m) return '';
+  const cell = (key, label, x, range) => `<div class="macro" style="--m:var(--${key})">
+    <div class="l">${label} · ${fmt(x.pct)}%</div>
+    <div class="g">${fmt(x.g)} ก.</div>
+    <div class="k">${fmt(x.k)} kcal${compact ? '' : ` · แนะนำ ${range}`}</div></div>`;
+  const html = `
+    <div class="stack" title="สัดส่วนแคลอรี">
+      <i style="width:${m.prot.pct}%;background:var(--prot)"></i><i style="width:${m.carb.pct}%;background:var(--carb)"></i><i style="width:${m.fat.pct}%;background:var(--fat)"></i>
+    </div>
+    <div class="macros">
+      ${cell('prot', 'โปรตีน', m.prot, '10–35%')}
+      ${cell('carb', 'คาร์บ', m.carb, '45–65%')}
+      ${cell('fat', 'ไขมัน', m.fat, '20–35%')}
+    </div>`;
+  if (compact) return html;
+  const chips = (field, opts, val, unit) => `<div class="chips">${opts.map(v => `<button data-chip="${field}" data-v="${v}" class="${+val === v ? 'on' : ''}">${v}${unit}</button>`).join('')}</div>`;
+  const warn = m.carb.pct < 40 ? `<div class="alert">คาร์บเหลือแค่ ${fmt(m.carb.pct)}% (ต่ำกว่าช่วงแนะนำ 45–65%) เพราะแคลรวมน้อยเมื่อเทียบกับโปรตีน ลองลดไขมันเป็น 25% ได้</div>` : '';
+  return `${html}
+    <div class="breakdown" style="margin-top:10px">
+      โปรตีน <b>${m.perKg} ก.</b> × น้ำหนัก <b>${fmt(m.w, 1)}</b> = <b>${fmt(m.prot.g)} ก.</b> × 4 = <b>${fmt(m.prot.k)} kcal</b><br>
+      ไขมัน <b>${m.fatPct}%</b> ของ ${fmt(m.kcal)} = <b>${fmt(m.fat.k)} kcal</b> ÷ 9 = <b>${fmt(m.fat.g)} ก.</b><br>
+      คาร์บ = ที่เหลือ <b>${fmt(m.carb.k)} kcal</b> ÷ 4 = <b>${fmt(m.carb.g)} ก.</b><br>
+      ต่อมื้อ (3 มื้อ): โปรตีน ~<b>${fmt(m.prot.g / 3)} ก.</b> ≈ อกไก่สุก ~${fmt(m.prot.g / 3 / 0.31, 0)} ก.
+    </div>
+    <div class="goal-grid" style="margin-top:10px">
+      <label>โปรตีน (ก. ต่อ กก. น้ำหนักตัว)${chips('proteinPerKg', [1, 1.2, 1.6], m.perKg, '')}</label>
+      <label>ไขมัน (% ของแคล)${chips('fatPct', [25, 30, 35], m.fatPct, '%')}</label>
+    </div>
+    ${warn}
+    <div class="note">ช่วงแนะนำตาม AMDR (WHO/IOM): โปรตีน 10–35% · คาร์บ 45–65% · ไขมัน 20–35% ของพลังงาน · ช่วงลดไขมันถ้าเวทด้วย โปรตีน 1.2–1.6 ก./กก. ช่วยรักษากล้ามเนื้อ</div>
+`;
+}
+
+function eatenBlock(id) {
+  const p = S.people[id], m = macros(p);
+  if (!m) return '<div class="muted">กรอกข้อมูลร่างกายและบันทึกน้ำหนักก่อน</div>';
+  const items = todayItems(p);
+  const P = items.reduce((s, x) => s + x.p, 0), K = items.reduce((s, x) => s + x.kcal, 0);
+  const meter = (label, v, max, unit, key) => {
+    const pct = Math.min(100, v / max * 100), left = max - v;
+    return `<div class="meter" style="--m:var(--${key})">
+      <div class="row"><span>${label} <b>${fmt(v)}</b> / ${fmt(max)} ${unit}</span>
+      <span class="${left < 0 ? 'bad' : 'muted'}">${left >= 0 ? `เหลือ ${fmt(left)}` : `เกิน ${fmt(-left)}`}</span></div>
+      <div class="bar"><i style="width:${pct}%"></i></div></div>`;
+  };
+  return `
+    ${meter('โปรตีน', P, m.prot.g, 'ก.', 'prot')}
+    ${meter('แคลอรี', K, m.kcal, 'kcal', 'carb')}
+    ${P >= m.prot.g ? '<div class="good" style="font-size:13px">✓ โปรตีนถึงเป้าแล้ววันนี้</div>' : ''}
+    <div class="note" style="margin-top:10px">แตะเพื่อเพิ่ม (ค่าประมาณ น้ำหนักสุก):</div>
+    <div class="foods">${FOODS.map((f, i) => `<button data-food="${i}">${f.name}<small>P ${f.p} ก. · ${f.kcal} kcal</small></button>`).join('')}</div>
+    <form class="row" id="customFood">
+      <label style="flex:2">อื่น ๆ<input name="name" placeholder="เช่น ข้าวกะเพราไก่"></label>
+      <label style="flex:1">โปรตีน ก.<input name="p" type="number" step="0.5" min="0"></label>
+      <label style="flex:1">kcal<input name="kcal" type="number" min="0"></label>
+      <button class="btn" type="submit">+</button>
+    </form>
+    ${items.length ? `<div class="eaten">${items.map(x => `<span>${esc(x.name)} <button class="x" data-uneat="${x.id}" title="ลบ">✕</button></span>`).join('')}</div>` : '<div class="note">ยังไม่ได้เพิ่มอะไรวันนี้ · รีเซ็ตอัตโนมัติทุกวัน</div>'}`;
+}
+
 function summaryCard(id) {
   const p = S.people[id];
   return `<div class="card" style="--c:${C(id)}">
     <div class="person-head"><span class="pill"><span class="dot" style="background:${C(id)}"></span>${p.name}</span>
       <button class="ghost" data-go="${id}">รายละเอียด →</button></div>
     ${calorieBlock(id)}
+    ${macroBlock(id, true)}
     ${progress(id)}
     ${statsBlock(id)}
     ${quickAdd(id)}
@@ -464,6 +578,10 @@ function personPage(id) {
         <div class="note">ชั่งตอนเช้าหลังเข้าห้องน้ำ ก่อนกินอะไร · บันทึกวันเดิมซ้ำ = แก้ไขค่า</div>
         ${statsBlock(id)}
       </div>
+    </div>
+    <div class="grid g2" style="margin-top:14px">
+      <div class="card"><h2>🍽️ โภชนาการต่อวัน</h2>${macroBlock(id)}</div>
+      <div class="card"><h2>✅ วันนี้กินไปแล้ว</h2>${eatenBlock(id)}</div>
     </div>
     <div class="card" style="margin-top:14px">
       <div class="person-head"><h2 style="margin:0">กราฟของ${p.name}</h2>${modeSeg()}</div>
@@ -562,6 +680,19 @@ function bind() {
   });
   document.querySelectorAll('[data-f]').forEach(inp => inp.onchange = () => { p[inp.dataset.f] = inp.dataset.f === 'exPct' ? +inp.value : inp.value; save(); render(); });
   document.querySelectorAll('[data-chip]').forEach(b => b.onclick = ev => { ev.preventDefault(); p[b.dataset.chip] = +b.dataset.v; save(); render(); });
+  const eat = item => {
+    if (p.today?.date !== todayStr()) p.today = { date: todayStr(), items: [] };
+    p.today.items.push({ id: uid(), ...item }); save(); render();
+  };
+  document.querySelectorAll('[data-food]').forEach(b => b.onclick = () => { const f = FOODS[b.dataset.food]; eat({ name: f.name, p: f.p, kcal: f.kcal }); });
+  document.querySelectorAll('[data-uneat]').forEach(b => b.onclick = () => { p.today.items = p.today.items.filter(x => x.id !== b.dataset.uneat); save(); render(); });
+  const cf = document.getElementById('customFood');
+  if (cf) cf.onsubmit = ev => {
+    ev.preventDefault();
+    const fd = new FormData(cf);
+    if (!fd.get('p') && !fd.get('kcal')) return;
+    eat({ name: fd.get('name') || 'อื่น ๆ', p: +fd.get('p') || 0, kcal: +fd.get('kcal') || 0 });
+  };
   document.querySelectorAll('[data-act]').forEach(row => {
     const a = p.activities.find(x => x.id === row.dataset.act);
     row.querySelectorAll('[data-a]').forEach(inp => inp.onchange = () => { a[inp.dataset.a] = inp.type === 'number' ? +inp.value : inp.value; save(); render(); });
