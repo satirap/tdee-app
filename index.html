@@ -108,7 +108,7 @@ footer{margin-top:24px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;fo
   </header>
   <main id="app"></main>
   <footer id="footer" class="hidden">
-    <span id="who"></span><button class="ghost" id="logoutBtn">ออกจากระบบ</button>
+    <button class="ghost" id="logoutBtn">🔒 ล็อก</button>
     <button class="ghost" id="exportBtn">⬇︎ Export ข้อมูล (JSON)</button>
     <label class="ghost" style="flex-direction:row;cursor:pointer;border:1px solid var(--border);border-radius:9px;padding:6px 12px;color:var(--text);font-size:15px">⬆︎ Import<input type="file" id="importFile" accept=".json" hidden></label>
     <span>ข้อมูลซิงก์ผ่าน Firebase · Export ไว้สำรองเป็นระยะ</span>
@@ -117,11 +117,11 @@ footer{margin-top:24px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;fo
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore, doc, onSnapshot, setDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
 
 const PREF_KEY = 'tdee-prefs-v1';
+const PIN_KEY = 'tdee-pin';
 const IDS = ['ton', 'pach'];
 const KCAL_PER_KG = 7700;
 const JOBS = {
@@ -164,31 +164,36 @@ let S = defaults();
 try { Object.assign(S, JSON.parse(localStorage.getItem(PREF_KEY)) || {}); } catch {}
 const configured = firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith('YOUR');
 const fb = configured ? initializeApp(firebaseConfig) : null;
-const auth = fb && getAuth(fb), db = fb && getFirestore(fb);
-let user = null, loaded = new Set(), dbError = null, unsubs = [];
+// The PIN is never stored in this (public) code: data lives at vault/{pin}/people/{id}
+// and firestore.rules only allows the real PIN, so a wrong PIN is rejected by Firebase itself.
+const db = fb && getFirestore(fb);
+let pin = null, loaded = new Set(), dbError = null, pinError = '', unsubs = [];
+try { pin = localStorage.getItem(PIN_KEY); } catch {}
+const personDoc = id => doc(db, 'vault', pin, 'people', id);
 const synced = {};
 
 function save() {
   try { localStorage.setItem(PREF_KEY, JSON.stringify({ tab: S.tab, chartMode: S.chartMode })); } catch {}
-  if (!user || loaded.size < IDS.length) return;
+  if (!pin || loaded.size < IDS.length) return;
   for (const id of IDS) {
     const json = JSON.stringify(S.people[id]);
     if (json === synced[id]) continue;
     synced[id] = json;
-    setDoc(doc(db, 'people', id), JSON.parse(json)).catch(onDbError);
+    setDoc(personDoc(id), JSON.parse(json)).catch(onDbError);
   }
 }
 
 function onDbError(err) {
   console.error(err);
-  dbError = err.code === 'permission-denied' ? `บัญชี ${user?.email} ไม่มีสิทธิ์เข้าถึงข้อมูลนี้` : `เชื่อมต่อฐานข้อมูลไม่ได้ (${err.code || err.message})`;
+  if (err.code === 'permission-denied') { lock('รหัสไม่ถูกต้อง'); return; }
+  dbError = `เชื่อมต่อฐานข้อมูลไม่ได้ (${err.code || err.message})`;
   render();
 }
 
 function listen() {
   unsubs.forEach(u => u()); unsubs = []; loaded = new Set(); dbError = null;
   for (const id of IDS) {
-    unsubs.push(onSnapshot(doc(db, 'people', id), snap => {
+    unsubs.push(onSnapshot(personDoc(id), snap => {
       if (snap.exists()) { S.people[id] = snap.data(); synced[id] = JSON.stringify(S.people[id]); }
       else { S.people[id] = defaults().people[id]; synced[id] = ''; }
       loaded.add(id);
@@ -196,6 +201,19 @@ function listen() {
       scheduleRender();
     }, onDbError));
   }
+}
+
+function unlock(code) {
+  pin = code; pinError = '';
+  try { localStorage.setItem(PIN_KEY, pin); } catch {}
+  listen(); render();
+}
+
+function lock(msg = '') {
+  unsubs.forEach(u => u()); unsubs = []; loaded = new Set();
+  pin = null; pinError = msg; dbError = null;
+  try { localStorage.removeItem(PIN_KEY); } catch {}
+  render();
 }
 
 // Don't wipe a half-typed input when the other person's update arrives.
@@ -266,9 +284,11 @@ let charts = [];
 
 function gate() {
   if (!configured) return `<div class="card center"><h2>ยังไม่ได้ตั้งค่า Firebase</h2><p>ใส่ค่า config ในไฟล์ <code>firebase-config.js</code> ตามขั้นตอนใน README.md</p></div>`;
-  if (user === undefined) return `<div class="center"><p>กำลังโหลด…</p></div>`;
-  if (!user) return `<div class="card center"><h2>TDEE Tracker</h2><p>เข้าสู่ระบบด้วยบัญชี Google ที่ตั้งสิทธิ์ไว้</p><button class="btn" id="loginBtn">เข้าสู่ระบบด้วย Google</button></div>`;
-  if (dbError) return `<div class="card center"><h2>เข้าไม่ได้</h2><p>${esc(dbError)}</p><button class="ghost" id="logoutBtn2">เปลี่ยนบัญชี</button></div>`;
+  if (!pin) return `<form class="card center" id="pinForm"><h2>🔒 ใส่รหัสเพื่อเข้าใช้งาน</h2>
+    <input id="pinInput" type="password" inputmode="numeric" autocomplete="off" maxlength="12" style="text-align:center;font-size:24px;letter-spacing:8px;margin:8px 0 12px" autofocus>
+    ${pinError ? `<p class="bad" style="margin:0 0 10px">${esc(pinError)}</p>` : ''}
+    <button class="btn" type="submit" style="width:100%">ปลดล็อก</button></form>`;
+  if (dbError) return `<div class="card center"><h2>เข้าไม่ได้</h2><p>${esc(dbError)}</p><button class="ghost" id="lockBtn2">ลองใหม่</button></div>`;
   if (loaded.size < IDS.length) return `<div class="center"><p>กำลังโหลดข้อมูล…</p></div>`;
   return '';
 }
@@ -280,13 +300,15 @@ function render() {
   if (blocked) {
     charts.forEach(c => c.destroy()); charts = [];
     document.getElementById('app').innerHTML = blocked;
-    const lb = document.getElementById('loginBtn');
-    if (lb) lb.onclick = () => signInWithPopup(auth, new GoogleAuthProvider()).catch(e => alert('เข้าสู่ระบบไม่สำเร็จ: ' + e.message));
-    const lo = document.getElementById('logoutBtn2');
-    if (lo) lo.onclick = () => signOut(auth);
+    const pf = document.getElementById('pinForm');
+    if (pf) {
+      document.getElementById('pinInput').focus();
+      pf.onsubmit = ev => { ev.preventDefault(); const v = document.getElementById('pinInput').value.trim(); if (v) unlock(v); };
+    }
+    const lo = document.getElementById('lockBtn2');
+    if (lo) lo.onclick = () => lock();
     return;
   }
-  document.getElementById('who').textContent = user.email;
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === S.tab));
   charts.forEach(c => c.destroy()); charts = [];
   const app = document.getElementById('app');
@@ -566,17 +588,10 @@ document.getElementById('importFile').onchange = async ev => {
   } catch { alert('ไฟล์ไม่ถูกต้อง'); }
   ev.target.value = '';
 };
-document.getElementById('logoutBtn').onclick = () => signOut(auth);
+document.getElementById('logoutBtn').onclick = () => lock();
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render);
 
-if (configured) {
-  user = undefined;
-  onAuthStateChanged(auth, u => {
-    user = u;
-    if (u) listen(); else { unsubs.forEach(f => f()); unsubs = []; loaded = new Set(); }
-    render();
-  });
-}
+if (configured && pin) listen();
 render();
 </script>
 </body>

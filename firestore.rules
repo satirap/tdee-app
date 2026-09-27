@@ -1,17 +1,12 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Only the one person who records for both ต้น and พัช can read/write.
-    // Replace the email below in the Firebase console (Firestore → Rules) —
-    // the real email doesn't need to live in this public repo.
-    function isOwner() {
-      return request.auth != null
-        && request.auth.token.email_verified == true
-        && request.auth.token.email == 'YOUR_EMAIL@gmail.com';
-    }
-
-    match /people/{personId} {
-      allow read, write: if isOwner() && personId in ['ton', 'pach'];
+    // Data lives at vault/{pin}/people/{ton|pach}. Only the real PIN is allowed,
+    // so a wrong PIN is rejected by Firebase itself.
+    // Replace YOUR_PIN in the Firebase console (Firestore → Rules) only —
+    // don't commit the real PIN to this public repo.
+    match /vault/{pin}/people/{personId} {
+      allow read, write: if pin == 'YOUR_PIN' && personId in ['ton', 'pach'];
     }
   }
 }
