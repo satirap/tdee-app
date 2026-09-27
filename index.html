@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TDEE ต้น & พัช</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#f6f5f2; --surface:#ffffff; --surface-2:#f0eee9; --text:#1d1c1a; --muted:#6b6862;
+  --border:#e2dfd8; --ton:#2f6fdb; --pach:#e0613f; --good:#1f8a5b; --warn:#b7791f; --danger:#c43d3d;
+  --ton-soft:rgba(47,111,219,.12); --pach-soft:rgba(224,97,63,.12);
+  --radius:14px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#141413; --surface:#1e1d1b; --surface-2:#282724; --text:#eceae4; --muted:#9d9a92;
+    --border:#34322e; --ton:#6b9bf0; --pach:#f08766; --good:#4cc38a; --warn:#e0a84a; --danger:#ef6b6b;
+    --ton-soft:rgba(107,155,240,.16); --pach-soft:rgba(240,135,102,.16);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#141413; --surface:#1e1d1b; --surface-2:#282724; --text:#eceae4; --muted:#9d9a92;
+  --border:#34322e; --ton:#6b9bf0; --pach:#f08766; --good:#4cc38a; --warn:#e0a84a; --danger:#ef6b6b;
+  --ton-soft:rgba(107,155,240,.16); --pach-soft:rgba(240,135,102,.16);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:"IBM Plex Sans Thai",system-ui,sans-serif;font-size:15px;line-height:1.55}
+.wrap{max-width:1080px;margin:0 auto;padding:20px 16px 60px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+h1{font-size:22px;margin:0;font-weight:700}
+h1 small{display:block;font-size:13px;font-weight:400;color:var(--muted)}
+h2{font-size:17px;margin:0 0 12px}
+h3{font-size:15px;margin:0 0 8px}
+.tabs{display:flex;gap:4px;background:var(--surface-2);padding:4px;border-radius:12px}
+.tabs button{border:0;background:transparent;color:var(--muted);padding:7px 16px;border-radius:9px;font:inherit;font-weight:500;cursor:pointer}
+.tabs button.on{background:var(--surface);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+.person-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.pill{display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:17px}
+.dot{width:12px;height:12px;border-radius:50%}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:8px 0 14px}
+.stat{background:var(--surface-2);border-radius:10px;padding:10px 12px;min-width:0}
+.stat .l{font-size:12px;color:var(--muted)}
+.stat .v{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.stat .v small{font-size:12px;font-weight:500;color:var(--muted)}
+.big{background:var(--c-soft);border-radius:12px;padding:14px;margin-bottom:12px}
+.big .l{font-size:13px;color:var(--muted)}
+.big .v{font-size:30px;font-weight:700;color:var(--c);font-variant-numeric:tabular-nums;line-height:1.2}
+.big .s{font-size:13px;color:var(--muted)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
+label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted);min-width:0}
+input,select{font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:7px 10px;min-width:0;width:100%}
+input:focus,select:focus{outline:2px solid var(--c,var(--ton));outline-offset:-1px}
+button.btn{font:inherit;font-weight:600;border:0;border-radius:9px;padding:8px 16px;cursor:pointer;background:var(--c,var(--ton));color:#fff}
+button.ghost{font:inherit;border:1px solid var(--border);background:transparent;color:var(--text);border-radius:9px;padding:6px 12px;cursor:pointer}
+button.x{border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:16px;padding:2px 6px}
+button.x:hover{color:var(--danger)}
+.bar{height:10px;background:var(--surface-2);border-radius:99px;overflow:hidden;margin:6px 0 4px}
+.bar i{display:block;height:100%;background:var(--c);border-radius:99px}
+.goal-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.chips button{font:inherit;font-size:13px;border:1px solid var(--border);background:transparent;color:var(--text);border-radius:99px;padding:3px 11px;cursor:pointer}
+.chips button.on{background:var(--c);border-color:var(--c);color:#fff}
+.breakdown{font-size:13px;color:var(--muted);line-height:1.8}
+.breakdown b{color:var(--text);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)} .good{color:var(--good)} .bad{color:var(--danger)} .warn{color:var(--warn)}
+.note{font-size:13px;color:var(--muted);margin-top:8px}
+.alert{background:var(--surface-2);border-left:3px solid var(--warn);padding:8px 12px;border-radius:6px;font-size:13px;margin-top:10px}
+.chart-box{position:relative;height:340px}
+.seg{display:inline-flex;background:var(--surface-2);border-radius:9px;padding:3px}
+.seg button{border:0;background:transparent;color:var(--muted);font:inherit;font-size:13px;padding:4px 12px;border-radius:7px;cursor:pointer}
+.seg button.on{background:var(--surface);color:var(--text)}
+table.log{width:100%;border-collapse:collapse;font-size:14px}
+table.log th{text-align:left;font-weight:500;color:var(--muted);font-size:12px;padding:6px 8px;border-bottom:1px solid var(--border)}
+table.log td{padding:7px 8px;border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums}
+.scroll{overflow-x:auto}
+.act{display:grid;grid-template-columns:1.4fr 1fr 1.6fr .8fr auto;gap:6px;align-items:end;padding:8px 0;border-bottom:1px dashed var(--border)}
+.act .dual{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.pf{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
+footer{margin-top:24px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:13px;color:var(--muted)}
+.hidden{display:none!important}
+.center{max-width:420px;margin:60px auto;text-align:center}
+.center p{color:var(--muted)}
+@media (max-width:560px){
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .act{grid-template-columns:1fr 1fr}
+  .act .dual{grid-column:1/-1}
+  .chart-box{height:260px}
+  .tabs button{padding:7px 12px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>TDEE Tracker<small>ลดไขมัน · ต้น & พัช</small></h1>
+    <nav class="tabs hidden" id="tabs">
+      <button data-tab="overview">ภาพรวม</button>
+      <button data-tab="ton">ต้น</button>
+      <button data-tab="pach">พัช</button>
+    </nav>
+  </header>
+  <main id="app"></main>
+  <footer id="footer" class="hidden">
+    <span id="who"></span><button class="ghost" id="logoutBtn">ออกจากระบบ</button>
+    <button class="ghost" id="exportBtn">⬇︎ Export ข้อมูล (JSON)</button>
+    <label class="ghost" style="flex-direction:row;cursor:pointer;border:1px solid var(--border);border-radius:9px;padding:6px 12px;color:var(--text);font-size:15px">⬆︎ Import<input type="file" id="importFile" accept=".json" hidden></label>
+    <span>ข้อมูลซิงก์ผ่าน Firebase · Export ไว้สำรองเป็นระยะ</span>
+  </footer>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { getFirestore, doc, onSnapshot, setDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { firebaseConfig } from './firebase-config.js';
+
+const PREF_KEY = 'tdee-prefs-v1';
+const IDS = ['ton', 'pach'];
+const KCAL_PER_KG = 7700;
+const JOBS = {
+  office: { f: 1.2,  label: 'นั่งโต๊ะเป็นหลัก (office)' },
+  light:  { f: 1.3,  label: 'ยืน/เดินระหว่างวัน (ไม่ใช่ office)' },
+  active: { f: 1.45, label: 'ใช้แรง/เดินเกือบทั้งวัน' }
+};
+const uid = () => Math.random().toString(36).slice(2, 9);
+const todayStr = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+const dayMs = d => Date.parse(d + 'T00:00:00Z');
+const fmt = (n, d = 0) => n == null || isNaN(n) ? '–' : Number(n).toLocaleString('th-TH', { minimumFractionDigits: d, maximumFractionDigits: d });
+const fmtDate = s => new Date(dayMs(s)).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', timeZone: 'UTC' });
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function defaults() {
+  return {
+    tab: 'overview', chartMode: 'kg',
+    people: {
+      ton: {
+        name: 'ต้น', sex: '', age: '', height: '', goalWeight: '', deficit: 500, job: 'light',
+        activities: [
+          { id: uid(), name: 'ตีแบดมินตัน', mode: 'kcal', kcal: 650, met: 7, minutes: 90, perWeek: 3 },
+          { id: uid(), name: 'เวทเล็กน้อย', mode: 'met', kcal: 150, met: 3.5, minutes: 30, perWeek: 2 }
+        ],
+        entries: []
+      },
+      pach: {
+        name: 'พัช', sex: '', age: '', height: '', goalWeight: '', deficit: 500, job: 'office',
+        activities: [
+          { id: uid(), name: 'เดินเร็ว', mode: 'met', kcal: 180, met: 4.3, minutes: 45, perWeek: 3 }
+        ],
+        entries: []
+      }
+    }
+  };
+}
+
+// Person data lives in Firestore (people/ton, people/pach); tab & chart mode are per-device prefs.
+let S = defaults();
+try { Object.assign(S, JSON.parse(localStorage.getItem(PREF_KEY)) || {}); } catch {}
+const configured = firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith('YOUR');
+const fb = configured ? initializeApp(firebaseConfig) : null;
+const auth = fb && getAuth(fb), db = fb && getFirestore(fb);
+let user = null, loaded = new Set(), dbError = null, unsubs = [];
+const synced = {};
+
+function save() {
+  try { localStorage.setItem(PREF_KEY, JSON.stringify({ tab: S.tab, chartMode: S.chartMode })); } catch {}
+  if (!user || loaded.size < IDS.length) return;
+  for (const id of IDS) {
+    const json = JSON.stringify(S.people[id]);
+    if (json === synced[id]) continue;
+    synced[id] = json;
+    setDoc(doc(db, 'people', id), JSON.parse(json)).catch(onDbError);
+  }
+}
+
+function onDbError(err) {
+  console.error(err);
+  dbError = err.code === 'permission-denied' ? `บัญชี ${user?.email} ไม่มีสิทธิ์เข้าถึงข้อมูลนี้` : `เชื่อมต่อฐานข้อมูลไม่ได้ (${err.code || err.message})`;
+  render();
+}
+
+function listen() {
+  unsubs.forEach(u => u()); unsubs = []; loaded = new Set(); dbError = null;
+  for (const id of IDS) {
+    unsubs.push(onSnapshot(doc(db, 'people', id), snap => {
+      if (snap.exists()) { S.people[id] = snap.data(); synced[id] = JSON.stringify(S.people[id]); }
+      else { S.people[id] = defaults().people[id]; synced[id] = ''; }
+      loaded.add(id);
+      if (!snap.exists() && loaded.size === IDS.length) save();
+      scheduleRender();
+    }, onDbError));
+  }
+}
+
+// Don't wipe a half-typed input when the other person's update arrives.
+let renderPending = false;
+function scheduleRender() {
+  const a = document.activeElement;
+  if (a && a.closest('#app') && /INPUT|SELECT/.test(a.tagName)) {
+    if (!renderPending) { renderPending = true; a.addEventListener('blur', () => { renderPending = false; render(); }, { once: true }); }
+    return;
+  }
+  render();
+}
+
+// ---------- calculations ----------
+const sorted = p => [...p.entries].sort((a, b) => a.date.localeCompare(b.date));
+const latest = p => { const e = sorted(p); return e.length ? e[e.length - 1] : null; };
+const profileReady = p => p.sex && +p.age > 0 && +p.height > 0;
+
+function actKcal(a, w) {
+  // MET mode uses net calories (MET-1) so we don't double count resting burn already in BMR
+  return a.mode === 'kcal' ? +a.kcal || 0 : Math.max(0, (+a.met - 1)) * w * ((+a.minutes || 0) / 60);
+}
+
+function calc(p, weight) {
+  const w = weight ?? latest(p)?.weight;
+  if (!w || !profileReady(p)) return null;
+  const bmr = 10 * w + 6.25 * +p.height - 5 * +p.age + (p.sex === 'm' ? 5 : -161);
+  const base = bmr * JOBS[p.job].f;
+  const acts = p.activities.map(a => ({ ...a, burn: actKcal(a, w), perWeek: +a.perWeek || 0 }));
+  const weekly = acts.reduce((s, a) => s + a.burn * a.perWeek, 0);
+  const exPct = p.exPct ?? 75;
+  const exPerDay = weekly / 7 * exPct / 100;
+  const tdee = base + exPerDay;
+  const deficit = +p.deficit || 0;
+  const target = tdee - deficit;
+  const floor = p.sex === 'm' ? 1500 : 1200;
+  const bmi = w / ((+p.height / 100) ** 2);
+  return { w, bmr, base, weekly, exPct, exPerDay, tdee, target, floor, bmi, expectedRate: Math.max(0, tdee - Math.max(target, floor)) * 7 / KCAL_PER_KG };
+}
+
+function movingAvg(entries, win = 7) {
+  return entries.map(e => {
+    const t = dayMs(e.date);
+    const pts = entries.filter(x => { const tx = dayMs(x.date); return tx <= t && tx > t - win * 864e5; });
+    return pts.reduce((s, x) => s + +x.weight, 0) / pts.length;
+  });
+}
+
+function trend(p) {
+  // linear regression over the last 28 days → kg/week
+  const e = sorted(p);
+  if (e.length < 2) return null;
+  const last = dayMs(e[e.length - 1].date);
+  const pts = e.filter(x => dayMs(x.date) >= last - 28 * 864e5).map(x => [(dayMs(x.date) - last) / 864e5, +x.weight]);
+  if (pts.length < 2) return null;
+  const span = -pts[0][0];
+  if (span < 7) return { span, perWeek: null };
+  const n = pts.length, mx = pts.reduce((s, q) => s + q[0], 0) / n, my = pts.reduce((s, q) => s + q[1], 0) / n;
+  const slope = pts.reduce((s, q) => s + (q[0] - mx) * (q[1] - my), 0) / pts.reduce((s, q) => s + (q[0] - mx) ** 2, 0);
+  return { span, perWeek: slope * 7 };
+}
+
+// ---------- rendering ----------
+const C = id => id === 'ton' ? 'var(--ton)' : 'var(--pach)';
+const CS = id => id === 'ton' ? 'var(--ton-soft)' : 'var(--pach-soft)';
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+let charts = [];
+
+function gate() {
+  if (!configured) return `<div class="card center"><h2>ยังไม่ได้ตั้งค่า Firebase</h2><p>ใส่ค่า config ในไฟล์ <code>firebase-config.js</code> ตามขั้นตอนใน README.md</p></div>`;
+  if (user === undefined) return `<div class="center"><p>กำลังโหลด…</p></div>`;
+  if (!user) return `<div class="card center"><h2>TDEE Tracker</h2><p>เข้าสู่ระบบด้วยบัญชี Google ของต้นหรือพัช</p><button class="btn" id="loginBtn">เข้าสู่ระบบด้วย Google</button></div>`;
+  if (dbError) return `<div class="card center"><h2>เข้าไม่ได้</h2><p>${esc(dbError)}</p><button class="ghost" id="logoutBtn2">เปลี่ยนบัญชี</button></div>`;
+  if (loaded.size < IDS.length) return `<div class="center"><p>กำลังโหลดข้อมูล…</p></div>`;
+  return '';
+}
+
+function render() {
+  const blocked = gate();
+  document.getElementById('tabs').classList.toggle('hidden', !!blocked);
+  document.getElementById('footer').classList.toggle('hidden', !!blocked);
+  if (blocked) {
+    charts.forEach(c => c.destroy()); charts = [];
+    document.getElementById('app').innerHTML = blocked;
+    const lb = document.getElementById('loginBtn');
+    if (lb) lb.onclick = () => signInWithPopup(auth, new GoogleAuthProvider()).catch(e => alert('เข้าสู่ระบบไม่สำเร็จ: ' + e.message));
+    const lo = document.getElementById('logoutBtn2');
+    if (lo) lo.onclick = () => signOut(auth);
+    return;
+  }
+  document.getElementById('who').textContent = user.email;
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === S.tab));
+  charts.forEach(c => c.destroy()); charts = [];
+  const app = document.getElementById('app');
+  if (S.tab === 'overview') {
+    app.innerHTML = `
+      <div class="grid g2">${['ton', 'pach'].map(summaryCard).join('')}</div>
+      <div class="card" style="margin-top:14px">
+        <div class="person-head"><h2 style="margin:0">กราฟน้ำหนัก</h2>${modeSeg()}</div>
+        <div class="chart-box"><canvas id="chartAll"></canvas></div>
+        <div class="note">จุด = น้ำหนักที่ชั่งจริง · เส้น = ค่าเฉลี่ย 7 วัน (ตัด noise จากน้ำ/เกลือ) · โหมด % ใช้เทียบความคืบหน้าของสองคนอย่างยุติธรรม</div>
+      </div>`;
+    drawChart('chartAll', ['ton', 'pach']);
+  } else {
+    app.innerHTML = personPage(S.tab);
+    drawChart('chartOne', [S.tab]);
+  }
+  bind();
+}
+
+function modeSeg() {
+  return `<div class="seg">${[['kg', 'กก.'], ['pct', '% เปลี่ยนแปลง']].map(([k, l]) => `<button data-mode="${k}" class="${S.chartMode === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+}
+
+function statsBlock(id) {
+  const p = S.people[id], e = sorted(p), r = calc(p), t = trend(p);
+  const cur = e.length ? +e[e.length - 1].weight : null, start = e.length ? +e[0].weight : null;
+  const diff = cur != null ? cur - start : null;
+  let proj = '–';
+  if (cur && +p.goalWeight && cur > +p.goalWeight) {
+    const rate = t?.perWeek < 0 ? -t.perWeek : r?.expectedRate;
+    if (rate) { const d = new Date(); d.setDate(d.getDate() + ((cur - p.goalWeight) / rate) * 7); proj = d.toLocaleDateString('th-TH', { month: 'short', year: '2-digit' }); }
+  } else if (cur && +p.goalWeight && cur <= +p.goalWeight) proj = '🎉 ถึงเป้า';
+  return `<div class="stats">
+    <div class="stat"><div class="l">น้ำหนักล่าสุด</div><div class="v">${fmt(cur, 1)} <small>กก.</small></div></div>
+    <div class="stat"><div class="l">เปลี่ยนแปลงรวม</div><div class="v ${diff < 0 ? 'good' : diff > 0 ? 'bad' : ''}">${diff == null ? '–' : (diff > 0 ? '+' : '') + fmt(diff, 1)} <small>กก.</small></div></div>
+    <div class="stat"><div class="l">กก./สัปดาห์ (28 วัน)</div><div class="v ${t?.perWeek < 0 ? 'good' : ''}">${t?.perWeek == null ? '–' : (t.perWeek > 0 ? '+' : '') + fmt(t.perWeek, 2)}</div></div>
+    <div class="stat"><div class="l">BMI</div><div class="v">${fmt(r?.bmi, 1)}</div></div>
+    <div class="stat"><div class="l">เป้าหมาย</div><div class="v">${+p.goalWeight ? fmt(p.goalWeight, 1) : '–'} <small>กก.</small></div></div>
+    <div class="stat"><div class="l">คาดว่าถึงเป้า</div><div class="v" style="font-size:17px">${proj}</div></div>
+  </div>`;
+}
+
+function calorieBlock(id) {
+  const p = S.people[id], r = calc(p);
+  if (!r) return `<div class="alert">${!profileReady(p) ? `กรอก <b>เพศ อายุ ส่วนสูง</b> ในแท็บ “${p.name}” ก่อน` : 'บันทึกน้ำหนักอย่างน้อย 1 ครั้ง'} เพื่อคำนวณ TDEE</div>`;
+  const low = r.target < r.floor;
+  return `
+    <div class="big" style="--c:${C(id)};--c-soft:${CS(id)}">
+      <div class="l">ควรกินเฉลี่ยต่อวัน (TDEE − ${fmt(p.deficit)})</div>
+      <div class="v">${fmt(Math.max(r.target, r.floor))} kcal</div>
+      <div class="s">กินเท่ากันทุกวัน ไม่ต้องกินชดเชยวันที่ออกกำลังกาย · คาดลด ~${fmt(r.expectedRate, 2)} กก./สัปดาห์</div>
+    </div>
+    <div class="breakdown">
+      BMR <b>${fmt(r.bmr)}</b> × งาน ${JOBS[p.job].f} = <b>${fmt(r.base)}</b>
+      + ออกกำลังกายเฉลี่ย <b>${fmt(r.exPerDay)}</b>/วัน <span>(นับ ${r.exPct}%)</span>
+      = TDEE <b>${fmt(r.tdee)}</b> − <b>${fmt(p.deficit)}</b>
+    </div>
+    ${low ? `<div class="alert">เป้าคำนวณได้ ${fmt(r.target)} kcal ต่ำกว่าขั้นต่ำที่แนะนำ (${r.floor}) จึงแสดงเป็น ${r.floor} แทน · ลองลด “ลดวันละ” ลง</div>` : ''}`;
+}
+
+function summaryCard(id) {
+  const p = S.people[id];
+  return `<div class="card" style="--c:${C(id)}">
+    <div class="person-head"><span class="pill"><span class="dot" style="background:${C(id)}"></span>${p.name}</span>
+      <button class="ghost" data-go="${id}">รายละเอียด →</button></div>
+    ${calorieBlock(id)}
+    ${progress(id)}
+    ${statsBlock(id)}
+    ${quickAdd(id)}
+  </div>`;
+}
+
+function progress(id) {
+  const p = S.people[id], e = sorted(p);
+  if (!+p.goalWeight) return `<div class="alert">ยังไม่ได้ตั้งน้ำหนักเป้าหมาย · <a href="#" data-go="${id}" style="color:inherit">ตั้งเป้า →</a></div>`;
+  if (!e.length) return '';
+  const start = +e[0].weight, cur = +e[e.length - 1].weight, goal = +p.goalWeight;
+  const pct = start > goal ? Math.min(100, Math.max(0, (start - cur) / (start - goal) * 100)) : 100;
+  return `<div style="margin-top:12px">
+    <div class="row" style="justify-content:space-between;font-size:13px"><span>🎯 ${fmt(start, 1)} → <b>${fmt(goal, 1)}</b> กก.</span><span class="muted">${fmt(pct)}% · เหลือ ${fmt(Math.max(0, cur - goal), 1)} กก.</span></div>
+    <div class="bar"><i style="width:${pct}%"></i></div>
+  </div>`;
+}
+
+function goalCard(id) {
+  const p = S.people[id], r = calc(p), cur = latest(p)?.weight;
+  const exPct = p.exPct ?? 75, goal = +p.goalWeight;
+  let eta = '';
+  if (r && goal && cur > goal && r.expectedRate > 0) {
+    const weeks = (cur - goal) / r.expectedRate, d = new Date();
+    d.setDate(d.getDate() + weeks * 7);
+    eta = `ต้องลดอีก <b>${fmt(cur - goal, 1)} กก.</b> · ที่ ~${fmt(r.expectedRate, 2)} กก./สัปดาห์ ใช้ประมาณ <b>${fmt(weeks)} สัปดาห์</b> (ราว ${d.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })})`;
+  }
+  const chips = (field, opts, val, unit = '') => `<div class="chips">${opts.map(v => `<button data-chip="${field}" data-v="${v}" class="${+val === v ? 'on' : ''}">${v}${unit}</button>`).join('')}</div>`;
+  return `<div class="card">
+    <h2>🎯 เป้าหมายของ${p.name}</h2>
+    <div class="goal-grid">
+      <label>น้ำหนักเป้าหมาย (กก.)<input type="number" data-f="goalWeight" step="0.5" value="${esc(p.goalWeight)}" placeholder="เช่น 70"></label>
+      <label>ลดวันละ (kcal)<input type="number" data-f="deficit" step="50" min="0" max="1000" value="${esc(p.deficit)}">
+        ${chips('deficit', [300, 400, 500], p.deficit)}</label>
+      <label>นับแคลจากการออกกำลังกาย
+        <select data-f="exPct">${[[100, '100% (นับเต็ม)'], [75, '75% (แนะนำ)'], [50, '50% (เผื่อเยอะ)'], [0, '0% (ไม่นับเลย)']].map(([v, l]) => `<option value="${v}" ${exPct == v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    </div>
+    ${progress(id)}
+    <div class="note">${eta || 'ตั้งน้ำหนักเป้าหมาย + ข้อมูลร่างกาย + บันทึกน้ำหนัก เพื่อดูว่าจะถึงเป้าเมื่อไหร่'}<br>
+    นับแคลออกกำลังกายไม่เต็ม 100% เพราะนาฬิกา/สูตรมักประเมินสูงเกินจริง และช่วยให้ไม่ต้องกินเพิ่มเยอะ ๆ จากการตีแบดครั้งเดียว</div>
+  </div>`;
+}
+
+function quickAdd(id) {
+  const last = latest(S.people[id]);
+  return `<form class="row" data-add="${id}">
+    <label style="flex:1.2">วันที่<input type="date" name="date" value="${todayStr()}" required></label>
+    <label style="flex:1">น้ำหนัก (กก.)<input type="number" name="weight" step="0.1" min="20" max="300" placeholder="${last ? last.weight : '65.0'}" required></label>
+    <button class="btn" type="submit">บันทึก</button>
+  </form>`;
+}
+
+function insight(id) {
+  const p = S.people[id], t = trend(p), r = calc(p);
+  if (!r || !t || t.span < 14 || t.perWeek == null) return `<div class="note">💡 เมื่อมีข้อมูลครบ 2 สัปดาห์ขึ้นไป ระบบจะประเมิน “TDEE จากผลจริง” ให้ เพื่อปรับเป้าให้แม่นขึ้น</div>`;
+  const realTdee = r.target + (-t.perWeek * KCAL_PER_KG / 7);
+  const gap = realTdee - r.tdee;
+  let msg;
+  if (t.perWeek > -0.1) msg = 'น้ำหนักแทบไม่ลดใน 2–4 สัปดาห์ ลองเช็กว่ากินตามเป้าจริงไหม หรือลดเป้าลงอีก 150–200 kcal';
+  else if (-t.perWeek > r.w * 0.01) msg = 'ลดเร็วเกิน ~1% ของน้ำหนัก/สัปดาห์ เสี่ยงเสียกล้ามเนื้อ ลองเพิ่มแคลอีก 150–250 kcal และกินโปรตีนให้พอ';
+  else msg = 'กำลังลดในอัตราที่ดี ทำต่อไปได้เลย 👍';
+  return `<div class="alert" style="border-color:${C(id)}">
+    <b>TDEE จากผลจริง ≈ ${fmt(realTdee)} kcal</b> <span class="muted">(สูตรคำนวณได้ ${fmt(r.tdee)} · ต่างกัน ${gap > 0 ? '+' : ''}${fmt(gap)})</span><br>
+    ${msg}<br><span class="muted">*ประเมินโดยสมมติว่ากินตามเป้า ${fmt(r.target)} kcal/วัน สม่ำเสมอ</span></div>`;
+}
+
+function personPage(id) {
+  const p = S.people[id], e = sorted(p).reverse(), r = calc(p);
+  const rows = e.map((x, i) => {
+    const prev = e[i + 1], d = prev ? x.weight - prev.weight : null;
+    return `<tr><td>${fmtDate(x.date)}</td><td><b>${fmt(x.weight, 1)}</b></td>
+      <td class="${d < 0 ? 'good' : d > 0 ? 'bad' : 'muted'}">${d == null ? '–' : (d > 0 ? '+' : '') + fmt(d, 1)}</td>
+<td class="muted">${r ? fmt(calc(p, x.weight).target) : '–'}</td>
+      <td style="text-align:right"><button class="x" data-del="${x.id}" title="ลบ">✕</button></td></tr>`;
+  }).join('');
+  return `<div style="--c:${C(id)}">
+    ${goalCard(id)}
+    <div class="grid g2" style="margin-top:14px">
+      <div class="card">
+        <div class="person-head"><span class="pill"><span class="dot" style="background:${C(id)}"></span>${p.name} · แคลอรีวันนี้</span></div>
+        ${calorieBlock(id)}
+        ${insight(id)}
+      </div>
+      <div class="card">
+        <h2>บันทึกน้ำหนัก</h2>
+        ${quickAdd(id)}
+        <div class="note">ชั่งตอนเช้าหลังเข้าห้องน้ำ ก่อนกินอะไร · บันทึกวันเดิมซ้ำ = แก้ไขค่า</div>
+        ${statsBlock(id)}
+      </div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <div class="person-head"><h2 style="margin:0">กราฟของ${p.name}</h2>${modeSeg()}</div>
+      <div class="chart-box"><canvas id="chartOne"></canvas></div>
+    </div>
+    <div class="grid g2" style="margin-top:14px">
+      <div class="card">
+        <h2>ประวัติ (${e.length})</h2>
+        ${e.length ? `<div class="scroll" style="max-height:420px;overflow-y:auto"><table class="log"><thead><tr><th>วันที่</th><th>กก.</th><th>±</th><th>เป้า kcal</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="muted">ยังไม่มีข้อมูล</div>'}
+      </div>
+      <div class="card">
+        <h2>ข้อมูลร่างกาย & กิจกรรม</h2>
+        <div class="pf">
+          <label>เพศ (สำหรับสูตร BMR)<select data-f="sex"><option value="">– เลือก –</option><option value="m" ${p.sex === 'm' ? 'selected' : ''}>ชาย</option><option value="f" ${p.sex === 'f' ? 'selected' : ''}>หญิง</option></select></label>
+          <label>อายุ (ปี)<input type="number" data-f="age" value="${esc(p.age)}" min="10" max="100"></label>
+          <label>ส่วนสูง (ซม.)<input type="number" data-f="height" value="${esc(p.height)}" min="100" max="230"></label>
+          <label>ลักษณะงาน<select data-f="job">${Object.entries(JOBS).map(([k, j]) => `<option value="${k}" ${p.job === k ? 'selected' : ''}>${j.label}</option>`).join('')}</select></label>
+        </div>
+        <h3 style="margin-top:16px">การออกกำลังกาย (ประมาณคร่าว ๆ ต่อสัปดาห์)</h3>
+        <div class="note" style="margin-top:0">ใส่แค่ค่าเฉลี่ยพอ ไม่ต้องเป๊ะ — ระบบเอาแคลทั้งสัปดาห์มาเกลี่ยเป็นรายวัน แล้วนับตาม % ที่ตั้งในเป้าหมาย</div>
+        ${p.activities.map(a => `
+          <div class="act" data-act="${a.id}">
+            <label>ชื่อ<input data-a="name" value="${esc(a.name)}"></label>
+            <label>วิธีคิด<select data-a="mode"><option value="kcal" ${a.mode === 'kcal' ? 'selected' : ''}>ใส่ kcal เอง</option><option value="met" ${a.mode === 'met' ? 'selected' : ''}>MET × เวลา</option></select></label>
+            ${a.mode === 'kcal'
+              ? `<label>kcal/ครั้ง<input type="number" data-a="kcal" value="${esc(a.kcal)}"></label>`
+              : `<div class="dual"><label>MET<input type="number" step="0.1" data-a="met" value="${esc(a.met)}"></label><label>นาที/ครั้ง<input type="number" data-a="minutes" value="${esc(a.minutes)}"></label></div>`}
+            <label>ครั้ง/สัปดาห์<input type="number" min="0" max="14" data-a="perWeek" value="${esc(a.perWeek)}"></label>
+            <button class="x" data-actdel="${a.id}" title="ลบ">✕</button>
+          </div>
+          <div class="note" style="margin:2px 0 6px">≈ ${r ? fmt(actKcal(a, r.w)) : '–'} kcal/ครั้ง ${a.mode === 'met' ? '(net, หัก BMR ช่วงนั้นแล้ว)' : ''}</div>`).join('')}
+        <button class="ghost" id="addAct" style="margin-top:8px">+ เพิ่มกิจกรรม</button>
+        <div class="note">MET อ้างอิง: เดินเร็ว 4.3 · เดินเร็วมาก 5 · เวทเบา 3.5 · เวทหนัก 6 · แบดมินตัน (เล่นทั่วไป) 5.5–7 · วิ่ง 8–10<br>
+        ตัวเลข kcal จากนาฬิกามักสูงเกินจริง 10–30% ถ้าน้ำหนักไม่ลดตามคาด ลองลดตัวเลขนี้ลง</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function drawChart(canvasId, ids) {
+  const el = document.getElementById(canvasId);
+  if (!el || !window.Chart) return;
+  const pct = S.chartMode === 'pct';
+  const text = css('--muted'), grid = css('--border');
+  const datasets = [];
+  ids.forEach(id => {
+    const p = S.people[id], e = sorted(p);
+    if (!e.length) return;
+    const col = css(id === 'ton' ? '--ton' : '--pach');
+    const base = +e[0].weight;
+    const val = w => pct ? (w - base) / base * 100 : w;
+    const ma = movingAvg(e);
+    datasets.push({ label: `${p.name} (ชั่งจริง)`, data: e.map(x => ({ x: dayMs(x.date), y: val(+x.weight) })), showLine: false, pointRadius: 3, pointBackgroundColor: col + '66', pointBorderColor: col + '99', borderColor: col + '99' });
+    datasets.push({ label: `${p.name} (เฉลี่ย 7 วัน)`, data: e.map((x, i) => ({ x: dayMs(x.date), y: val(ma[i]) })), borderColor: col, backgroundColor: col, borderWidth: 2.5, pointRadius: 0, tension: .3 });
+    if (!pct && +p.goalWeight) {
+      const xs = [dayMs(e[0].date), Math.max(dayMs(e[e.length - 1].date), dayMs(e[0].date) + 7 * 864e5)];
+      datasets.push({ label: `${p.name} เป้า`, data: xs.map(x => ({ x, y: +p.goalWeight })), borderColor: col, borderDash: [6, 5], borderWidth: 1.2, pointRadius: 0 });
+    }
+  });
+  if (!datasets.length) { el.parentElement.innerHTML = '<div class="muted" style="display:grid;place-items:center;height:100%">ยังไม่มีข้อมูลน้ำหนัก — เริ่มบันทึกได้เลย</div>'; return; }
+  charts.push(new Chart(el, {
+    type: 'line', data: { datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'nearest', intersect: false },
+      plugins: {
+        legend: { labels: { color: text, boxWidth: 12, font: { family: 'IBM Plex Sans Thai' } } },
+        tooltip: { callbacks: {
+          title: it => new Date(it[0].parsed.x).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }),
+          label: it => `${it.dataset.label}: ${fmt(it.parsed.y, pct ? 2 : 1)}${pct ? '%' : ' กก.'}` } }
+      },
+      scales: {
+        x: { type: 'linear', grid: { color: grid }, ticks: { color: text, maxTicksLimit: 8, callback: v => new Date(v).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', timeZone: 'UTC' }) } },
+        y: { grid: { color: grid }, ticks: { color: text, callback: v => pct ? v.toFixed(1) + '%' : v } }
+      }
+    }
+  }));
+}
+
+// ---------- events ----------
+function bind() {
+  document.querySelectorAll('[data-go]').forEach(b => b.onclick = ev => { ev.preventDefault(); setTab(b.dataset.go); });
+  document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { S.chartMode = b.dataset.mode; save(); render(); });
+  document.querySelectorAll('form[data-add]').forEach(f => f.onsubmit = ev => {
+    ev.preventDefault();
+    const p = S.people[f.dataset.add], fd = new FormData(f);
+    const entry = { id: uid(), date: fd.get('date'), weight: +fd.get('weight') };
+    const i = p.entries.findIndex(x => x.date === entry.date);
+    if (i >= 0) p.entries[i] = { ...p.entries[i], ...entry, id: p.entries[i].id }; else p.entries.push(entry);
+    save(); render();
+  });
+  const id = S.tab, p = S.people[id];
+  if (!p) return;
+  document.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
+    if (!confirm('ลบรายการนี้?')) return;
+    p.entries = p.entries.filter(x => x.id !== b.dataset.del); save(); render();
+  });
+  document.querySelectorAll('[data-f]').forEach(inp => inp.onchange = () => { p[inp.dataset.f] = inp.dataset.f === 'exPct' ? +inp.value : inp.value; save(); render(); });
+  document.querySelectorAll('[data-chip]').forEach(b => b.onclick = ev => { ev.preventDefault(); p[b.dataset.chip] = +b.dataset.v; save(); render(); });
+  document.querySelectorAll('[data-act]').forEach(row => {
+    const a = p.activities.find(x => x.id === row.dataset.act);
+    row.querySelectorAll('[data-a]').forEach(inp => inp.onchange = () => { a[inp.dataset.a] = inp.type === 'number' ? +inp.value : inp.value; save(); render(); });
+  });
+  document.querySelectorAll('[data-actdel]').forEach(b => b.onclick = () => { p.activities = p.activities.filter(x => x.id !== b.dataset.actdel); save(); render(); });
+  const add = document.getElementById('addAct');
+  if (add) add.onclick = () => { p.activities.push({ id: uid(), name: 'กิจกรรมใหม่', mode: 'met', kcal: 200, met: 4, minutes: 30, perWeek: 1 }); save(); render(); };
+}
+
+function setTab(t) { S.tab = t; save(); render(); window.scrollTo(0, 0); }
+document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => setTab(b.dataset.tab));
+
+document.getElementById('exportBtn').onclick = () => {
+  const blob = new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' });
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `tdee-backup-${todayStr()}.json` });
+  a.click(); URL.revokeObjectURL(a.href);
+};
+document.getElementById('importFile').onchange = async ev => {
+  const f = ev.target.files[0]; if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    if (!data.people?.ton || !data.people?.pach) throw 0;
+    if (confirm('แทนที่ข้อมูลของทั้งสองคนด้วยไฟล์นี้?')) { S.people = data.people; save(); render(); }
+  } catch { alert('ไฟล์ไม่ถูกต้อง'); }
+  ev.target.value = '';
+};
+document.getElementById('logoutBtn').onclick = () => signOut(auth);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render);
+
+if (configured) {
+  user = undefined;
+  onAuthStateChanged(auth, u => {
+    user = u;
+    if (u) listen(); else { unsubs.forEach(f => f()); unsubs = []; loaded = new Set(); }
+    render();
+  });
+}
+render();
+</script>
+</body>
+</html>

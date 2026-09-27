@@ -1,0 +1,16 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Only ต้น and พัช can read/write. Replace the two emails below
+    // in the Firebase console (Firestore → Rules) — the real emails don't need to live in this public repo.
+    function isMember() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email in ['TON_EMAIL@gmail.com', 'PACH_EMAIL@gmail.com'];
+    }
+
+    match /people/{personId} {
+      allow read, write: if isMember() && personId in ['ton', 'pach'];
+    }
+  }
+}
