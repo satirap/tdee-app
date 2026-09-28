@@ -13,7 +13,7 @@
   --bg:#f6f5f2; --surface:#ffffff; --surface-2:#f0eee9; --text:#1d1c1a; --muted:#6b6862;
   --border:#e2dfd8; --ton:#2f6fdb; --patt:#e0613f; --good:#1f8a5b; --warn:#b7791f; --danger:#c43d3d;
   --ton-soft:rgba(47,111,219,.12); --patt-soft:rgba(224,97,63,.12);
-  --prot:#1f8a5b; --carb:#c9941a; --fat:#8a63d2;
+  --prot:#1f8a5b; --carb:#c9941a; --fat:#8a63d2; --on-macro:#fff;
   --radius:14px;
 }
 @media (prefers-color-scheme: dark){
@@ -21,14 +21,14 @@
     --bg:#141413; --surface:#1e1d1b; --surface-2:#282724; --text:#eceae4; --muted:#9d9a92;
     --border:#34322e; --ton:#6b9bf0; --patt:#f08766; --good:#4cc38a; --warn:#e0a84a; --danger:#ef6b6b;
     --ton-soft:rgba(107,155,240,.16); --patt-soft:rgba(240,135,102,.16);
-    --prot:#4cc38a; --carb:#e6b949; --fat:#a98bf0;
+    --prot:#4cc38a; --carb:#e6b949; --fat:#a98bf0; --on-macro:#141413;
   }
 }
 :root[data-theme="dark"]{
   --bg:#141413; --surface:#1e1d1b; --surface-2:#282724; --text:#eceae4; --muted:#9d9a92;
   --border:#34322e; --ton:#6b9bf0; --patt:#f08766; --good:#4cc38a; --warn:#e0a84a; --danger:#ef6b6b;
   --ton-soft:rgba(107,155,240,.16); --patt-soft:rgba(240,135,102,.16);
-  --prot:#4cc38a; --carb:#e6b949; --fat:#a98bf0;
+  --prot:#4cc38a; --carb:#e6b949; --fat:#a98bf0; --on-macro:#141413;
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font-family:"IBM Plex Sans Thai",system-ui,sans-serif;font-size:15px;line-height:1.55}
@@ -47,15 +47,27 @@ h3{font-size:15px;margin:0 0 8px}
 .person-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
 .pill{display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:17px}
 .dot{width:12px;height:12px;border-radius:50%}
-.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:8px 0 14px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin:8px 0 14px}
 .stat{background:var(--surface-2);border-radius:10px;padding:10px 12px;min-width:0}
 .stat .l{font-size:12px;color:var(--muted)}
 .stat .v{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
 .stat .v small{font-size:12px;font-weight:500;color:var(--muted)}
-.big{background:var(--c-soft);border-radius:12px;padding:14px;margin-bottom:12px}
-.big .l{font-size:13px;color:var(--muted)}
-.big .v{font-size:30px;font-weight:700;color:var(--c);font-variant-numeric:tabular-nums;line-height:1.2}
-.big .s{font-size:13px;color:var(--muted)}
+.person-card{border-top:4px solid var(--c)}
+.donut{display:block;width:100%;max-width:250px;margin:4px auto 0}
+.donut text{font-family:inherit;dominant-baseline:middle}
+.donut .dl{font-size:11px;font-weight:500;fill:var(--on-macro)}
+.donut .dg{font-size:13px;font-weight:700}
+.donut .dc{font-size:36px;font-weight:700;fill:var(--c)}
+.donut .du{font-size:12px;fill:var(--muted)}
+.energy-sub{text-align:center;font-size:13px;color:var(--muted);margin:2px 0 4px}
+details.prog{margin-top:14px;border-top:1px solid var(--border);padding-top:12px}
+details.prog summary{list-style:none;cursor:pointer}
+details.prog summary::-webkit-details-marker{display:none}
+details.prog .chev{display:inline-block;transition:transform .15s}
+details.prog[open] .chev{transform:rotate(180deg)}
+details.prog .stats{margin-bottom:0;grid-template-columns:repeat(3,1fr)}
+details.prog .stat .v{font-size:17px}
+.chart-box.tall{height:380px}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
 label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted);min-width:0}
 input,select{font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:7px 10px;min-width:0;width:100%}
@@ -70,13 +82,6 @@ button.x:hover{color:var(--danger)}
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
 .chips button{font:inherit;font-size:13px;border:1px solid var(--border);background:transparent;color:var(--text);border-radius:99px;padding:3px 11px;cursor:pointer}
 .chips button.on{background:var(--c);border-color:var(--c);color:#fff}
-.stack{display:flex;height:14px;border-radius:99px;overflow:hidden;margin:10px 0 8px;gap:2px}
-.stack i{display:block;height:100%}
-.macros{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.macro{background:var(--surface-2);border-radius:10px;padding:9px 11px;border-top:3px solid var(--m)}
-.macro .l{font-size:12px;color:var(--muted)}
-.macro .g{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
-.macro .k{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
 .foods{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
 .foods button{font:inherit;font-size:13px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:9px;padding:5px 10px;cursor:pointer;text-align:left;line-height:1.3}
 .foods button small{display:block;color:var(--muted);font-size:11px}
@@ -110,7 +115,7 @@ footer{margin-top:24px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;fo
   .stats{grid-template-columns:repeat(2,1fr)}
   .act{grid-template-columns:1fr 1fr}
   .act .dual{grid-column:1/-1}
-  .chart-box{height:260px}
+  .chart-box,.chart-box.tall{height:280px}
   .tabs button{padding:7px 12px}
 }
 </style>
@@ -303,15 +308,10 @@ const FOODS = [
   { name: 'เวย์ 1 สกู๊ป', p: 24, kcal: 120 },
   { name: 'ข้าวสวย 1 ทัพพี', p: 1.5, kcal: 80 }
 ];
+const openProg = {};
 const todayItems = p => p.today?.date === todayStr() ? p.today.items : [];
 
-function movingAvg(entries, win = 7) {
-  return entries.map(e => {
-    const t = dayMs(e.date);
-    const pts = entries.filter(x => { const tx = dayMs(x.date); return tx <= t && tx > t - win * 864e5; });
-    return pts.reduce((s, x) => s + +x.weight, 0) / pts.length;
-  });
-}
+
 
 function trend(p) {
   // linear regression over the last 28 days → kg/week
@@ -365,13 +365,12 @@ function render() {
   const app = document.getElementById('app');
   if (S.tab === 'overview') {
     app.innerHTML = `
-      <div class="grid g2">${['ton', 'patt'].map(summaryCard).join('')}</div>
-      <div class="card" style="margin-top:14px">
-        <div class="person-head"><h2 style="margin:0">กราฟน้ำหนัก</h2>${modeSeg()}</div>
-        <div class="chart-box"><canvas id="chartAll"></canvas></div>
-        <div class="note">จุด = น้ำหนักที่ชั่งจริง · เส้น = ค่าเฉลี่ย 7 วัน (ตัด noise จากน้ำ/เกลือ) · โหมด % ใช้เทียบความคืบหน้าของสองคนอย่างยุติธรรม</div>
-      </div>`;
-    drawChart('chartAll', ['ton', 'patt']);
+      <div class="card">
+        <div class="person-head"><h2 style="margin:0">น้ำหนัก</h2>${modeSeg()}</div>
+        <div class="chart-box tall"><canvas id="chartAll"></canvas></div>
+      </div>
+      <div class="grid g2" style="margin-top:14px">${IDS.map(summaryCard).join('')}</div>`;
+    drawChart('chartAll', IDS);
   } else {
     app.innerHTML = personPage(S.tab);
     drawChart('chartOne', [S.tab]);
@@ -383,76 +382,68 @@ function modeSeg() {
   return `<div class="seg">${[['kg', 'กก.'], ['pct', '% เปลี่ยนแปลง']].map(([k, l]) => `<button data-mode="${k}" class="${S.chartMode === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
 }
 
-function statsBlock(id) {
-  const p = S.people[id], e = sorted(p), r = calc(p), t = trend(p);
+function etaText(p) {
+  const r = calc(p), t = trend(p), cur = latest(p)?.weight, goal = +p.goalWeight;
+  if (!cur || !goal) return '–';
+  if (cur <= goal) return '🎉 ถึงเป้า';
+  const rate = t?.perWeek < 0 ? -t.perWeek : r?.expectedRate;
+  if (!rate) return '–';
+  const d = new Date(); d.setDate(d.getDate() + (cur - goal) / rate * 7);
+  return d.toLocaleDateString('th-TH', { month: 'short', year: '2-digit' });
+}
+
+function statsBlock(id, withExtras = true) {
+  const p = S.people[id], e = sorted(p), r = calc(p);
   const cur = e.length ? +e[e.length - 1].weight : null, start = e.length ? +e[0].weight : null;
   const diff = cur != null ? cur - start : null;
-  let proj = '–';
-  if (cur && +p.goalWeight && cur > +p.goalWeight) {
-    const rate = t?.perWeek < 0 ? -t.perWeek : r?.expectedRate;
-    if (rate) { const d = new Date(); d.setDate(d.getDate() + ((cur - p.goalWeight) / rate) * 7); proj = d.toLocaleDateString('th-TH', { month: 'short', year: '2-digit' }); }
-  } else if (cur && +p.goalWeight && cur <= +p.goalWeight) proj = '🎉 ถึงเป้า';
   return `<div class="stats">
     <div class="stat"><div class="l">น้ำหนักล่าสุด</div><div class="v">${fmt(cur, 1)} <small>กก.</small></div></div>
     <div class="stat"><div class="l">เปลี่ยนแปลงรวม</div><div class="v ${diff < 0 ? 'good' : diff > 0 ? 'bad' : ''}">${diff == null ? '–' : (diff > 0 ? '+' : '') + fmt(diff, 1)} <small>กก.</small></div></div>
-    <div class="stat"><div class="l">กก./สัปดาห์ (28 วัน)</div><div class="v ${t?.perWeek < 0 ? 'good' : ''}">${t?.perWeek == null ? '–' : (t.perWeek > 0 ? '+' : '') + fmt(t.perWeek, 2)}</div></div>
-    <div class="stat"><div class="l">BMI</div><div class="v">${fmt(r?.bmi, 1)}</div></div>
-    <div class="stat"><div class="l">เป้าหมาย</div><div class="v">${+p.goalWeight ? fmt(p.goalWeight, 1) : '–'} <small>กก.</small></div></div>
-    <div class="stat"><div class="l">คาดว่าถึงเป้า</div><div class="v" style="font-size:17px">${proj}</div></div>
+    <div class="stat"><div class="l">คาดว่าถึงเป้า</div><div class="v" style="font-size:17px">${etaText(p)}</div></div>
+    ${withExtras ? `<div class="stat"><div class="l">BMI</div><div class="v">${fmt(r?.bmi, 1)}</div></div>` : ''}
   </div>`;
 }
 
-function calorieBlock(id) {
-  const p = S.people[id], r = calc(p);
-  if (!r) return `<div class="alert">${!profileReady(p) ? `กรอก <b>เพศ อายุ ส่วนสูง</b> ในแท็บ “${p.name}” ก่อน` : 'บันทึกน้ำหนักอย่างน้อย 1 ครั้ง'} เพื่อคำนวณ TDEE</div>`;
-  const low = r.target < r.floor;
-  return `
-    <div class="big" style="--c:${C(id)};--c-soft:${CS(id)}">
-      <div class="l">ควรกินเฉลี่ยต่อวัน (TDEE − ${fmt(p.deficit)})</div>
-      <div class="v">${fmt(Math.max(r.target, r.floor))} kcal</div>
-      <div class="s">กินเท่ากันทุกวัน ไม่ต้องกินชดเชยวันที่ออกกำลังกาย · คาดลด ~${fmt(r.expectedRate, 2)} กก./สัปดาห์</div>
-    </div>
-    <div class="breakdown">
-      BMR <b>${fmt(r.bmr)}</b> × งาน ${JOBS[p.job].f} = <b>${fmt(r.base)}</b>
-      + ออกกำลังกายเฉลี่ย <b>${fmt(r.exPerDay)}</b>/วัน <span>(นับ ${r.exPct}%)</span>
-      = TDEE <b>${fmt(r.tdee)}</b> − <b>${fmt(p.deficit)}</b>
-    </div>
-    ${low ? `<div class="alert">เป้าคำนวณได้ ${fmt(r.target)} kcal ต่ำกว่าขั้นต่ำที่แนะนำ (${r.floor}) จึงแสดงเป็น ${r.floor} แทน · ลองลด “ลดวันละ” ลง</div>` : ''}`;
+// Donut of the day's calories: protein slice centred at the top, grams printed inside each slice,
+// total kcal in the middle.
+function donut(m) {
+  const cx = 120, cy = 120, R = 86, W = 46, CIRC = 2 * Math.PI * R, GAP = 3;
+  const segs = [['prot', 'โปรตีน', m.prot], ['carb', 'คาร์บ', m.carb], ['fat', 'ไขมัน', m.fat]];
+  let start = -Math.PI / 2 - m.prot.pct / 100 * Math.PI, arcs = '', labels = '';
+  for (const [k, name, x] of segs) {
+    const frac = x.pct / 100, ang = frac * 2 * Math.PI;
+    arcs += `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="var(--${k})" stroke-width="${W}"
+      stroke-dasharray="${Math.max(0, frac * CIRC - GAP)} ${CIRC}" transform="rotate(${start * 180 / Math.PI} ${cx} ${cy})">
+      <title>${name} ${fmt(x.g)} ก. · ${fmt(x.k)} kcal · ${fmt(x.pct)}%</title></circle>`;
+    const mid = start + ang / 2, lx = (cx + R * Math.cos(mid)).toFixed(1), ly = (cy + R * Math.sin(mid)).toFixed(1);
+    if (frac > 0.08) labels += `<text x="${lx}" y="${ly}" text-anchor="middle" class="dl"><tspan x="${lx}" dy="-0.55em">${name}</tspan><tspan x="${lx}" dy="1.25em" class="dg">${fmt(x.g)} ก.</tspan></text>`;
+    start += ang;
+  }
+  return `<svg class="donut" viewBox="0 0 240 240" role="img" aria-label="ควรกิน ${fmt(m.kcal)} kcal ต่อวัน: โปรตีน ${fmt(m.prot.g)} กรัม คาร์บ ${fmt(m.carb.g)} กรัม ไขมัน ${fmt(m.fat.g)} กรัม">
+    ${arcs}${labels}
+    <text x="${cx}" y="${cy - 6}" text-anchor="middle" class="dc">${fmt(m.kcal)}</text>
+    <text x="${cx}" y="${cy + 22}" text-anchor="middle" class="du">kcal / วัน</text></svg>`;
 }
 
-function macroBlock(id, compact = false) {
+function energyBlock(id) {
+  const p = S.people[id], r = calc(p), m = macros(p);
+  if (!r) return `<div class="alert">${!profileReady(p) ? `กรอก <b>เพศ อายุ ส่วนสูง</b> ในแท็บ “${p.name}” ก่อน` : 'บันทึกน้ำหนักอย่างน้อย 1 ครั้ง'} เพื่อคำนวณ TDEE</div>`;
+  return `${donut(m)}
+    <div class="energy-sub">คาดลด ~${fmt(r.expectedRate, 2)} กก./สัปดาห์</div>
+    ${r.target < r.floor ? `<div class="alert">เป้าคำนวณได้ ${fmt(r.target)} kcal ต่ำกว่าขั้นต่ำที่แนะนำ (${r.floor}) จึงแสดงเป็น ${r.floor} แทน · ลองลด “ลดวันละ” ลง</div>` : ''}`;
+}
+
+function macroSettings(id) {
   const p = S.people[id], m = macros(p);
   if (!m) return '';
-  const cell = (key, label, x, range) => `<div class="macro" style="--m:var(--${key})">
-    <div class="l">${label} · ${fmt(x.pct)}%</div>
-    <div class="g">${fmt(x.g)} ก.</div>
-    <div class="k">${fmt(x.k)} kcal${compact ? '' : ` · แนะนำ ${range}`}</div></div>`;
-  const html = `
-    <div class="stack" title="สัดส่วนแคลอรี">
-      <i style="width:${m.prot.pct}%;background:var(--prot)"></i><i style="width:${m.carb.pct}%;background:var(--carb)"></i><i style="width:${m.fat.pct}%;background:var(--fat)"></i>
-    </div>
-    <div class="macros">
-      ${cell('prot', 'โปรตีน', m.prot, '10–35%')}
-      ${cell('carb', 'คาร์บ', m.carb, '45–65%')}
-      ${cell('fat', 'ไขมัน', m.fat, '20–35%')}
-    </div>`;
-  if (compact) return html;
   const chips = (field, opts, val, unit) => `<div class="chips">${opts.map(v => `<button data-chip="${field}" data-v="${v}" class="${+val === v ? 'on' : ''}">${v}${unit}</button>`).join('')}</div>`;
-  const warn = m.carb.pct < 40 ? `<div class="alert">คาร์บเหลือแค่ ${fmt(m.carb.pct)}% (ต่ำกว่าช่วงแนะนำ 45–65%) เพราะแคลรวมน้อยเมื่อเทียบกับโปรตีน ลองลดไขมันเป็น 25% ได้</div>` : '';
-  return `${html}
-    <div class="breakdown" style="margin-top:10px">
-      โปรตีน <b>${m.perKg} ก.</b> × น้ำหนัก <b>${fmt(m.w, 1)}</b> = <b>${fmt(m.prot.g)} ก.</b> × 4 = <b>${fmt(m.prot.k)} kcal</b><br>
-      ไขมัน <b>${m.fatPct}%</b> ของ ${fmt(m.kcal)} = <b>${fmt(m.fat.k)} kcal</b> ÷ 9 = <b>${fmt(m.fat.g)} ก.</b><br>
-      คาร์บ = ที่เหลือ <b>${fmt(m.carb.k)} kcal</b> ÷ 4 = <b>${fmt(m.carb.g)} ก.</b><br>
-      ต่อมื้อ (3 มื้อ): โปรตีน ~<b>${fmt(m.prot.g / 3)} ก.</b> ≈ อกไก่สุก ~${fmt(m.prot.g / 3 / 0.31, 0)} ก.
-    </div>
+  return `
+    <div class="breakdown" style="margin-top:10px;text-align:center">ต่อมื้อ (3 มื้อ) โปรตีน ~<b>${fmt(m.prot.g / 3)} ก.</b> ≈ อกไก่สุก ~${fmt(m.prot.g / 3 / 0.31)} ก.</div>
     <div class="goal-grid" style="margin-top:10px">
       <label>โปรตีน (ก. ต่อ กก. น้ำหนักตัว)${chips('proteinPerKg', [1, 1.2, 1.6], m.perKg, '')}</label>
       <label>ไขมัน (% ของแคล)${chips('fatPct', [25, 30, 35], m.fatPct, '%')}</label>
     </div>
-    ${warn}
-    <div class="note">ช่วงแนะนำตาม AMDR (WHO/IOM): โปรตีน 10–35% · คาร์บ 45–65% · ไขมัน 20–35% ของพลังงาน · ช่วงลดไขมันถ้าเวทด้วย โปรตีน 1.2–1.6 ก./กก. ช่วยรักษากล้ามเนื้อ</div>
-`;
+    ${m.carb.pct < 40 ? `<div class="alert">คาร์บเหลือแค่ ${fmt(m.carb.pct)}% (แนะนำ 45–65%) ลองลดไขมันเป็น 25%</div>` : ''}`;
 }
 
 function eatenBlock(id) {
@@ -484,14 +475,11 @@ function eatenBlock(id) {
 
 function summaryCard(id) {
   const p = S.people[id];
-  return `<div class="card" style="--c:${C(id)}">
+  return `<div class="card person-card" style="--c:${C(id)}">
     <div class="person-head"><span class="pill"><span class="dot" style="background:${C(id)}"></span>${p.name}</span>
       <button class="ghost" data-go="${id}">รายละเอียด →</button></div>
-    ${calorieBlock(id)}
-    ${macroBlock(id, true)}
+    ${energyBlock(id)}
     ${progress(id)}
-    ${statsBlock(id)}
-    ${quickAdd(id)}
   </div>`;
 }
 
@@ -501,10 +489,13 @@ function progress(id) {
   if (!e.length) return '';
   const start = +e[0].weight, cur = +e[e.length - 1].weight, goal = +p.goalWeight;
   const pct = start > goal ? Math.min(100, Math.max(0, (start - cur) / (start - goal) * 100)) : 100;
-  return `<div style="margin-top:12px">
-    <div class="row" style="justify-content:space-between;font-size:13px"><span>🎯 ${fmt(start, 1)} → <b>${fmt(goal, 1)}</b> กก.</span><span class="muted">${fmt(pct)}% · เหลือ ${fmt(Math.max(0, cur - goal), 1)} กก.</span></div>
-    <div class="bar"><i style="width:${pct}%"></i></div>
-  </div>`;
+  return `<details class="prog" data-prog="${id}" ${openProg[id] ? 'open' : ''}>
+    <summary>
+      <div class="row" style="justify-content:space-between;font-size:13px"><span>🎯 ${fmt(start, 1)} → <b>${fmt(goal, 1)}</b> กก.</span><span class="muted">${fmt(pct)}% · เหลือ ${fmt(Math.max(0, cur - goal), 1)} กก. <span class="chev">▾</span></span></div>
+      <div class="bar"><i style="width:${pct}%"></i></div>
+    </summary>
+    ${statsBlock(id, false)}
+  </details>`;
 }
 
 function goalCard(id) {
@@ -568,28 +559,24 @@ function personPage(id) {
     ${goalCard(id)}
     <div class="grid g2" style="margin-top:14px">
       <div class="card">
-        <div class="person-head"><span class="pill"><span class="dot" style="background:${C(id)}"></span>${p.name} · แคลอรีวันนี้</span></div>
-        ${calorieBlock(id)}
+        <h2>🍽️ ควรกินต่อวัน</h2>
+        ${energyBlock(id)}
+        ${macroSettings(id)}
         ${insight(id)}
       </div>
-      <div class="card">
-        <h2>บันทึกน้ำหนัก</h2>
-        ${quickAdd(id)}
-        <div class="note">ชั่งตอนเช้าหลังเข้าห้องน้ำ ก่อนกินอะไร · บันทึกวันเดิมซ้ำ = แก้ไขค่า</div>
-        ${statsBlock(id)}
-      </div>
-    </div>
-    <div class="grid g2" style="margin-top:14px">
-      <div class="card"><h2>🍽️ โภชนาการต่อวัน</h2>${macroBlock(id)}</div>
       <div class="card"><h2>✅ วันนี้กินไปแล้ว</h2>${eatenBlock(id)}</div>
     </div>
     <div class="card" style="margin-top:14px">
-      <div class="person-head"><h2 style="margin:0">กราฟของ${p.name}</h2>${modeSeg()}</div>
+      <div class="person-head"><h2 style="margin:0">น้ำหนักของ${p.name}</h2>${modeSeg()}</div>
       <div class="chart-box"><canvas id="chartOne"></canvas></div>
     </div>
     <div class="grid g2" style="margin-top:14px">
       <div class="card">
-        <h2>ประวัติ (${e.length})</h2>
+        <h2>⚖️ บันทึกน้ำหนัก</h2>
+        ${quickAdd(id)}
+        <div class="note">ชั่งตอนเช้าหลังเข้าห้องน้ำ ก่อนกินอะไร · บันทึกวันเดิมซ้ำ = แก้ไขค่า</div>
+        ${statsBlock(id)}
+        <h3 style="margin-top:14px">ประวัติ (${e.length})</h3>
         ${e.length ? `<div class="scroll" style="max-height:420px;overflow-y:auto"><table class="log"><thead><tr><th>วันที่</th><th>กก.</th><th>±</th><th>เป้า kcal</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="muted">ยังไม่มีข้อมูล</div>'}
       </div>
       <div class="card">
@@ -621,40 +608,69 @@ function personPage(id) {
   </div>`;
 }
 
+// Draws a name pill above each person's first weigh-in and a "เป้า" tag at the end of each goal line.
+const tagPlugin = {
+  id: 'tags',
+  afterDatasetsDraw(chart) {
+    const { ctx, chartArea: a } = chart;
+    chart.data.datasets.forEach((ds, i) => {
+      const meta = chart.getDatasetMeta(i);
+      if (!ds.tag || meta.hidden || !meta.data.length) return;
+      ctx.save();
+      if (ds.goal) {
+        const pt = meta.data[meta.data.length - 1];
+        ctx.font = '500 11px "IBM Plex Sans Thai", sans-serif';
+        ctx.fillStyle = ds.borderColor; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+        ctx.fillText(ds.tag, Math.min(pt.x, a.right) - 2, pt.y - 4);
+      } else {
+        const pt = meta.data[0];
+        ctx.font = '600 12px "IBM Plex Sans Thai", sans-serif';
+        const w = ctx.measureText(ds.tag).width + 16, h = 22;
+        const x = Math.max(a.left, Math.min(pt.x - w / 2, a.right - w)), y = Math.max(a.top - 26, pt.y - h - 9);
+        ctx.fillStyle = ds.borderColor;
+        ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, 11) : ctx.rect(x, y, w, h); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(ds.tag, x + w / 2, y + h / 2 + 1);
+      }
+      ctx.restore();
+    });
+  }
+};
+
 function drawChart(canvasId, ids) {
   const el = document.getElementById(canvasId);
   if (!el || !window.Chart) return;
   const pct = S.chartMode === 'pct';
-  const text = css('--muted'), grid = css('--border');
+  const text = css('--muted'), grid = css('--border'), surface = css('--surface');
+  const people = ids.map(id => ({ id, p: S.people[id], e: sorted(S.people[id]) })).filter(x => x.e.length);
+  if (!people.length) { el.parentElement.innerHTML = '<div class="muted" style="display:grid;place-items:center;height:100%">ยังไม่มีข้อมูลน้ำหนัก — บันทึกได้ในแท็บของแต่ละคน</div>'; return; }
+  const allX = people.flatMap(x => x.e.map(v => dayMs(v.date)));
+  const x0 = Math.min(...allX), x1 = Math.max(Math.max(...allX), x0 + 7 * 864e5);
   const datasets = [];
-  ids.forEach(id => {
-    const p = S.people[id], e = sorted(p);
-    if (!e.length) return;
-    const col = css(id === 'ton' ? '--ton' : '--patt');
-    const base = +e[0].weight;
+  people.forEach(({ id, p, e }) => {
+    const col = css(id === 'ton' ? '--ton' : '--patt'), base = +e[0].weight;
     const val = w => pct ? (w - base) / base * 100 : w;
-    const ma = movingAvg(e);
-    datasets.push({ label: `${p.name} (ชั่งจริง)`, data: e.map(x => ({ x: dayMs(x.date), y: val(+x.weight) })), showLine: false, pointRadius: 3, pointBackgroundColor: col + '66', pointBorderColor: col + '99', borderColor: col + '99' });
-    datasets.push({ label: `${p.name} (เฉลี่ย 7 วัน)`, data: e.map((x, i) => ({ x: dayMs(x.date), y: val(ma[i]) })), borderColor: col, backgroundColor: col, borderWidth: 2.5, pointRadius: 0, tension: .3 });
-    if (!pct && +p.goalWeight) {
-      const xs = [dayMs(e[0].date), Math.max(dayMs(e[e.length - 1].date), dayMs(e[0].date) + 7 * 864e5)];
-      datasets.push({ label: `${p.name} เป้า`, data: xs.map(x => ({ x, y: +p.goalWeight })), borderColor: col, borderDash: [6, 5], borderWidth: 1.2, pointRadius: 0 });
-    }
+    datasets.push({ label: p.name, tag: p.name, data: e.map(v => ({ x: dayMs(v.date), y: val(+v.weight) })),
+      borderColor: col, backgroundColor: col, borderWidth: 2.5, tension: .3,
+      pointRadius: 3.5, pointHoverRadius: 6, pointBackgroundColor: surface, pointBorderColor: col, pointBorderWidth: 2 });
+    if (!pct && +p.goalWeight) datasets.push({ label: `เป้า ${p.name}`, tag: `เป้า ${p.name} ${fmt(p.goalWeight, 1)}`, goal: true,
+      data: [{ x: x0, y: +p.goalWeight }, { x: x1, y: +p.goalWeight }], borderColor: col, borderDash: [6, 5], borderWidth: 1.2, pointRadius: 0, pointHitRadius: 0 });
   });
-  if (!datasets.length) { el.parentElement.innerHTML = '<div class="muted" style="display:grid;place-items:center;height:100%">ยังไม่มีข้อมูลน้ำหนัก — เริ่มบันทึกได้เลย</div>'; return; }
   charts.push(new Chart(el, {
-    type: 'line', data: { datasets },
+    type: 'line', data: { datasets }, plugins: [tagPlugin],
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'nearest', intersect: false },
+      layout: { padding: { top: 34, right: 8 } },
       plugins: {
-        legend: { labels: { color: text, boxWidth: 12, font: { family: 'IBM Plex Sans Thai' } } },
-        tooltip: { callbacks: {
+        legend: { display: false },
+        tooltip: { filter: it => !it.dataset.goal, callbacks: {
           title: it => new Date(it[0].parsed.x).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }),
           label: it => `${it.dataset.label}: ${fmt(it.parsed.y, pct ? 2 : 1)}${pct ? '%' : ' กก.'}` } }
       },
       scales: {
-        x: { type: 'linear', grid: { color: grid }, ticks: { color: text, maxTicksLimit: 8, callback: v => new Date(v).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', timeZone: 'UTC' }) } },
-        y: { grid: { color: grid }, ticks: { color: text, callback: v => pct ? v.toFixed(1) + '%' : v } }
+        x: { type: 'linear', min: x0 - 864e5 / 2, max: x1 + 864e5 / 4, grid: { display: false }, border: { color: grid },
+          ticks: { color: text, maxTicksLimit: 7, callback: v => new Date(v).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', timeZone: 'UTC' }) } },
+        y: { grace: '8%', grid: { color: grid }, border: { display: false }, ticks: { color: text, callback: v => pct ? v.toFixed(1) + '%' : v } }
       }
     }
   }));
@@ -663,6 +679,7 @@ function drawChart(canvasId, ids) {
 // ---------- events ----------
 function bind() {
   document.querySelectorAll('[data-go]').forEach(b => b.onclick = ev => { ev.preventDefault(); setTab(b.dataset.go); });
+  document.querySelectorAll('details[data-prog]').forEach(d => d.ontoggle = () => { openProg[d.dataset.prog] = d.open; });
   document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { S.chartMode = b.dataset.mode; save(); render(); });
   document.querySelectorAll('form[data-add]').forEach(f => f.onsubmit = ev => {
     ev.preventDefault();
