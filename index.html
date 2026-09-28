@@ -96,7 +96,8 @@ button.x:hover{color:var(--danger)}
 .muted{color:var(--muted)} .good{color:var(--good)} .bad{color:var(--danger)} .warn{color:var(--warn)}
 .note{font-size:13px;color:var(--muted);margin-top:8px}
 .alert{background:var(--surface-2);border-left:3px solid var(--warn);padding:8px 12px;border-radius:6px;font-size:13px;margin-top:10px}
-.chart-box{position:relative;height:340px}
+.chart-box{position:relative;height:340px;overflow:hidden;width:100%;min-width:0}
+.chart-box canvas{position:absolute;inset:0;width:100%!important;height:100%!important}
 .seg{display:inline-flex;background:var(--surface-2);border-radius:9px;padding:3px}
 .seg button{border:0;background:transparent;color:var(--muted);font:inherit;font-size:13px;padding:4px 12px;border-radius:7px;cursor:pointer}
 .seg button.on{background:var(--surface);color:var(--text)}
@@ -608,21 +609,31 @@ function personPage(id) {
   </div>`;
 }
 
-// Draws a name pill above each person's first weigh-in and a "เป้า" tag at the end of each goal line.
+// Goal lines are drawn here (not as datasets) so they never catch hover/tap tooltips.
+// Also draws a name pill above each person's first weigh-in.
 const tagPlugin = {
   id: 'tags',
+  beforeDatasetsDraw(chart, _, opts) {
+    const { ctx, chartArea: a, scales: { y } } = chart;
+    (opts.goals || []).forEach(g => {
+      const py = y.getPixelForValue(g.y);
+      if (py < a.top || py > a.bottom) return;
+      ctx.save();
+      ctx.strokeStyle = g.color; ctx.lineWidth = 1.2; ctx.setLineDash([6, 5]);
+      ctx.beginPath(); ctx.moveTo(a.left, py); ctx.lineTo(a.right, py); ctx.stroke();
+      ctx.font = '500 11px "IBM Plex Sans Thai", sans-serif';
+      ctx.fillStyle = g.color; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+      ctx.fillText(g.tag, a.right - 2, py - 4);
+      ctx.restore();
+    });
+  },
   afterDatasetsDraw(chart) {
     const { ctx, chartArea: a } = chart;
     chart.data.datasets.forEach((ds, i) => {
       const meta = chart.getDatasetMeta(i);
       if (!ds.tag || meta.hidden || !meta.data.length) return;
       ctx.save();
-      if (ds.goal) {
-        const pt = meta.data[meta.data.length - 1];
-        ctx.font = '500 11px "IBM Plex Sans Thai", sans-serif';
-        ctx.fillStyle = ds.borderColor; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
-        ctx.fillText(ds.tag, Math.min(pt.x, a.right) - 2, pt.y - 4);
-      } else {
+      {
         const pt = meta.data[0];
         ctx.font = '600 12px "IBM Plex Sans Thai", sans-serif';
         const w = ctx.measureText(ds.tag).width + 16, h = 22;
@@ -646,15 +657,14 @@ function drawChart(canvasId, ids) {
   if (!people.length) { el.parentElement.innerHTML = '<div class="muted" style="display:grid;place-items:center;height:100%">ยังไม่มีข้อมูลน้ำหนัก — บันทึกได้ในแท็บของแต่ละคน</div>'; return; }
   const allX = people.flatMap(x => x.e.map(v => dayMs(v.date)));
   const x0 = Math.min(...allX), x1 = Math.max(Math.max(...allX), x0 + 7 * 864e5);
-  const datasets = [];
+  const datasets = [], goals = [];
   people.forEach(({ id, p, e }) => {
     const col = css(id === 'ton' ? '--ton' : '--patt'), base = +e[0].weight;
     const val = w => pct ? (w - base) / base * 100 : w;
     datasets.push({ label: p.name, tag: p.name, data: e.map(v => ({ x: dayMs(v.date), y: val(+v.weight) })),
       borderColor: col, backgroundColor: col, borderWidth: 2.5, tension: .3,
       pointRadius: 3.5, pointHoverRadius: 6, pointBackgroundColor: surface, pointBorderColor: col, pointBorderWidth: 2 });
-    if (!pct && +p.goalWeight) datasets.push({ label: `เป้า ${p.name}`, tag: `เป้า ${p.name} ${fmt(p.goalWeight, 1)}`, goal: true,
-      data: [{ x: x0, y: +p.goalWeight }, { x: x1, y: +p.goalWeight }], borderColor: col, borderDash: [6, 5], borderWidth: 1.2, pointRadius: 0, pointHitRadius: 0 });
+    if (!pct && +p.goalWeight) goals.push({ y: +p.goalWeight, color: col, tag: `เป้า ${p.name} ${fmt(p.goalWeight, 1)}` });
   });
   charts.push(new Chart(el, {
     type: 'line', data: { datasets }, plugins: [tagPlugin],
@@ -663,14 +673,15 @@ function drawChart(canvasId, ids) {
       layout: { padding: { top: 34, right: 8 } },
       plugins: {
         legend: { display: false },
-        tooltip: { filter: it => !it.dataset.goal, callbacks: {
+        tags: { goals },
+        tooltip: { callbacks: {
           title: it => new Date(it[0].parsed.x).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }),
           label: it => `${it.dataset.label}: ${fmt(it.parsed.y, pct ? 2 : 1)}${pct ? '%' : ' กก.'}` } }
       },
       scales: {
         x: { type: 'linear', min: x0 - 864e5 / 2, max: x1 + 864e5 / 4, grid: { display: false }, border: { color: grid },
           ticks: { color: text, maxTicksLimit: 7, callback: v => new Date(v).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', timeZone: 'UTC' }) } },
-        y: { grace: '8%', grid: { color: grid }, border: { display: false }, ticks: { color: text, callback: v => pct ? v.toFixed(1) + '%' : v } }
+        y: { grace: '8%', suggestedMin: goals.length ? Math.min(...goals.map(g => g.y)) : undefined, suggestedMax: goals.length ? Math.max(...goals.map(g => g.y)) : undefined, grid: { color: grid }, border: { display: false }, ticks: { color: text, callback: v => pct ? v.toFixed(1) + '%' : v } }
       }
     }
   }));
@@ -738,6 +749,13 @@ document.getElementById('importFile').onchange = async ev => {
 };
 document.getElementById('logoutBtn').onclick = () => lock();
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render);
+// Mobile Safari sometimes misses canvas resizes (rotation, pinch-zoom, back/forward cache) — force a refit.
+let resizeTimer;
+const refit = () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => charts.forEach(c => c.resize()), 150); };
+addEventListener('resize', refit);
+addEventListener('orientationchange', refit);
+window.visualViewport?.addEventListener('resize', refit);
+addEventListener('pageshow', e => { if (e.persisted) render(); });
 
 if (configured && pin) listen();
 render();
