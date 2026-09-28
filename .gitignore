@@ -1,2 +1,7 @@
 .DS_Store
 .claude/
+health-export/
+export.zip
+export.xml
+export_cda.xml
+*.gpx
