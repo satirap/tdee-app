@@ -1,12 +1,14 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Data lives at vault/{pin}/people/{ton|patt}. Only the real PIN is allowed,
-    // so a wrong PIN is rejected by Firebase itself.
+    // Everything lives under vault/{pin}/…:
+    //   vault/{pin}/people/{ton|patt}  — each person's profile, goals, weights, today's food
+    //   vault/{pin}/shared/foods       — the shared "My Food" library
+    // Only the real PIN is allowed, so a wrong PIN is rejected by Firebase itself.
     // Replace YOUR_PIN in the Firebase console (Firestore → Rules) only —
     // don't commit the real PIN to this public repo.
-    match /vault/{pin}/people/{personId} {
-      allow read, write: if pin == 'YOUR_PIN' && personId in ['ton', 'patt'];
+    match /vault/{pin}/{document=**} {
+      allow read, write: if pin == 'YOUR_PIN';
     }
   }
 }
