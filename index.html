@@ -120,6 +120,9 @@ table.log td{padding:7px 8px;border-bottom:1px solid var(--border);font-variant-
 .pf{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
 footer{margin-top:24px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:13px;color:var(--muted)}
 .hidden{display:none!important}
+[hidden]{display:none!important}
+.tag{font-size:10px;font-weight:600;color:var(--prot);border:1px solid currentColor;border-radius:4px;padding:0 3px;margin-left:4px}
+.searchbox{margin:8px 0 4px}
 .center{max-width:420px;margin:60px auto;text-align:center}
 .center p{color:var(--muted)}
 @media (max-width:560px){
@@ -155,6 +158,7 @@ footer{margin-top:24px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;fo
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
+import { STD_FOODS, STD_CATS, STD_TOP } from './foods-th.js';
 
 const PREF_KEY = 'tdee-prefs-v1';
 const PIN_KEY = 'tdee-pin';
@@ -207,7 +211,7 @@ let pin = null, loaded = new Set(), dbError = null, pinError = '', unsubs = [];
 try { pin = localStorage.getItem(PIN_KEY); } catch {}
 const personDoc = id => doc(db, 'vault', pin, 'people', id);
 const sharedDoc = () => doc(db, 'vault', pin, 'shared', 'foods');
-let sharedError = null, pickCat = 'all', pickerOpen = false, editingFood = null;
+let sharedError = null, pickerOpen = false, stdOpen = false, editingFood = null;
 const synced = {};
 
 function save() {
@@ -344,8 +348,34 @@ const foodList = () => Object.entries(S.shared?.foods || {}).map(([id, f]) => ({
 const catList = () => Object.entries(S.shared?.cats || {}).map(([id, c]) => ({ id, ...c })).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 const usesOf = id => S.shared?.uses?.[id] || 0;
 // Top picks = most-eaten by both people combined; newest foods fill in until there's history.
-const topFoods = (n = 10) => foodList().sort((a, b) => usesOf(b.id) - usesOf(a.id) || (b.created || 0) - (a.created || 0)).slice(0, n);
-const foodBtn = f => `<button data-food="${f.id}">${esc(f.name)}${f.serving ? ` <span class="muted">(${esc(f.serving)})</span>` : ''}<small>${fmt(foodKcal(f))} kcal · P ${num(f.p || 0)} · C ${num(f.c || 0)} · F ${num(f.f || 0)}</small></button>`;
+const STD_BY_ID = Object.fromEntries(STD_FOODS.map(f => [f.id, f]));
+const catName = f => f.std ? f.cat : (S.shared?.cats?.[f.cat]?.name || 'ไม่มีหมวด');
+const allFoods = () => [...foodList(), ...STD_FOODS];
+const getFood = id => S.shared?.foods?.[id] ? { id, ...S.shared.foods[id] } : STD_BY_ID[id];
+// Every category name from My Food and the reference list, My Food's own order first.
+const allCatNames = () => [...new Set([...catList().map(c => c.name), ...STD_CATS])];
+// Top picks = most-eaten by both people combined. With no history yet: newest My Food, then a default staple list.
+const topRank = f => [-usesOf(f.id), f.std ? (STD_TOP.includes(f.id) ? 1 : 2) : 0, -(f.created || 0), STD_TOP.indexOf(f.id)];
+const cmpRank = (a, b) => { const x = topRank(a), y = topRank(b); for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] - y[i]; return 0; };
+const topFoods = (n = 10) => allFoods().sort(cmpRank).slice(0, n);
+const foodBtn = f => `<button data-food="${f.id}" data-cat="${esc(catName(f))}" data-q="${esc(f.name.toLowerCase())}">${esc(f.name)}${f.serving ? ` <span class="muted">(${esc(f.serving)})</span>` : ''}${f.std ? '' : '<span class="tag">My</span>'}<small>${fmt(foodKcal(f))} kcal · P ${num(f.p || 0)} · C ${num(f.c || 0)} · F ${num(f.f || 0)}</small></button>`;
+// Search + category filter works on the rendered DOM so typing never re-renders (keeps focus/keyboard open).
+const filt = { pick: { cat: 'all', q: '' }, std: { cat: 'all', q: '' } };
+function filterBar(key) {
+  const st = filt[key];
+  return `<input class="searchbox" type="search" data-search="${key}" placeholder="ค้นหาเมนู…" value="${esc(st.q)}">
+    <div class="chips">${['all', ...allCatNames()].map(c => `<button type="button" data-fcat="${esc(c)}" class="${st.cat === c ? 'on' : ''}">${c === 'all' ? 'ทั้งหมด' : esc(c)}</button>`).join('')}</div>`;
+}
+function applyFilter(root) {
+  const st = filt[root.dataset.filter], q = st.q.trim().toLowerCase();
+  let shown = 0;
+  root.querySelectorAll('[data-q]').forEach(el => {
+    const ok = (st.cat === 'all' || el.dataset.cat === st.cat) && (!q || el.dataset.q.includes(q));
+    el.hidden = !ok; if (ok) shown++;
+  });
+  root.querySelectorAll('[data-group]').forEach(g => { g.hidden = !g.querySelector('[data-q]:not([hidden])'); });
+  const empty = root.querySelector('.empty'); if (empty) empty.hidden = shown > 0;
+}
 const rulesAlert = () => `<div class="alert">ใช้ My Food ไม่ได้: ต้องอัปเดต Firestore Rules ก่อน (ดูวิธีใน README.md) <span class="muted">(${esc(sharedError)})</span></div>`;
 const openProg = {};
 const todayItems = p => p.today?.date === todayStr() ? p.today.items : [];
@@ -500,15 +530,16 @@ function eatenBlock(id) {
       <div class="bar"><i style="width:${pct}%"></i></div></div>`;
   };
   const P = sum('p');
-  const cats = catList(), foods = foodList();
-  const shown = pickCat === 'all' ? foods : foods.filter(f => f.cat === pickCat);
-  const library = sharedError ? rulesAlert() : !S.shared ? '<div class="note">กำลังโหลด My Food…</div>' : !foods.length
-    ? `<div class="note">ยังไม่มีเมนูใน My Food · เพิ่มได้จากฟอร์มด้านล่าง (ติ๊ก “บันทึกเข้า My Food”) หรือที่แท็บ <a href="#" data-go="foods" style="color:inherit">My Food</a></div>`
-    : `<div class="sub">⭐ ยอดนิยม</div>
+  const cats = catList(), foods = allFoods();
+  const library = `${sharedError ? rulesAlert() : ''}
+      <div class="sub">⭐ ยอดนิยม</div>
       <div class="foods">${topFoods().map(foodBtn).join('')}</div>
-      <details class="picker" ${pickerOpen ? 'open' : ''}><summary>เลือกจาก My Food ทั้งหมด (${foods.length})</summary>
-        <div class="chips">${[{ id: 'all', name: 'ทั้งหมด' }, ...cats].map(c => `<button data-pickcat="${c.id}" class="${pickCat === c.id ? 'on' : ''}">${esc(c.name)}</button>`).join('')}</div>
-        <div class="foods">${shown.sort((a, b) => a.name.localeCompare(b.name, 'th')).map(foodBtn).join('') || '<span class="muted" style="font-size:13px">ไม่มีเมนูในหมวดนี้</span>'}</div>
+      <details class="picker" ${pickerOpen ? 'open' : ''}><summary>เลือกจากรายการอาหารทั้งหมด (${foods.length}) · <span class="tag" style="margin:0">My</span> = My Food</summary>
+        <div data-filter="pick">
+          ${filterBar('pick')}
+          <div class="foods">${foods.sort((a, b) => a.name.localeCompare(b.name, 'th')).map(foodBtn).join('')}</div>
+          <div class="muted empty" style="font-size:13px" hidden>ไม่พบเมนู</div>
+        </div>
       </details>`;
   return `
     ${meter('โปรตีน', P, m.prot.g, 'ก.', 'prot')}
@@ -572,7 +603,21 @@ function foodsPage() {
           <td class="num muted">${usesOf(f.id)} ครั้ง</td>
           <td style="text-align:right;white-space:nowrap"><button class="x" data-editfood="${f.id}" title="แก้ไข">✎</button><button class="x" data-delfood="${f.id}" title="ลบ">✕</button></td></tr>`).join('')}
       </tbody></table></div>` : '<div class="muted" style="font-size:13px">ยังไม่มีเมนู</div>'}
-    </div>`).join('')}`;
+    </div>`).join('')}
+    <details class="card picker" style="margin-top:14px" ${stdOpen ? 'open' : ''} id="stdList">
+      <summary><h2 style="display:inline">📚 ฐานข้อมูลมาตรฐาน</h2> <span class="muted">(${STD_FOODS.length} รายการ · ค่าประมาณต่อ 1 ที่)</span></summary>
+      <div class="note">ใช้ได้ทันทีในการ์ด “วันนี้กินไปแล้ว” · ถ้าร้านที่กินประจำให้ปริมาณต่างจากนี้ กด “+ My” เพื่อคัดลอกไป My Food แล้วแก้เป็นของตัวเอง</div>
+      <div data-filter="std">
+        ${filterBar('std')}
+        <div class="scroll"><table class="log"><thead><tr><th>เมนู</th><th class="num">kcal</th><th class="num">P</th><th class="num">C</th><th class="num">F</th><th></th></tr></thead><tbody>
+          ${STD_FOODS.map(f => `<tr data-q="${esc(f.name.toLowerCase())}" data-cat="${esc(f.cat)}">
+            <td><b>${esc(f.name)}</b> <span class="muted">${esc(f.serving)}</span></td>
+            <td class="num">${fmt(f.kcal)}</td><td class="num">${num(f.p)}</td><td class="num">${num(f.c)}</td><td class="num">${num(f.f)}</td>
+            <td style="text-align:right"><button class="ghost" style="font-size:12px;padding:2px 8px;white-space:nowrap" data-copystd="${f.id}" title="คัดลอกไป My Food">+ My</button></td></tr>`).join('')}
+        </tbody></table></div>
+        <div class="muted empty" style="font-size:13px" hidden>ไม่พบเมนู</div>
+      </div>
+    </details>`;
 }
 
 function summaryCard(id) {
@@ -818,10 +863,9 @@ function bind() {
     eat({ foodId: fid, name: f.name, p: +f.p || 0, c: +f.c || 0, f: +f.f || 0, kcal: foodKcal(f) });
     sharedWrite({ [`uses.${fid}`]: increment(1) });
   };
-  document.querySelectorAll('[data-food]').forEach(b => b.onclick = () => { const f = S.shared?.foods?.[b.dataset.food]; if (f) eatFood(b.dataset.food, f); });
+  document.querySelectorAll('[data-food]').forEach(b => b.onclick = () => { const f = getFood(b.dataset.food); if (f) eatFood(b.dataset.food, f); });
   document.querySelectorAll('[data-uneat]').forEach(b => b.onclick = () => { p.today.items = p.today.items.filter(x => x.id !== b.dataset.uneat); save(); render(); });
   document.querySelectorAll('[data-qty]').forEach(sel => sel.onchange = () => { const it = p.today.items.find(x => x.id === sel.dataset.qty); if (it) { it.qty = +sel.value; save(); render(); } });
-  document.querySelectorAll('[data-pickcat]').forEach(b => b.onclick = ev => { ev.preventDefault(); pickCat = b.dataset.pickcat; render(); });
   document.querySelectorAll('details.picker').forEach(d => d.ontoggle = () => { pickerOpen = d.open; });
   const cf = document.getElementById('customFood');
   if (cf) cf.onsubmit = ev => {
@@ -849,7 +893,32 @@ function readFood(fd) {
   return food;
 }
 
+function bindFilters() {
+  document.querySelectorAll('[data-filter]').forEach(root => {
+    const st = filt[root.dataset.filter];
+    const input = root.querySelector('[data-search]');
+    if (input) input.oninput = () => { st.q = input.value; applyFilter(root); };
+    root.querySelectorAll('[data-fcat]').forEach(b => b.onclick = () => {
+      st.cat = b.dataset.fcat;
+      root.querySelectorAll('[data-fcat]').forEach(x => x.classList.toggle('on', x === b));
+      applyFilter(root);
+    });
+    applyFilter(root);
+  });
+}
+
 function bindFoods() {
+  bindFilters();
+  const sl = document.getElementById('stdList');
+  if (sl) sl.ontoggle = () => { stdOpen = sl.open; };
+  document.querySelectorAll('[data-copystd]').forEach(b => b.onclick = () => {
+    if (sharedError || !S.shared) { alert('ใช้ My Food ไม่ได้ตอนนี้'); return; }
+    const f = STD_BY_ID[b.dataset.copystd];
+    let cat = catList().find(c => c.name === f.cat)?.id;
+    if (!cat) { cat = uid(); sharedWrite({ [`cats.${cat}`]: { name: f.cat, order: catList().length } }); }
+    editingFood = addFood({ name: f.name, serving: f.serving, cat, p: f.p, c: f.c, f: f.f, kcal: f.kcal });
+    render(); window.scrollTo(0, 0);
+  });
   const ff = document.getElementById('foodForm');
   if (ff) ff.onsubmit = ev => {
     ev.preventDefault();
