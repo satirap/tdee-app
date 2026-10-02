@@ -68,6 +68,11 @@ details.prog[open] .chev{transform:rotate(180deg)}
 details.prog .stats{margin-bottom:0;grid-template-columns:repeat(3,1fr)}
 details.prog .stat .v{font-size:17px}
 .chart-box.tall{height:380px}
+.chart-box.short{height:220px}
+.intake-sum{display:flex;gap:32px;margin:2px 0 12px}
+.intake-sum .l{display:block;font-size:12px;color:var(--muted)}
+.intake-sum b{font-size:24px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.intake-sum small{color:var(--muted);font-size:12px;margin-left:4px}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
 label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted);min-width:0}
 input,select{font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:7px 10px;min-width:0;width:100%}
@@ -134,6 +139,7 @@ footer{margin-top:24px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;fo
   .act{grid-template-columns:1fr 1fr}
   .act .dual{grid-column:1/-1}
   .chart-box,.chart-box.tall{height:280px}
+  .chart-box.short{height:200px}
   .tabs button{padding:7px 12px}
 }
 </style>
@@ -182,7 +188,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 
 function defaults() {
   return {
-    tab: 'overview', chartMode: 'kg',
+    tab: 'overview', chartMode: 'kg', intakeRange: 7,
     people: {
       ton: {
         name: 'ต้น', sex: '', age: '', height: '', goalWeight: '', deficit: 500, job: 'light',
@@ -219,14 +225,25 @@ let sharedError = null, editingFood = null;
 const synced = {};
 
 function save() {
-  try { localStorage.setItem(PREF_KEY, JSON.stringify({ tab: S.tab, chartMode: S.chartMode })); } catch {}
+  try { localStorage.setItem(PREF_KEY, JSON.stringify({ tab: S.tab, chartMode: S.chartMode, intakeRange: S.intakeRange })); } catch {}
   if (!pin || loaded.size < IDS.length) return;
   for (const id of IDS) {
+    recordDay(S.people[id]);
     const json = JSON.stringify(S.people[id]);
     if (json === synced[id]) continue;
     synced[id] = json;
     setDoc(personDoc(id), JSON.parse(json)).catch(onDbError);
   }
+}
+
+// Daily kcal total plus that day's target, so a week's balance is judged against the target in effect each day.
+function recordDay(p) {
+  const d = todayStr(), items = todayItems(p);
+  p.days ||= {};
+  if (!items.length) { delete p.days[d]; return; }
+  const kcal = Math.round(items.reduce((s, x) => s + (+x.kcal || 0) * (x.qty ?? 1), 0));
+  const target = Math.round(macros(p)?.kcal ?? p.days[d]?.target ?? 0);
+  p.days[d] = { kcal, target };
 }
 
 function onDbError(err) {
@@ -504,6 +521,7 @@ function render() {
   } else {
     app.innerHTML = personPage(S.tab);
     drawChart('chartOne', [S.tab]);
+    drawIntake(S.tab);
   }
   bind();
 }
@@ -689,6 +707,69 @@ function insight(id) {
     ${msg}<br><span class="muted">*ประเมินโดยสมมติว่ากินตามเป้า ${fmt(r.target)} kcal/วัน สม่ำเสมอ</span></div>`;
 }
 
+function lastDays(p, n) {
+  const t0 = dayMs(todayStr());
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(t0 - (n - 1 - i) * 864e5).toISOString().slice(0, 10);
+    return { d, ...(p.days?.[d] || {}) };
+  });
+}
+
+function intakeCard(id) {
+  const n = S.intakeRange, logged = lastDays(S.people[id], n).filter(x => x.kcal != null);
+  const bal = logged.reduce((s, x) => s + x.kcal - x.target, 0);
+  const avg = logged.length ? logged.reduce((s, x) => s + x.kcal, 0) / logged.length : null;
+  const seg = `<div class="seg">${[[7, '7 วัน'], [30, '30 วัน']].map(([k, l]) => `<button data-range="${k}" class="${n === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+  return `<div class="card" style="margin-top:14px">
+    <div class="person-head"><h2 style="margin:0">แคลอรีรายวัน</h2>${seg}</div>
+    <div class="intake-sum">
+      <div><span class="l">รวม ${logged.length}/${n} วัน</span>${logged.length
+        ? `<b class="${bal > 0 ? 'bad' : 'good'}">${bal > 0 ? 'เกิน' : 'ขาด'} ${fmt(Math.abs(bal))}</b><small>kcal</small>` : '<b class="muted">–</b>'}</div>
+      <div><span class="l">เฉลี่ยต่อวัน</span>${avg == null ? '<b class="muted">–</b>' : `<b>${fmt(avg)}</b><small>kcal</small>`}</div>
+    </div>
+    <div class="chart-box short"><canvas id="intakeChart"></canvas></div>
+  </div>`;
+}
+
+function drawIntake(id) {
+  const el = document.getElementById('intakeChart');
+  if (!el || !window.Chart) return;
+  const p = S.people[id], n = S.intakeRange, days = lastDays(p, n);
+  const text = css('--muted'), grid = css('--border'), col = css('--good'), over = css('--danger');
+  const nowTarget = Math.round(macros(p)?.kcal || 0);
+  const WD = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+  const label = d => { const t = new Date(dayMs(d)); return n === 7 ? [WD[t.getUTCDay()], String(t.getUTCDate())] : String(t.getUTCDate()); };
+  const soft = c => c + 'd9';
+  charts.push(new Chart(el, {
+    data: {
+      labels: days.map(x => label(x.d)),
+      datasets: [
+        { type: 'bar', data: days.map(x => x.kcal ?? null), backgroundColor: days.map(x => soft(x.kcal > x.target ? over : col)), hoverBackgroundColor: days.map(x => x.kcal > x.target ? over : col),
+          borderRadius: 6, borderSkipped: false, barPercentage: n === 7 ? .55 : .75, categoryPercentage: 1 },
+        { type: 'line', target: true, data: days.map(x => x.target || nowTarget || null), borderColor: text, borderWidth: 1.5,
+          borderDash: [5, 4], pointRadius: 0, pointHitRadius: 0, stepped: 'middle', spanGaps: true }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          filter: it => !it.dataset.target && it.raw != null,
+          callbacks: {
+            title: it => new Date(dayMs(days[it[0].dataIndex].d)).toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'UTC' }),
+            label: it => { const x = days[it.dataIndex], d = x.kcal - x.target; return `${fmt(x.kcal)} kcal · ${d > 0 ? 'เกิน' : 'ขาด'} ${fmt(Math.abs(d))}`; }
+          }
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, border: { color: grid }, ticks: { color: text, autoSkip: true, maxRotation: 0, maxTicksLimit: n === 7 ? 7 : 10 } },
+        y: { beginAtZero: true, grace: '10%', grid: { color: grid }, border: { display: false }, ticks: { color: text, maxTicksLimit: 5 } }
+      }
+    }
+  }));
+}
+
 function personPage(id) {
   const p = S.people[id], e = sorted(p).reverse(), r = calc(p);
   const rows = e.map((x, i) => {
@@ -709,6 +790,7 @@ function personPage(id) {
       </div>
       <div class="card"><h2>✅ วันนี้กินไปแล้ว</h2>${eatenBlock(id)}</div>
     </div>
+    ${intakeCard(id)}
     <div class="card" style="margin-top:14px">
       <div class="person-head"><h2 style="margin:0">น้ำหนักของ${p.name}</h2>${modeSeg()}</div>
       <div class="chart-box"><canvas id="chartOne"></canvas></div>
@@ -826,6 +908,7 @@ function bind() {
   document.querySelectorAll('[data-go]').forEach(b => b.onclick = ev => { ev.preventDefault(); setTab(b.dataset.go); });
   document.querySelectorAll('details[data-prog]').forEach(d => d.ontoggle = () => { openProg[d.dataset.prog] = d.open; });
   document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { S.chartMode = b.dataset.mode; save(); render(); });
+  document.querySelectorAll('[data-range]').forEach(b => b.onclick = () => { S.intakeRange = +b.dataset.range; save(); render(); });
   document.querySelectorAll('form[data-add]').forEach(f => f.onsubmit = ev => {
     ev.preventDefault();
     const p = S.people[f.dataset.add], fd = new FormData(f);
