@@ -189,7 +189,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 
 function defaults() {
   return {
-    tab: 'overview', chartMode: 'kg', intakeRange: 7,
+    tab: 'overview', intakeRange: 7,
     people: {
       ton: {
         name: 'ต้น', sex: '', age: '', height: '', goalWeight: '', deficit: 500, job: 'light',
@@ -226,7 +226,7 @@ let sharedError = null, editingFood = null;
 const synced = {};
 
 function save() {
-  try { localStorage.setItem(PREF_KEY, JSON.stringify({ tab: S.tab, chartMode: S.chartMode, intakeRange: S.intakeRange })); } catch {}
+  try { localStorage.setItem(PREF_KEY, JSON.stringify({ tab: S.tab, intakeRange: S.intakeRange })); } catch {}
   if (!pin || loaded.size < IDS.length) return;
   for (const id of IDS) {
     recordDay(S.people[id]);
@@ -512,7 +512,7 @@ function render() {
   if (S.tab === 'overview') {
     app.innerHTML = `
       <div class="card">
-        <div class="person-head"><h2 style="margin:0">น้ำหนัก</h2>${modeSeg()}</div>
+        <h2>น้ำหนัก</h2>
         <div class="chart-box tall"><canvas id="chartAll"></canvas></div>
       </div>
       <div class="grid g2" style="margin-top:14px">${IDS.map(summaryCard).join('')}</div>`;
@@ -527,9 +527,6 @@ function render() {
   bind();
 }
 
-function modeSeg() {
-  return `<div class="seg">${[['kg', 'กก.'], ['pct', '% เปลี่ยนแปลง']].map(([k, l]) => `<button data-mode="${k}" class="${S.chartMode === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
-}
 
 // Planned path: straight line from the first weigh-in at the expected rate (computed at the start weight, so it doesn't drift) down to the goal.
 function plan(p) {
@@ -814,7 +811,7 @@ function personPage(id) {
     </div>
     ${intakeCard(id)}
     <div class="card" style="margin-top:14px">
-      <div class="person-head" style="margin-bottom:2px"><h2 style="margin:0">น้ำหนักของ${p.name}</h2>${modeSeg()}</div>
+      <h2 style="margin-bottom:2px">น้ำหนักของ${p.name}</h2>
       <div class="plan-note">${planStatus(p)}</div>
       <div class="chart-box"><canvas id="chartOne"></canvas></div>
     </div>
@@ -890,7 +887,6 @@ const tagPlugin = {
 function drawChart(canvasId, ids) {
   const el = document.getElementById(canvasId);
   if (!el || !window.Chart) return;
-  const pct = S.chartMode === 'pct';
   const text = css('--muted'), grid = css('--border'), surface = css('--surface');
   const people = ids.map(id => ({ id, p: S.people[id], e: sorted(S.people[id]) })).filter(x => x.e.length);
   if (!people.length) { el.parentElement.innerHTML = '<div class="muted" style="display:grid;place-items:center;height:100%">ยังไม่มีข้อมูลน้ำหนัก — บันทึกได้ในแท็บของแต่ละคน</div>'; return; }
@@ -899,13 +895,12 @@ function drawChart(canvasId, ids) {
   const x0 = Math.min(...allX), x1 = Math.max(Math.max(...allX), x0 + 7 * 864e5);
   const datasets = [], goals = [];
   people.forEach(({ id, p, e }) => {
-    const col = css(id === 'ton' ? '--ton' : '--patt'), base = +e[0].weight;
-    const val = w => pct ? (w - base) / base * 100 : w;
-    datasets.push({ label: p.name, tag: p.name, data: e.map(v => ({ x: dayMs(v.date), y: val(+v.weight) })),
+    const col = css(id === 'ton' ? '--ton' : '--patt');
+    datasets.push({ label: p.name, tag: p.name, data: e.map(v => ({ x: dayMs(v.date), y: +v.weight })),
       borderColor: col, backgroundColor: col, borderWidth: 2.5, tension: .3,
       pointRadius: 3.5, pointHoverRadius: 6, pointBackgroundColor: surface, pointBorderColor: col, pointBorderWidth: 2 });
-    if (!pct && +p.goalWeight) goals.push({ y: +p.goalWeight, color: col, tag: `เป้า ${p.name} ${fmt(p.goalWeight, 1)}` });
-    if (pl) datasets.push({ label: 'แผน', plan: true, data: [{ x: pl.d0, y: val(pl.w0) }, { x: pl.end, y: val(pl.goal) }],
+    if (+p.goalWeight) goals.push({ y: +p.goalWeight, color: col, tag: `เป้า ${p.name} ${fmt(p.goalWeight, 1)}` });
+    if (pl) datasets.push({ label: 'แผน', plan: true, data: [{ x: pl.d0, y: pl.w0 }, { x: pl.end, y: pl.goal }],
       borderColor: col + '80', borderWidth: 1.5, borderDash: [3, 4], pointRadius: 0, pointHitRadius: 0, fill: false });
   });
   charts.push(new Chart(el, {
@@ -918,12 +913,12 @@ function drawChart(canvasId, ids) {
         tags: { goals },
         tooltip: { filter: it => !it.dataset.plan, callbacks: {
           title: it => new Date(it[0].parsed.x).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }),
-          label: it => `${it.dataset.label}: ${fmt(it.parsed.y, pct ? 2 : 1)}${pct ? '%' : ' กก.'}` } }
+          label: it => `${it.dataset.label}: ${fmt(it.parsed.y, 1)} กก.` } }
       },
       scales: {
         x: { type: 'linear', min: x0 - 864e5 / 2, max: x1 + 864e5 / 4, grid: { display: false }, border: { color: grid },
           ticks: { color: text, maxTicksLimit: 7, callback: v => new Date(v).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', timeZone: 'UTC' }) } },
-        y: { grace: '8%', suggestedMin: goals.length ? Math.min(...goals.map(g => g.y)) : undefined, suggestedMax: goals.length ? Math.max(...goals.map(g => g.y)) : undefined, grid: { color: grid }, border: { display: false }, ticks: { color: text, callback: v => pct ? v.toFixed(1) + '%' : +v.toFixed(1) } }
+        y: { grace: '8%', suggestedMin: goals.length ? Math.min(...goals.map(g => g.y)) : undefined, suggestedMax: goals.length ? Math.max(...goals.map(g => g.y)) : undefined, grid: { color: grid }, border: { display: false }, ticks: { color: text, callback: v => +v.toFixed(1) } }
       }
     }
   }));
@@ -933,7 +928,6 @@ function drawChart(canvasId, ids) {
 function bind() {
   document.querySelectorAll('[data-go]').forEach(b => b.onclick = ev => { ev.preventDefault(); setTab(b.dataset.go); });
   document.querySelectorAll('details[data-prog]').forEach(d => d.ontoggle = () => { openProg[d.dataset.prog] = d.open; });
-  document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { S.chartMode = b.dataset.mode; save(); render(); });
   document.querySelectorAll('[data-range]').forEach(b => b.onclick = () => { S.intakeRange = +b.dataset.range; save(); render(); });
   document.querySelectorAll('form[data-add]').forEach(f => f.onsubmit = ev => {
     ev.preventDefault();
