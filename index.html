@@ -69,6 +69,7 @@ details.prog .stats{margin-bottom:0;grid-template-columns:repeat(3,1fr)}
 details.prog .stat .v{font-size:17px}
 .chart-box.tall{height:380px}
 .chart-box.short{height:220px}
+.plan-note{font-size:13px;margin-bottom:6px;min-height:1px}
 .intake-sum{display:flex;gap:32px;margin:2px 0 12px}
 .intake-sum .l{display:block;font-size:12px;color:var(--muted)}
 .intake-sum b{font-size:24px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
@@ -530,6 +531,27 @@ function modeSeg() {
   return `<div class="seg">${[['kg', 'กก.'], ['pct', '% เปลี่ยนแปลง']].map(([k, l]) => `<button data-mode="${k}" class="${S.chartMode === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
 }
 
+// Planned path: straight line from the first weigh-in at the expected rate (computed at the start weight, so it doesn't drift) down to the goal.
+function plan(p) {
+  const e = sorted(p), goal = +p.goalWeight;
+  if (!e.length || !goal) return null;
+  const d0 = dayMs(e[0].date), w0 = +e[0].weight, rate = calc(p, w0)?.expectedRate;
+  if (!rate || w0 <= goal) return null;
+  const perDay = rate / 7;
+  return { d0, w0, goal, rate, end: d0 + (w0 - goal) / perDay * 864e5, at: t => Math.max(goal, w0 - perDay * (t - d0) / 864e5) };
+}
+
+function planStatus(p) {
+  const pl = plan(p), e = sorted(p);
+  if (!pl) return '';
+  const legend = `<span class="muted">┈ แผน −${fmt(pl.rate, 2)} กก./สัปดาห์</span>`;
+  if (e.length < 2) return legend;
+  const last = e[e.length - 1], diff = +last.weight - pl.at(dayMs(last.date));
+  const st = Math.abs(diff) < 0.3 ? '<span class="good">ตามแผน</span>'
+    : diff > 0 ? `<span class="bad">ช้ากว่าแผน ${fmt(diff, 1)} กก.</span>` : `<span class="good">เร็วกว่าแผน ${fmt(-diff, 1)} กก.</span>`;
+  return `${legend} · ${st}`;
+}
+
 function etaText(p) {
   const r = calc(p), t = trend(p), cur = latest(p)?.weight, goal = +p.goalWeight;
   if (!cur || !goal) return '–';
@@ -792,7 +814,8 @@ function personPage(id) {
     </div>
     ${intakeCard(id)}
     <div class="card" style="margin-top:14px">
-      <div class="person-head"><h2 style="margin:0">น้ำหนักของ${p.name}</h2>${modeSeg()}</div>
+      <div class="person-head" style="margin-bottom:2px"><h2 style="margin:0">น้ำหนักของ${p.name}</h2>${modeSeg()}</div>
+      <div class="plan-note">${planStatus(p)}</div>
       <div class="chart-box"><canvas id="chartOne"></canvas></div>
     </div>
     <div class="grid g2" style="margin-top:14px">
@@ -871,7 +894,8 @@ function drawChart(canvasId, ids) {
   const text = css('--muted'), grid = css('--border'), surface = css('--surface');
   const people = ids.map(id => ({ id, p: S.people[id], e: sorted(S.people[id]) })).filter(x => x.e.length);
   if (!people.length) { el.parentElement.innerHTML = '<div class="muted" style="display:grid;place-items:center;height:100%">ยังไม่มีข้อมูลน้ำหนัก — บันทึกได้ในแท็บของแต่ละคน</div>'; return; }
-  const allX = people.flatMap(x => x.e.map(v => dayMs(v.date)));
+  const single = ids.length === 1, pl = single ? plan(people[0].p) : null;
+  const allX = people.flatMap(x => x.e.map(v => dayMs(v.date))).concat(pl ? [pl.end] : []);
   const x0 = Math.min(...allX), x1 = Math.max(Math.max(...allX), x0 + 7 * 864e5);
   const datasets = [], goals = [];
   people.forEach(({ id, p, e }) => {
@@ -881,6 +905,8 @@ function drawChart(canvasId, ids) {
       borderColor: col, backgroundColor: col, borderWidth: 2.5, tension: .3,
       pointRadius: 3.5, pointHoverRadius: 6, pointBackgroundColor: surface, pointBorderColor: col, pointBorderWidth: 2 });
     if (!pct && +p.goalWeight) goals.push({ y: +p.goalWeight, color: col, tag: `เป้า ${p.name} ${fmt(p.goalWeight, 1)}` });
+    if (pl) datasets.push({ label: 'แผน', plan: true, data: [{ x: pl.d0, y: val(pl.w0) }, { x: pl.end, y: val(pl.goal) }],
+      borderColor: col + '80', borderWidth: 1.5, borderDash: [3, 4], pointRadius: 0, pointHitRadius: 0, fill: false });
   });
   charts.push(new Chart(el, {
     type: 'line', data: { datasets }, plugins: [tagPlugin],
@@ -890,7 +916,7 @@ function drawChart(canvasId, ids) {
       plugins: {
         legend: { display: false },
         tags: { goals },
-        tooltip: { callbacks: {
+        tooltip: { filter: it => !it.dataset.plan, callbacks: {
           title: it => new Date(it[0].parsed.x).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }),
           label: it => `${it.dataset.label}: ${fmt(it.parsed.y, pct ? 2 : 1)}${pct ? '%' : ' กก.'}` } }
       },
