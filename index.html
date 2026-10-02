@@ -515,7 +515,6 @@ function macroSettings(id) {
   if (!m) return '';
   const chips = (field, opts, val, unit) => `<div class="chips">${opts.map(v => `<button data-chip="${field}" data-v="${v}" class="${+val === v ? 'on' : ''}">${v}${unit}</button>`).join('')}</div>`;
   return `
-    <div class="breakdown" style="margin-top:10px;text-align:center">ต่อมื้อ (3 มื้อ) โปรตีน ~<b>${fmt(m.prot.g / 3)} ก.</b> ≈ อกไก่สุก ~${fmt(m.prot.g / 3 / 0.31)} ก.</div>
     <div class="goal-grid" style="margin-top:10px">
       <label>โปรตีน (ก. ต่อ กก. น้ำหนักตัว)${chips('proteinPerKg', [1, 1.2, 1.6], m.perKg, '')}</label>
       <label>ไขมัน (% ของแคล)${chips('fatPct', [25, 30, 35], m.fatPct, '%')}</label>
@@ -824,7 +823,7 @@ function drawChart(canvasId, ids) {
       scales: {
         x: { type: 'linear', min: x0 - 864e5 / 2, max: x1 + 864e5 / 4, grid: { display: false }, border: { color: grid },
           ticks: { color: text, maxTicksLimit: 7, callback: v => new Date(v).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', timeZone: 'UTC' }) } },
-        y: { grace: '8%', suggestedMin: goals.length ? Math.min(...goals.map(g => g.y)) : undefined, suggestedMax: goals.length ? Math.max(...goals.map(g => g.y)) : undefined, grid: { color: grid }, border: { display: false }, ticks: { color: text, callback: v => pct ? v.toFixed(1) + '%' : v } }
+        y: { grace: '8%', suggestedMin: goals.length ? Math.min(...goals.map(g => g.y)) : undefined, suggestedMax: goals.length ? Math.max(...goals.map(g => g.y)) : undefined, grid: { color: grid }, border: { display: false }, ticks: { color: text, callback: v => pct ? v.toFixed(1) + '%' : +v.toFixed(1) } }
       }
     }
   }));
