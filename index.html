@@ -82,21 +82,26 @@ button.x:hover{color:var(--danger)}
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
 .chips button{font:inherit;font-size:13px;border:1px solid var(--border);background:transparent;color:var(--text);border-radius:99px;padding:3px 11px;cursor:pointer}
 .chips button.on{background:var(--c);border-color:var(--c);color:#fff}
-.foods{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
-.foods button{font:inherit;font-size:13px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:9px;padding:5px 10px;cursor:pointer;text-align:left;line-height:1.3}
-.foods button small{display:block;color:var(--muted);font-size:11px}
-.foods button:hover{border-color:var(--prot)}
-.eaten{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.eaten{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
 .eaten span{font-size:12px;background:var(--surface-2);border-radius:99px;padding:2px 4px 2px 10px;display:inline-flex;align-items:center;gap:4px}
 .eaten select{font-size:12px;padding:1px 4px;width:auto;border-radius:6px}
-.sub{font-size:12px;color:var(--muted);margin:12px 0 2px;font-weight:600}
-details.picker{margin-top:6px}
-details.picker summary{cursor:pointer;font-size:13px;color:var(--muted)}
-.foodform{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;align-items:end}
-.foodform .wide{grid-column:span 2}
-.cat-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-.cat-chips span{display:inline-flex;align-items:center;gap:2px;background:var(--surface-2);border-radius:99px;padding:3px 4px 3px 12px;font-size:13px}
-.cat-chips span button.name{border:0;background:transparent;color:var(--text);font:inherit;cursor:pointer;padding:0}
+.foodform{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;align-items:end}
+.foodform .wide{grid-column:1/-1}
+.foodform button{white-space:nowrap}
+.foodform .btn:last-child{grid-column:span 2}
+.search{margin-top:16px}
+.search input{padding:11px 14px;border-radius:12px;background:var(--surface-2);border-color:transparent}
+.results{margin-top:4px}
+.res{display:flex;align-items:center;gap:2px;border-bottom:1px solid var(--border)}
+.res:last-child{border-bottom:0}
+.res-main{flex:1;min-width:0;display:flex;flex-direction:column;border:0;background:transparent;color:var(--text);font:inherit;text-align:left;padding:10px 6px;border-radius:8px}
+button.res-main{cursor:pointer}
+button.res-main:hover{background:var(--surface-2)}
+.res .n{font-size:14px;font-weight:500}
+.res .s{color:var(--muted);font-weight:400;margin-left:6px;font-size:13px}
+.res .m{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.empty{font-size:13px;color:var(--muted);padding:12px 6px 8px}
+.addnew{padding:0 6px}
 table.log td.num,table.log th.num{text-align:right}
 .meter{margin:8px 0}
 .meter .row{justify-content:space-between;font-size:13px}
@@ -121,8 +126,7 @@ table.log td{padding:7px 8px;border-bottom:1px solid var(--border);font-variant-
 footer{margin-top:24px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:13px;color:var(--muted)}
 .hidden{display:none!important}
 [hidden]{display:none!important}
-.tag{font-size:10px;font-weight:600;color:var(--prot);border:1px solid currentColor;border-radius:4px;padding:0 3px;margin-left:4px}
-.searchbox{margin:8px 0 4px}
+.tag{font-size:10px;font-weight:600;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:0 4px;margin-left:6px;vertical-align:1px}
 .center{max-width:420px;margin:60px auto;text-align:center}
 .center p{color:var(--muted)}
 @media (max-width:560px){
@@ -158,7 +162,7 @@ footer{margin-top:24px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;fo
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
-import { STD_FOODS, STD_CATS, STD_TOP } from './foods-th.js';
+import { STD_FOODS } from './foods-th.js';
 
 const PREF_KEY = 'tdee-prefs-v1';
 const PIN_KEY = 'tdee-pin';
@@ -211,7 +215,7 @@ let pin = null, loaded = new Set(), dbError = null, pinError = '', unsubs = [];
 try { pin = localStorage.getItem(PIN_KEY); } catch {}
 const personDoc = id => doc(db, 'vault', pin, 'people', id);
 const sharedDoc = () => doc(db, 'vault', pin, 'shared', 'foods');
-let sharedError = null, pickerOpen = false, stdOpen = false, editingFood = null;
+let sharedError = null, editingFood = null;
 const synced = {};
 
 function save() {
@@ -250,9 +254,7 @@ function listen() {
     if (!snap.exists()) {
       if (!seeded) {
         seeded = true;
-        const cats = {};
-        FOOD_CATS_DEFAULT.forEach((name, i) => { cats[uid()] = { name, order: i }; });
-        setDoc(sharedDoc(), { cats, foods: {}, uses: {} }, { merge: true }).catch(onSharedError);
+        setDoc(sharedDoc(), { foods: {}, uses: {} }, { merge: true }).catch(onSharedError);
       }
       return;
     }
@@ -346,41 +348,92 @@ function macros(p) {
     fat: { g: fatG, k: fatK, pct: pct(fatK) } };
 }
 
-const FOOD_CATS_DEFAULT = ['โปรตีน / เนื้อสัตว์', 'ข้าว / แป้ง', 'อาหารจานเดียว', 'ผัก / ผลไม้', 'นม / เครื่องดื่ม', 'ขนม / ของว่าง'];
 const QTYS = [0.5, 1, 1.5, 2, 3];
 const num = n => fmt(n, Number.isInteger(+n) ? 0 : 1);
 const foodKcal = f => +f.kcal || (+f.p || 0) * 4 + (+f.c || 0) * 4 + (+f.f || 0) * 9;
 const foodList = () => Object.entries(S.shared?.foods || {}).map(([id, f]) => ({ id, ...f }));
-const catList = () => Object.entries(S.shared?.cats || {}).map(([id, c]) => ({ id, ...c })).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 const usesOf = id => S.shared?.uses?.[id] || 0;
-// Top picks = most-eaten by both people combined; newest foods fill in until there's history.
 const STD_BY_ID = Object.fromEntries(STD_FOODS.map(f => [f.id, f]));
-const catName = f => f.std ? f.cat : (S.shared?.cats?.[f.cat]?.name || 'ไม่มีหมวด');
 const allFoods = () => [...foodList(), ...STD_FOODS];
 const getFood = id => S.shared?.foods?.[id] ? { id, ...S.shared.foods[id] } : STD_BY_ID[id];
-// Every category name from My Food and the reference list, My Food's own order first.
-const allCatNames = () => [...new Set([...catList().map(c => c.name), ...STD_CATS])];
-// Top picks = most-eaten by both people combined. With no history yet: newest My Food, then a default staple list.
-const topRank = f => [-usesOf(f.id), f.std ? (STD_TOP.includes(f.id) ? 1 : 2) : 0, -(f.created || 0), STD_TOP.indexOf(f.id)];
-const cmpRank = (a, b) => { const x = topRank(a), y = topRank(b); for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] - y[i]; return 0; };
-const topFoods = (n = 10) => allFoods().sort(cmpRank).slice(0, n);
-const foodBtn = f => `<button data-food="${f.id}" data-cat="${esc(catName(f))}" data-q="${esc(f.name.toLowerCase())}">${esc(f.name)}${f.serving ? ` <span class="muted">(${esc(f.serving)})</span>` : ''}${f.std ? '' : '<span class="tag">My</span>'}<small>${fmt(foodKcal(f))} kcal · P ${num(f.p || 0)} · C ${num(f.c || 0)} · F ${num(f.f || 0)}</small></button>`;
-// Search + category filter works on the rendered DOM so typing never re-renders (keeps focus/keyboard open).
-const filt = { pick: { cat: 'all', q: '' }, std: { cat: 'all', q: '' } };
-function filterBar(key) {
-  const st = filt[key];
-  return `<input class="searchbox" type="search" data-search="${key}" placeholder="ค้นหาเมนู…" value="${esc(st.q)}">
-    <div class="chips">${['all', ...allCatNames()].map(c => `<button type="button" data-fcat="${esc(c)}" class="${st.cat === c ? 'on' : ''}">${c === 'all' ? 'ทั้งหมด' : esc(c)}</button>`).join('')}</div>`;
+
+// Best matches first: most eaten, then My Food over the reference list, then names that start with the query.
+function searchFoods(q) {
+  q = q.trim().toLowerCase();
+  if (!q) return [];
+  const rank = f => [-usesOf(f.id), f.std ? 1 : 0, f.name.toLowerCase().startsWith(q) ? 0 : 1];
+  return allFoods().filter(f => f.name.toLowerCase().includes(q)).sort((a, b) => {
+    const x = rank(a), y = rank(b);
+    for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] - y[i];
+    return a.name.localeCompare(b.name, 'th');
+  }).slice(0, 10);
 }
-function applyFilter(root) {
-  const st = filt[root.dataset.filter], q = st.q.trim().toLowerCase();
-  let shown = 0;
-  root.querySelectorAll('[data-q]').forEach(el => {
-    const ok = (st.cat === 'all' || el.dataset.cat === st.cat) && (!q || el.dataset.q.includes(q));
-    el.hidden = !ok; if (ok) shown++;
-  });
-  root.querySelectorAll('[data-group]').forEach(g => { g.hidden = !g.querySelector('[data-q]:not([hidden])'); });
-  const empty = root.querySelector('.empty'); if (empty) empty.hidden = shown > 0;
+
+// Query survives re-renders; results are drawn straight into the DOM so typing never loses focus.
+const searchQ = {};
+const foodSearch = (key, mode) => `<div class="search" data-search="${key}" data-mode="${mode}">
+    <input type="search" placeholder="ค้นหาอาหาร" value="${esc(searchQ[key] || '')}" autocomplete="off">
+    <div class="results"></div>
+  </div>`;
+
+const macroLine = f => `${fmt(foodKcal(f))} kcal · P ${num(f.p || 0)} · C ${num(f.c || 0)} · F ${num(f.f || 0)}`;
+const nutritionFields = (v = {}) => `
+      <label class="wide">ปริมาณต่อ 1 ที่<input name="serving" value="${esc(v.serving ?? '')}" placeholder="เช่น 1 จาน, 100 ก."></label>
+      <label>โปรตีน ก.<input name="p" type="number" step="0.1" min="0" value="${esc(v.p ?? '')}"></label>
+      <label>คาร์บ ก.<input name="c" type="number" step="0.1" min="0" value="${esc(v.c ?? '')}"></label>
+      <label>ไขมัน ก.<input name="f" type="number" step="0.1" min="0" value="${esc(v.f ?? '')}"></label>
+      <label>kcal<input name="kcal" type="number" min="0" value="${esc(v.kcal || '')}" placeholder="อัตโนมัติ"></label>`;
+
+function drawResults(root) {
+  const q = root.querySelector('input').value.trim(), out = root.querySelector('.results');
+  const manage = root.dataset.mode === 'manage';
+  if (!q) { out.innerHTML = ''; return; }
+  const hits = searchFoods(q);
+  if (!hits.length) {
+    out.innerHTML = `<div class="empty">ไม่พบ “${esc(q)}” · เพิ่มเป็นเมนูใหม่</div>
+      <form class="foodform addnew">
+        <label class="wide">ชื่อ<input name="name" value="${esc(q)}" required></label>
+        ${nutritionFields()}
+        <button class="btn" type="submit">${manage ? 'เพิ่มเมนู' : 'เพิ่มและกิน'}</button>
+      </form>`;
+    return;
+  }
+  out.innerHTML = hits.map(f => {
+    const body = `<span class="n">${esc(f.name)}${f.serving ? `<span class="s">${esc(f.serving)}</span>` : ''}${f.std ? '' : '<span class="tag">My</span>'}</span><span class="m">${macroLine(f)}</span>`;
+    if (!manage) return `<div class="res"><button class="res-main" data-pick="${f.id}">${body}</button></div>`;
+    const acts = f.std
+      ? `<button class="x" data-copystd="${f.id}" title="คัดลอกไป My Food เพื่อแก้ไข">✎</button>`
+      : `<button class="x" data-editfood="${f.id}" title="แก้ไข">✎</button><button class="x" data-delfood="${f.id}" title="ลบ">✕</button>`;
+    return `<div class="res"><div class="res-main">${body}</div>${acts}</div>`;
+  }).join('');
+}
+
+function bindSearch(key, { pick, add }) {
+  const root = document.querySelector(`[data-search="${key}"]`);
+  if (!root) return;
+  const input = root.querySelector('input');
+  input.oninput = () => { searchQ[key] = input.value; drawResults(root); };
+  root.onclick = ev => {
+    const t = ev.target.closest('button');
+    if (!t) return;
+    if (t.dataset.pick) { searchQ[key] = ''; pick(t.dataset.pick); }
+    else if (t.dataset.editfood) { editingFood = t.dataset.editfood; render(); window.scrollTo(0, 0); }
+    else if (t.dataset.delfood) {
+      const id = t.dataset.delfood;
+      if (confirm(`ลบ “${S.shared.foods[id].name}” ออกจาก My Food?`)) sharedWrite({ [`foods.${id}`]: deleteField(), [`uses.${id}`]: deleteField() });
+    } else if (t.dataset.copystd) {
+      if (sharedError || !S.shared) { alert('ใช้ My Food ไม่ได้ตอนนี้'); return; }
+      editingFood = t.dataset.copystd; render(); window.scrollTo(0, 0);
+    }
+  };
+  root.onsubmit = ev => {
+    ev.preventDefault();
+    const food = readFood(new FormData(ev.target));
+    if (!food) return;
+    searchQ[key] = '';
+    add(food);
+  };
+  drawResults(root);
 }
 const rulesAlert = () => `<div class="alert">ใช้ My Food ไม่ได้: ต้องอัปเดต Firestore Rules ก่อน (ดูวิธีใน README.md) <span class="muted">(${esc(sharedError)})</span></div>`;
 const openProg = {};
@@ -535,94 +588,33 @@ function eatenBlock(id) {
       <div class="bar"><i style="width:${pct}%"></i></div></div>`;
   };
   const P = sum('p');
-  const cats = catList(), foods = allFoods();
-  const library = `${sharedError ? rulesAlert() : ''}
-      <div class="sub">⭐ ยอดนิยม</div>
-      <div class="foods">${topFoods().map(foodBtn).join('')}</div>
-      <details class="picker" ${pickerOpen ? 'open' : ''}><summary>เลือกจากรายการอาหารทั้งหมด (${foods.length}) · <span class="tag" style="margin:0">My</span> = My Food</summary>
-        <div data-filter="pick">
-          ${filterBar('pick')}
-          <div class="foods">${foods.sort((a, b) => a.name.localeCompare(b.name, 'th')).map(foodBtn).join('')}</div>
-          <div class="muted empty" style="font-size:13px" hidden>ไม่พบเมนู</div>
-        </div>
-      </details>`;
   return `
     ${meter('โปรตีน', P, m.prot.g, 'ก.', 'prot')}
     ${meter('คาร์บ', sum('c'), m.carb.g, 'ก.', 'carb')}
     ${meter('ไขมัน', sum('f'), m.fat.g, 'ก.', 'fat')}
     ${meter('แคลอรี', sum('kcal'), m.kcal, 'kcal', 'text')}
     ${P >= m.prot.g ? '<div class="good" style="font-size:13px">✓ โปรตีนถึงเป้าแล้ววันนี้</div>' : ''}
-    ${items.length ? `<div class="sub">กินไปแล้ววันนี้</div><div class="eaten">${items.map(x => `<span>${esc(x.name)}
+    ${items.length ? `<div class="eaten">${items.map(x => `<span>${esc(x.name)}
       <select data-qty="${x.id}" title="จำนวนที่">${QTYS.map(q => `<option value="${q}" ${(x.qty ?? 1) == q ? 'selected' : ''}>×${q}</option>`).join('')}</select>
-      <button class="x" data-uneat="${x.id}" title="ลบ">✕</button></span>`).join('')}</div>` : '<div class="note">ยังไม่ได้เพิ่มอะไรวันนี้ · รีเซ็ตอัตโนมัติทุกวัน</div>'}
-    ${library}
-    <div class="sub">เพิ่มเมนูอื่น</div>
-    <form class="foodform" id="customFood">
-      <label class="wide">ชื่อ<input name="name" placeholder="เช่น ข้าวกะเพราไก่" required></label>
-      <label>โปรตีน ก.<input name="p" type="number" step="0.1" min="0"></label>
-      <label>คาร์บ ก.<input name="c" type="number" step="0.1" min="0"></label>
-      <label>ไขมัน ก.<input name="f" type="number" step="0.1" min="0"></label>
-      <label>kcal<input name="kcal" type="number" min="0" placeholder="อัตโนมัติ"></label>
-      ${S.shared && !sharedError ? `<label style="flex-direction:row;align-items:center;gap:6px;color:var(--text)"><input type="checkbox" name="keep" style="width:auto" checked> บันทึกเข้า My Food</label>
-      <label>หมวด<select name="cat">${cats.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></label>` : ''}
-      <button class="btn" type="submit">+ เพิ่ม</button>
-    </form>`;
+      <button class="x" data-uneat="${x.id}" title="ลบ">✕</button></span>`).join('')}</div>` : ''}
+    ${sharedError ? rulesAlert() : ''}
+    ${foodSearch('eat-' + id, 'eat')}`;
 }
 
 function foodsPage() {
   if (sharedError) return `<div class="card">${rulesAlert()}</div>`;
-  if (!S.shared) return '<div class="center"><p>กำลังโหลด My Food…</p></div>';
-  const cats = catList(), foods = foodList();
-  const ed = editingFood && S.shared.foods?.[editingFood];
-  const v = k => ed ? esc(ed[k] ?? '') : '';
-  const groups = [...cats, { id: '', name: 'ไม่มีหมวด' }].map(c => ({ ...c, items: foods.filter(f => c.id ? f.cat === c.id : !cats.some(x => x.id === f.cat)) })).filter(g => g.id || g.items.length);
-  return `
-    <div class="card">
-      <h2>🍱 My Food <span class="muted" style="font-size:13px;font-weight:400">· ใช้ร่วมกันทั้งต้นและพัช</span></h2>
-      <form class="foodform" id="foodForm">
-        <label class="wide">ชื่อเมนู<input name="name" value="${v('name')}" required placeholder="เช่น อกไก่ย่าง"></label>
-        <label class="wide">ปริมาณต่อ 1 ที่<input name="serving" value="${v('serving')}" placeholder="เช่น 100 ก., 1 จาน"></label>
-        <label class="wide">หมวด<select name="cat">${cats.map(c => `<option value="${c.id}" ${ed?.cat === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>
-        <label>โปรตีน ก.<input name="p" type="number" step="0.1" min="0" value="${v('p')}"></label>
-        <label>คาร์บ ก.<input name="c" type="number" step="0.1" min="0" value="${v('c')}"></label>
-        <label>ไขมัน ก.<input name="f" type="number" step="0.1" min="0" value="${v('f')}"></label>
-        <label>kcal<input name="kcal" type="number" min="0" value="${v('kcal')}" placeholder="อัตโนมัติ"></label>
-        <button class="btn" type="submit">${ed ? 'บันทึกการแก้ไข' : '+ เพิ่มเมนู'}</button>
-        ${ed ? '<button class="ghost" type="button" id="cancelEdit">ยกเลิก</button>' : ''}
-      </form>
-      <div class="note">ไม่ใส่ kcal ระบบคำนวณให้จาก โปรตีน×4 + คาร์บ×4 + ไขมัน×9</div>
-    </div>
-    <div class="card" style="margin-top:14px">
-      <h2>หมวดหมู่</h2>
-      <div class="cat-chips">
-        ${cats.map(c => `<span><button class="name" data-renamecat="${c.id}" title="แตะเพื่อเปลี่ยนชื่อ">${esc(c.name)}</button><button class="x" data-delcat="${c.id}" title="ลบหมวด">✕</button></span>`).join('')}
-        <form id="catForm" class="row" style="gap:6px"><input name="name" placeholder="หมวดใหม่" style="width:140px"><button class="ghost" type="submit">+ เพิ่ม</button></form>
-      </div>
-    </div>
-    ${groups.map(g => `<div class="card" style="margin-top:14px">
-      <h3>${esc(g.name)} <span class="muted" style="font-weight:400">(${g.items.length})</span></h3>
-      ${g.items.length ? `<div class="scroll"><table class="log"><thead><tr><th>เมนู</th><th class="num">kcal</th><th class="num">P</th><th class="num">C</th><th class="num">F</th><th class="num">กินแล้ว</th><th></th></tr></thead><tbody>
-        ${g.items.sort((a, b) => a.name.localeCompare(b.name, 'th')).map(f => `<tr>
-          <td><b>${esc(f.name)}</b>${f.serving ? ` <span class="muted">${esc(f.serving)}</span>` : ''}</td>
-          <td class="num">${fmt(foodKcal(f))}</td><td class="num">${num(f.p || 0)}</td><td class="num">${num(f.c || 0)}</td><td class="num">${num(f.f || 0)}</td>
-          <td class="num muted">${usesOf(f.id)} ครั้ง</td>
-          <td style="text-align:right;white-space:nowrap"><button class="x" data-editfood="${f.id}" title="แก้ไข">✎</button><button class="x" data-delfood="${f.id}" title="ลบ">✕</button></td></tr>`).join('')}
-      </tbody></table></div>` : '<div class="muted" style="font-size:13px">ยังไม่มีเมนู</div>'}
-    </div>`).join('')}
-    <details class="card picker" style="margin-top:14px" ${stdOpen ? 'open' : ''} id="stdList">
-      <summary><h2 style="display:inline">📚 ฐานข้อมูลมาตรฐาน</h2> <span class="muted">(${STD_FOODS.length} รายการ · ค่าประมาณต่อ 1 ที่)</span></summary>
-      <div class="note">ใช้ได้ทันทีในการ์ด “วันนี้กินไปแล้ว” · ถ้าร้านที่กินประจำให้ปริมาณต่างจากนี้ กด “+ My” เพื่อคัดลอกไป My Food แล้วแก้เป็นของตัวเอง</div>
-      <div data-filter="std">
-        ${filterBar('std')}
-        <div class="scroll"><table class="log"><thead><tr><th>เมนู</th><th class="num">kcal</th><th class="num">P</th><th class="num">C</th><th class="num">F</th><th></th></tr></thead><tbody>
-          ${STD_FOODS.map(f => `<tr data-q="${esc(f.name.toLowerCase())}" data-cat="${esc(f.cat)}">
-            <td><b>${esc(f.name)}</b> <span class="muted">${esc(f.serving)}</span></td>
-            <td class="num">${fmt(f.kcal)}</td><td class="num">${num(f.p)}</td><td class="num">${num(f.c)}</td><td class="num">${num(f.f)}</td>
-            <td style="text-align:right"><button class="ghost" style="font-size:12px;padding:2px 8px;white-space:nowrap" data-copystd="${f.id}" title="คัดลอกไป My Food">+ My</button></td></tr>`).join('')}
-        </tbody></table></div>
-        <div class="muted empty" style="font-size:13px" hidden>ไม่พบเมนู</div>
-      </div>
-    </details>`;
+  if (!S.shared) return '<div class="center"><p>กำลังโหลด…</p></div>';
+  // Editing a reference food only drafts a copy; it's added to My Food on save.
+  const ed = editingFood && (S.shared.foods?.[editingFood] || STD_BY_ID[editingFood]);
+  return `<div class="card foods-page">
+    <h2>${ed ? (ed.std ? 'เพิ่มเข้า My Food' : 'แก้ไขเมนู') : 'My Food'}</h2>
+    ${ed ? `<form class="foodform" id="editFood">
+        <label class="wide">ชื่อ<input name="name" value="${esc(ed.name)}" required></label>
+        ${nutritionFields(ed)}
+        <button class="btn" type="submit">บันทึก</button>
+        <button class="ghost" type="button" id="cancelEdit">ยกเลิก</button>
+      </form>` : foodSearch('manage', 'manage')}
+  </div>`;
 }
 
 function summaryCard(id) {
@@ -859,18 +851,12 @@ function bind() {
     eat({ foodId: fid, name: f.name, p: +f.p || 0, c: +f.c || 0, f: +f.f || 0, kcal: foodKcal(f) });
     sharedWrite({ [`uses.${fid}`]: increment(1) });
   };
-  document.querySelectorAll('[data-food]').forEach(b => b.onclick = () => { const f = getFood(b.dataset.food); if (f) eatFood(b.dataset.food, f); });
   document.querySelectorAll('[data-uneat]').forEach(b => b.onclick = () => { p.today.items = p.today.items.filter(x => x.id !== b.dataset.uneat); save(); render(); });
   document.querySelectorAll('[data-qty]').forEach(sel => sel.onchange = () => { const it = p.today.items.find(x => x.id === sel.dataset.qty); if (it) { it.qty = +sel.value; save(); render(); } });
-  document.querySelectorAll('details.picker').forEach(d => d.ontoggle = () => { pickerOpen = d.open; });
-  const cf = document.getElementById('customFood');
-  if (cf) cf.onsubmit = ev => {
-    ev.preventDefault();
-    const food = readFood(new FormData(cf));
-    if (!food) return;
-    if (food.keep) { const { keep, ...rest } = food; eatFood(addFood(rest), rest); }
-    else { const { keep, cat, serving, ...rest } = food; eat({ ...rest, kcal: foodKcal(rest) }); }
-  };
+  bindSearch('eat-' + id, {
+    pick: fid => { const f = getFood(fid); if (f) eatFood(fid, f); },
+    add: food => { if (S.shared && !sharedError) eatFood(addFood(food), food); else eat(food); }
+  });
   document.querySelectorAll('[data-act]').forEach(row => {
     const a = p.activities.find(x => x.id === row.dataset.act);
     row.querySelectorAll('[data-a]').forEach(inp => inp.onchange = () => { a[inp.dataset.a] = inp.type === 'number' ? +inp.value : inp.value; save(); render(); });
@@ -883,70 +869,25 @@ function bind() {
 function readFood(fd) {
   const name = (fd.get('name') || '').trim();
   const n = k => fd.get(k) === '' || fd.get(k) == null ? 0 : +fd.get(k);
-  const food = { name, p: n('p'), c: n('c'), f: n('f'), kcal: n('kcal'), cat: fd.get('cat') || '', serving: (fd.get('serving') || '').trim(), keep: fd.get('keep') === 'on' };
+  const food = { name, p: n('p'), c: n('c'), f: n('f'), kcal: n('kcal'), serving: (fd.get('serving') || '').trim() };
   if (!name || !(food.p || food.c || food.f || food.kcal)) { alert('ใส่ชื่อ และค่าโภชนาการอย่างน้อย 1 ช่อง'); return null; }
   if (!food.kcal) food.kcal = Math.round(foodKcal(food));
   return food;
 }
 
-function bindFilters() {
-  document.querySelectorAll('[data-filter]').forEach(root => {
-    const st = filt[root.dataset.filter];
-    const input = root.querySelector('[data-search]');
-    if (input) input.oninput = () => { st.q = input.value; applyFilter(root); };
-    root.querySelectorAll('[data-fcat]').forEach(b => b.onclick = () => {
-      st.cat = b.dataset.fcat;
-      root.querySelectorAll('[data-fcat]').forEach(x => x.classList.toggle('on', x === b));
-      applyFilter(root);
-    });
-    applyFilter(root);
-  });
-}
-
 function bindFoods() {
-  bindFilters();
-  const sl = document.getElementById('stdList');
-  if (sl) sl.ontoggle = () => { stdOpen = sl.open; };
-  document.querySelectorAll('[data-copystd]').forEach(b => b.onclick = () => {
-    if (sharedError || !S.shared) { alert('ใช้ My Food ไม่ได้ตอนนี้'); return; }
-    const f = STD_BY_ID[b.dataset.copystd];
-    let cat = catList().find(c => c.name === f.cat)?.id;
-    if (!cat) { cat = uid(); sharedWrite({ [`cats.${cat}`]: { name: f.cat, order: catList().length } }); }
-    editingFood = addFood({ name: f.name, serving: f.serving, cat, p: f.p, c: f.c, f: f.f, kcal: f.kcal });
-    render(); window.scrollTo(0, 0);
-  });
-  const ff = document.getElementById('foodForm');
-  if (ff) ff.onsubmit = ev => {
+  bindSearch('manage', { add: food => addFood(food) });
+  const ef = document.getElementById('editFood');
+  if (ef) ef.onsubmit = ev => {
     ev.preventDefault();
-    const food = readFood(new FormData(ff));
+    const food = readFood(new FormData(ef));
     if (!food) return;
-    delete food.keep;
-    if (editingFood) sharedWrite({ [`foods.${editingFood}`]: { ...S.shared.foods[editingFood], ...food } });
-    else addFood(food);
+    if (STD_BY_ID[editingFood]) addFood(food);
+    else sharedWrite({ [`foods.${editingFood}`]: { ...S.shared.foods[editingFood], ...food } });
     editingFood = null; render();
   };
   const ce = document.getElementById('cancelEdit');
   if (ce) ce.onclick = () => { editingFood = null; render(); };
-  document.querySelectorAll('[data-editfood]').forEach(b => b.onclick = () => { editingFood = b.dataset.editfood; render(); window.scrollTo(0, 0); });
-  document.querySelectorAll('[data-delfood]').forEach(b => b.onclick = () => {
-    const f = S.shared.foods[b.dataset.delfood];
-    if (confirm(`ลบ “${f.name}” ออกจาก My Food?`)) sharedWrite({ [`foods.${b.dataset.delfood}`]: deleteField(), [`uses.${b.dataset.delfood}`]: deleteField() });
-  });
-  const cf = document.getElementById('catForm');
-  if (cf) cf.onsubmit = ev => {
-    ev.preventDefault();
-    const name = new FormData(cf).get('name').trim();
-    if (name) sharedWrite({ [`cats.${uid()}`]: { name, order: catList().length } });
-  };
-  document.querySelectorAll('[data-renamecat]').forEach(b => b.onclick = () => {
-    const c = S.shared.cats[b.dataset.renamecat], name = prompt('ชื่อหมวดใหม่', c.name);
-    if (name && name.trim()) sharedWrite({ [`cats.${b.dataset.renamecat}.name`]: name.trim() });
-  });
-  document.querySelectorAll('[data-delcat]').forEach(b => b.onclick = () => {
-    const cid = b.dataset.delcat, n = foodList().filter(f => f.cat === cid).length;
-    if (n) { alert(`หมวดนี้ยังมี ${n} เมนู ย้ายหรือลบเมนูก่อน`); return; }
-    if (confirm(`ลบหมวด “${S.shared.cats[cid].name}”?`)) sharedWrite({ [`cats.${cid}`]: deleteField() });
-  });
 }
 
 function setTab(t) { S.tab = t; save(); render(); window.scrollTo(0, 0); }

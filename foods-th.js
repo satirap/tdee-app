@@ -141,6 +141,3 @@ const ROWS = [
 ];
 
 export const STD_FOODS = ROWS.map(([id, name, serving, cat, kcal, p, c, f]) => ({ id, name, serving, cat, kcal, p, c, f, std: true }));
-export const STD_CATS = [...new Set(ROWS.map(r => r[3]))];
-// Shown as the quick picks until real eating history builds up.
-export const STD_TOP = ['std_001', 'std_006', 'std_040', 'std_130', 'std_110', 'std_060', 'std_138', 'std_011', 'std_018', 'std_064'];
