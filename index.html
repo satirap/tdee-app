@@ -443,7 +443,9 @@ function mealTotals(items) {
 }
 const mealFood = (id, m) => ({ id, name: m.name, serving: '1 ชุด', meal: true, n: (m.items || []).length, ...mealTotals(m.items) });
 const mealList = () => Object.entries(S.shared?.meals || {}).map(([id, m]) => mealFood(id, m));
-const allFoods = (withMeals = false) => [...(withMeals ? mealList() : []), ...foodList(), ...STD_FOODS];
+// Built-in foods can't be removed from the code, so "delete" hides them for both people (past logs keep their values).
+const stdFoods = () => STD_FOODS.filter(f => !S.shared?.hidden?.[f.id]);
+const allFoods = (withMeals = false) => [...(withMeals ? mealList() : []), ...foodList(), ...stdFoods()];
 const getFood = id => S.shared?.foods?.[id] ? { id, ...S.shared.foods[id] } : S.shared?.meals?.[id] ? mealFood(id, S.shared.meals[id]) : STD_BY_ID[id];
 
 // Best matches first: most eaten, then My Food over the reference list, then names that start with the query.
@@ -530,7 +532,7 @@ function drawResults(root) {
   if (!q && !manage) { out.innerHTML = ''; return; }
   // Empty search on the My Food tab: the 10 foods both people eat most, newest My Food filling in until there's history.
   const hits = q ? searchFoods(q, root.dataset.mode === 'eat')
-    : [...foodList(), ...STD_FOODS].filter(f => usesOf(f.id) || !f.std)
+    : [...foodList(), ...stdFoods()].filter(f => usesOf(f.id) || !f.std)
       .sort((a, b) => usesOf(b.id) - usesOf(a.id) || (b.created || 0) - (a.created || 0)).slice(0, 10);
   if (!q) { out.innerHTML = hits.length ? `<div class="mlabel">⭐ ยอดนิยม</div>${hits.map(f => resultRow(f, true)).join('')}` : ''; return; }
   if (!hits.length) { newFoodForm(root, { name: q }, `ไม่พบ “${esc(q)}” · เพิ่มเป็นเมนูใหม่`); return; }
@@ -543,7 +545,7 @@ function resultRow(f, manage) {
   const body = `<span class="n">${f.meal ? '🍱 ' : ''}${esc(f.name)}${f.serving ? `<span class="s">${esc(f.serving)}${f.g && !MEAS_BY[f.unit] && !/^\d+\s*ก\.?$/.test(f.serving) ? ` · ${num(f.g)} ก.` : ''}</span>` : ''}${f.std ? '' : `<span class="tag">${f.meal ? 'Meal' : 'My'}</span>`}</span><span class="m">${macroLine(f)}${manage ? timesEaten(f.id) : ''}</span>`;
   if (!manage) return `<div class="res"><button class="res-main" data-pick="${f.id}">${body}</button></div>`;
   const acts = f.std
-    ? `<button class="x" data-copystd="${f.id}" title="คัดลอกเป็นเมนูใหม่ใน My Food">${COPY_ICON}</button>`
+    ? `<button class="x" data-copystd="${f.id}" title="คัดลอกเป็นเมนูใหม่ใน My Food">${COPY_ICON}</button><button class="x" data-hidestd="${f.id}" title="ลบ">✕</button>`
     : `<button class="x" data-editfood="${f.id}" title="แก้ไข">✎</button><button class="x" data-dupfood="${f.id}" title="คัดลอกเป็นเมนูใหม่">${COPY_ICON}</button><button class="x" data-delfood="${f.id}" title="ลบ">✕</button>`;
   return `<div class="res"><div class="res-main">${body}</div>${acts}</div>`;
 }
@@ -563,6 +565,9 @@ function bindSearch(key, { pick, add }) {
     else if (t.dataset.delfood) {
       const id = t.dataset.delfood;
       if (confirm(`ลบ “${S.shared.foods[id].name}” ออกจาก My Food?`)) sharedWrite({ [`foods.${id}`]: deleteField(), [`uses.${id}`]: deleteField() });
+    } else if (t.dataset.hidestd) {
+      const id = t.dataset.hidestd;
+      if (confirm(`ลบ “${STD_BY_ID[id].name}” ออกจากรายการอาหาร?`)) sharedWrite({ [`hidden.${id}`]: true });
     } else if (t.dataset.copystd) {
       if (sharedError || !S.shared) { alert('ใช้ My Food ไม่ได้ตอนนี้'); return; }
       editingFood = t.dataset.copystd; render(); window.scrollTo(0, 0);
