@@ -53,13 +53,18 @@ h3{font-size:15px;margin:0 0 8px}
 .stat .v{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
 .stat .v small{font-size:12px;font-weight:500;color:var(--muted)}
 .person-card{border-top:4px solid var(--c)}
-.donut{display:block;width:100%;max-width:250px;margin:4px auto 0}
-.donut text{font-family:inherit;dominant-baseline:middle}
-.donut .dl{font-size:11px;font-weight:500;fill:var(--on-macro)}
-.donut .dg{font-size:13px;font-weight:700}
-.donut .dc{font-size:36px;font-weight:700;fill:var(--c)}
-.donut .du{font-size:12px;fill:var(--muted)}
-.energy-sub{text-align:center;font-size:13px;color:var(--muted);margin:2px 0 4px}
+.rings{display:block;width:100%;max-width:230px;margin:4px auto 0}
+.rings text{font-family:inherit;dominant-baseline:middle}
+.rings .rl{font-size:13px;fill:var(--muted)}
+.rings .rv{font-size:40px;font-weight:700;fill:var(--text);letter-spacing:-.02em}
+.rings .rv.bad{fill:var(--danger)}
+.ring-rows{margin:14px 0 0;display:grid;gap:8px}
+.ring-rows>div{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;font-size:14px;font-variant-numeric:tabular-nums}
+.ring-rows>div>span:last-child{min-width:92px;text-align:right}
+.rk{display:inline-flex;align-items:center;gap:6px}
+.rk i{width:8px;height:8px;border-radius:50%}
+.ring-week{font-size:13px;text-align:center;margin-top:10px}
+.ring-minor{font-size:12px;color:var(--muted);text-align:center;margin-top:10px}
 details.prog{margin-top:14px;border-top:1px solid var(--border);padding-top:12px}
 details.prog summary{list-style:none;cursor:pointer}
 details.prog summary::-webkit-details-marker{display:none}
@@ -93,7 +98,7 @@ button.x:hover{color:var(--danger)}
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
 .chips button{font:inherit;font-size:13px;border:1px solid var(--border);background:transparent;color:var(--text);border-radius:99px;padding:3px 11px;cursor:pointer}
 .chips button.on{background:var(--c);border-color:var(--c);color:#fff}
-.eaten{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.eaten{display:flex;flex-wrap:wrap;gap:6px}
 .eaten span{font-size:13px;background:var(--surface-2);border-radius:99px;padding:3px 4px 3px 12px;display:inline-flex;align-items:center;gap:6px}
 .eaten select{font-size:12px;padding:2px 4px;width:auto;border-radius:6px}
 .eaten .amt{width:58px;padding:2px 6px;font-size:12px;border-radius:6px;text-align:right}
@@ -118,9 +123,6 @@ button.res-main:hover{background:var(--surface-2)}
 .empty{font-size:13px;color:var(--muted);padding:12px 6px 8px}
 .addnew{padding:0 6px}
 table.log td.num,table.log th.num{text-align:right}
-.meter{margin:8px 0}
-.meter .row{justify-content:space-between;font-size:13px}
-.meter .bar i{background:var(--m)}
 .breakdown{font-size:13px;color:var(--muted);line-height:1.8}
 .breakdown b{color:var(--text);font-variant-numeric:tabular-nums}
 .muted{color:var(--muted)} .good{color:var(--good)} .bad{color:var(--danger)} .warn{color:var(--warn)}
@@ -650,64 +652,52 @@ function statsBlock(id, withExtras = true) {
 
 // Donut of the day's calories: protein slice centred at the top, grams printed inside each slice,
 // total kcal in the middle.
-function donut(m) {
-  const cx = 120, cy = 120, R = 86, W = 46, CIRC = 2 * Math.PI * R, GAP = 3;
-  const segs = [['prot', 'โปรตีน', m.prot], ['carb', 'คาร์บ', m.carb], ['fat', 'ไขมัน', m.fat]];
-  let start = -Math.PI / 2 - m.prot.pct / 100 * Math.PI, arcs = '', labels = '';
-  for (const [k, name, x] of segs) {
-    const frac = x.pct / 100, ang = frac * 2 * Math.PI;
-    arcs += `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="var(--${k})" stroke-width="${W}"
-      stroke-dasharray="${Math.max(0, frac * CIRC - GAP)} ${CIRC}" transform="rotate(${start * 180 / Math.PI} ${cx} ${cy})">
-      <title>${name} ${fmt(x.g)} ก. · ${fmt(x.k)} kcal · ${fmt(x.pct)}%</title></circle>`;
-    const mid = start + ang / 2, lx = (cx + R * Math.cos(mid)).toFixed(1), ly = (cy + R * Math.sin(mid)).toFixed(1);
-    if (frac > 0.08) labels += `<text x="${lx}" y="${ly}" text-anchor="middle" class="dl"><tspan x="${lx}" dy="-0.55em">${name}</tspan><tspan x="${lx}" dy="1.25em" class="dg">${fmt(x.g)} ก.</tspan></text>`;
-    start += ang;
-  }
-  return `<svg class="donut" viewBox="0 0 240 240" role="img" aria-label="ควรกิน ${fmt(m.kcal)} kcal ต่อวัน: โปรตีน ${fmt(m.prot.g)} กรัม คาร์บ ${fmt(m.carb.g)} กรัม ไขมัน ${fmt(m.fat.g)} กรัม">
-    ${arcs}${labels}
-    <text x="${cx}" y="${cy - 6}" text-anchor="middle" class="dc">${fmt(m.kcal)}</text>
-    <text x="${cx}" y="${cy + 22}" text-anchor="middle" class="du">kcal / วัน</text></svg>`;
+const todaySum = (p, k) => todayItems(p).reduce((s, x) => s + (+x[k] || 0) * (x.qty ?? 1), 0);
+
+// Two progress rings: outer = kcal eaten vs target (a second red lap shows the overshoot), inner = protein.
+function rings(m, kcal, prot) {
+  const c = 120, ring = (r, w, frac, color) => {
+    const L = 2 * Math.PI * r, f = Math.min(1, Math.max(0, frac));
+    return f <= 0 ? '' : `<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="round"
+      stroke-dasharray="${f >= 1 ? L : f * L} ${L}" transform="rotate(-90 ${c} ${c})"/>`;
+  };
+  const over = kcal - m.kcal, kf = kcal / m.kcal;
+  return `<svg class="rings" viewBox="0 0 240 240" role="img" aria-label="แคลอรี ${fmt(kcal)} จาก ${fmt(m.kcal)} kcal, โปรตีน ${fmt(prot)} จาก ${fmt(m.prot.g)} กรัม">
+    <circle cx="${c}" cy="${c}" r="104" fill="none" stroke="var(--surface-2)" stroke-width="18"/>
+    <circle cx="${c}" cy="${c}" r="80" fill="none" stroke="var(--surface-2)" stroke-width="18"/>
+    ${ring(104, 18, kf, 'var(--c)')}${over > 0 ? ring(104, 18, kf - 1, 'var(--danger)') : ''}
+    ${ring(80, 18, prot / m.prot.g, 'var(--prot)')}
+    <text x="${c}" y="${c - 30}" text-anchor="middle" class="rl">${over > 0 ? 'เกิน' : 'เหลือ'}</text>
+    <text x="${c}" y="${c + 2}" text-anchor="middle" class="rv ${over > 0 ? 'bad' : ''}">${fmt(Math.abs(m.kcal - kcal))}</text>
+    <text x="${c}" y="${c + 30}" text-anchor="middle" class="rl">kcal</text></svg>`;
 }
 
 function energyBlock(id) {
   const p = S.people[id], r = calc(p), m = macros(p);
-  if (!r) return `<div class="alert">${!profileReady(p) ? `กรอก <b>เพศ อายุ ส่วนสูง</b> ในแท็บ “${p.name}” ก่อน` : 'บันทึกน้ำหนักอย่างน้อย 1 ครั้ง'} เพื่อคำนวณ TDEE</div>`;
-  return `${donut(m)}
-    <div class="energy-sub">คาดลด ~${fmt(r.expectedRate, 2)} กก./สัปดาห์</div>
-    ${r.target < r.floor ? `<div class="alert">เป้าคำนวณได้ ${fmt(r.target)} kcal ต่ำกว่าขั้นต่ำที่แนะนำ (${r.floor}) จึงแสดงเป็น ${r.floor} แทน · ลองลด “ลดวันละ” ลง</div>` : ''}`;
-}
-
-function macroSettings(id) {
-  const p = S.people[id], m = macros(p);
-  if (!m) return '<div class="muted">กรอกข้อมูลส่วนตัวและบันทึกน้ำหนักก่อน</div>';
-  const chips = (field, opts, val, unit) => `<div class="chips">${opts.map(v => `<button data-chip="${field}" data-v="${v}" class="${+val === v ? 'on' : ''}">${v}${unit}</button>`).join('')}</div>`;
-  return `
-    <div class="goal-grid">
-      <label>โปรตีน (ก. ต่อ กก. น้ำหนักตัว)${chips('proteinPerKg', [1, 1.2, 1.6], m.perKg, '')}</label>
-      <label>ไขมัน (% ของแคล)${chips('fatPct', [25, 30, 35], m.fatPct, '%')}</label>
+  if (!r) return `<div class="alert">${!profileReady(p) ? 'กรอก <b>เพศ อายุ ส่วนสูง</b> ในแท็บ “ข้อมูลส่วนตัว” ก่อน' : 'บันทึกน้ำหนักอย่างน้อย 1 ครั้ง'} เพื่อคำนวณ TDEE</div>`;
+  const kcal = todaySum(p, 'kcal'), prot = todaySum(p, 'p'), over = kcal - m.kcal, protLeft = m.prot.g - prot;
+  let week = '';
+  if (over > 0) {
+    const logged = lastDays(p, 7).filter(x => x.kcal != null), bal = logged.reduce((s, x) => s + x.kcal - x.target, 0);
+    if (logged.length > 1) week = `<div class="ring-week ${bal > 0 ? 'bad' : 'good'}">รวม ${logged.length} วันล่าสุด${bal > 0 ? ` เกิน ${fmt(bal)} kcal` : ` ยังขาด ${fmt(-bal)} kcal ✓`}</div>`;
+  }
+  return `${rings(m, kcal, prot)}
+    <div class="ring-rows">
+      <div><span class="rk"><i style="background:var(--c)"></i>🔥 แคลอรี</span><span><b>${fmt(kcal)}</b> / ${fmt(m.kcal)}</span>
+        <span class="${over > 0 ? 'bad' : 'muted'}">${over > 0 ? `เกิน ${fmt(over)}` : `เหลือ ${fmt(-over)}`}</span></div>
+      <div><span class="rk"><i style="background:var(--prot)"></i>🥩 โปรตีน</span><span><b>${fmt(prot)}</b> / ${fmt(m.prot.g)} ก.</span>
+        <span class="${protLeft <= 0 ? 'good' : 'muted'}">${protLeft <= 0 ? 'ครบแล้ว ✓' : `เหลือ ${fmt(protLeft)} ก.`}</span></div>
     </div>
-    ${m.carb.pct < 40 ? `<div class="alert">คาร์บเหลือแค่ ${fmt(m.carb.pct)}% (แนะนำ 45–65%) ลองลดไขมันเป็น 25%</div>` : ''}`;
+    ${week}
+    <div class="ring-minor">คาร์บ ${fmt(todaySum(p, 'c'))} / ${fmt(m.carb.g)} ก. · ไขมัน ${fmt(todaySum(p, 'f'))} / ${fmt(m.fat.g)} ก.</div>
+    ${r.target < r.floor ? `<div class="alert">เป้าคำนวณได้ ${fmt(r.target)} kcal ต่ำกว่าขั้นต่ำที่แนะนำ (${r.floor}) จึงแสดงเป็น ${r.floor} แทน · ลองลด “ลดวันละ” ลง</div>` : ''}`;
 }
 
 function eatenBlock(id) {
   const p = S.people[id], m = macros(p);
   if (!m) return '<div class="muted">กรอกข้อมูลร่างกายและบันทึกน้ำหนักก่อน</div>';
   const items = todayItems(p);
-  const sum = k => items.reduce((s, x) => s + (+x[k] || 0) * (x.qty ?? 1), 0);
-  const meter = (label, v, max, unit, key) => {
-    const pct = Math.min(100, v / max * 100), left = max - v;
-    return `<div class="meter" style="--m:var(--${key})">
-      <div class="row"><span>${label} <b>${fmt(v)}</b> / ${fmt(max)} ${unit}</span>
-      <span class="${left < 0 ? 'bad' : 'muted'}">${left >= 0 ? `เหลือ ${fmt(left)}` : `เกิน ${fmt(-left)}`}</span></div>
-      <div class="bar"><i style="width:${pct}%"></i></div></div>`;
-  };
-  const P = sum('p');
   return `
-    ${meter('โปรตีน', P, m.prot.g, 'ก.', 'prot')}
-    ${meter('คาร์บ', sum('c'), m.carb.g, 'ก.', 'carb')}
-    ${meter('ไขมัน', sum('f'), m.fat.g, 'ก.', 'fat')}
-    ${meter('แคลอรี', sum('kcal'), m.kcal, 'kcal', 'text')}
-    ${P >= m.prot.g ? '<div class="good" style="font-size:13px">✓ โปรตีนถึงเป้าแล้ววันนี้</div>' : ''}
     ${items.length ? `<div class="eaten">${items.map(x => {
       const us = unitsOf(x.foodId ? getFood(x.foodId) : null), cur = x.unit || 's', amt = x.amount ?? x.qty ?? 1;
       const unit = us.some(u => u.k === cur)
@@ -822,7 +812,7 @@ function intakeCard(id) {
   const avg = logged.length ? logged.reduce((s, x) => s + x.kcal, 0) / logged.length : null;
   const seg = `<div class="seg">${[[7, '7 วัน'], [30, '30 วัน']].map(([k, l]) => `<button data-range="${k}" class="${n === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
   return `<div class="card" style="margin-top:14px">
-    <div class="person-head"><h2 style="margin:0">แคลอรีรายวัน</h2>${seg}</div>
+    <div class="person-head"><h2 style="margin:0">📊 แคลอรีรายวัน</h2>${seg}</div>
     <div class="intake-sum">
       <div><span class="l">รวม ${logged.length}/${n} วัน</span>${logged.length
         ? `<b class="${bal > 0 ? 'bad' : 'good'}">${bal > 0 ? 'เกิน' : 'ขาด'} ${fmt(Math.abs(bal))}</b><small>kcal</small>` : '<b class="muted">–</b>'}</div>
@@ -908,8 +898,8 @@ function personPage(id) {
   let body;
   if (sub === 'today') body = `
     <div class="grid g2">
-      <div class="card"><h2>ควรกินต่อวัน</h2>${energyBlock(id)}</div>
-      <div class="card"><h2>วันนี้กินไปแล้ว</h2>${eatenBlock(id)}</div>
+      <div class="card"><h2>🍽️ ควรกินต่อวัน</h2>${energyBlock(id)}</div>
+      <div class="card"><h2>🥗 วันนี้กินไปแล้ว</h2>${eatenBlock(id)}</div>
     </div>
     ${intakeCard(id)}`;
   else if (sub === 'weight') {
