@@ -131,8 +131,10 @@ button.x:hover{color:var(--danger)}
 .scanner{position:fixed;inset:0;z-index:50;background:#000}
 .scanner video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .scanner .frame{position:absolute;left:8%;right:8%;top:36%;height:20%;border:2px solid rgba(255,255,255,.9);border-radius:16px;box-shadow:0 0 0 100vmax rgba(0,0,0,.4)}
-.scanner .sbar{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:18px 18px calc(18px + env(safe-area-inset-bottom));color:#fff;font-size:14px}
-.scanner .sbar button{flex:none;background:rgba(255,255,255,.2);color:#fff;border:0;border-radius:99px;padding:10px 20px;font:inherit;cursor:pointer}
+.scanner .sbar{position:absolute;left:0;right:0;bottom:0;padding:16px 16px calc(16px + env(safe-area-inset-bottom));color:#fff;font-size:14px;background:linear-gradient(transparent,rgba(0,0,0,.75) 30%)}
+.scanner .st{margin-bottom:12px;text-align:center}
+.scanner .sbtns{display:flex;gap:8px}
+.scanner .sb{flex:1;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.2);color:#fff;border:0;border-radius:99px;padding:11px 8px;font:inherit;font-size:14px;cursor:pointer;white-space:nowrap}
 .res{display:flex;align-items:center;gap:2px;border-bottom:1px solid var(--border)}
 .res:last-child{border-bottom:0}
 .res-main{flex:1;min-width:0;display:flex;flex-direction:column;border:0;background:transparent;color:var(--text);font:inherit;text-align:left;padding:10px 6px;border-radius:8px}
@@ -552,37 +554,71 @@ const getDetector = () => detectorP ||= import('https://cdn.jsdelivr.net/npm/bar
   .then(m => new m.BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code'] }))
   .catch(e => { detectorP = null; throw e; });
 
+// Live camera at the highest resolution Safari gives, scanning the middle band and the whole frame in turn.
+// Fallbacks for blurry/dark cases: a photo from the native camera (autofocus, full resolution) or typing the digits.
 function scanBarcode() {
   return new Promise(resolve => {
     const ov = document.createElement('div');
     ov.className = 'scanner';
     ov.innerHTML = `<video playsinline muted></video><div class="frame"></div>
-      <div class="sbar"><span class="st">กำลังเปิดกล้อง…</span><button type="button">ปิด</button></div>`;
+      <div class="sbar"><div class="st">กำลังเปิดกล้อง…</div>
+        <div class="sbtns"><label class="sb">📷 ถ่ายรูป<input type="file" accept="image/*" capture="environment" hidden></label>
+        <button type="button" class="sb" data-type>⌨️ พิมพ์เลข</button><button type="button" class="sb" data-close>ปิด</button></div></div>`;
     document.body.append(ov);
-    const video = ov.querySelector('video'), st = ov.querySelector('.st');
-    let stream, done = false;
-    const finish = code => {
-      if (done) return;
-      done = true; stream?.getTracks().forEach(t => t.stop()); ov.remove(); resolve(code);
+    const video = ov.querySelector('video'), st = ov.querySelector('.st'), canvas = document.createElement('canvas');
+    let stream, done = false, live = 0;
+    const stopLive = () => { live++; stream?.getTracks().forEach(t => t.stop()); stream = null; };
+    const finish = code => { if (done) return; done = true; stopLive(); ov.remove(); resolve(code); };
+    const say = t => { if (!done) st.textContent = t; };
+    ov.querySelector('[data-close]').onclick = () => finish(null);
+    ov.querySelector('[data-type]').onclick = () => {
+      const v = prompt('พิมพ์เลขใต้บาร์โค้ด');
+      if (v && v.replace(/\D/g, '')) finish(v.replace(/\D/g, ''));
     };
-    ov.querySelector('button').onclick = () => finish(null);
-    (async () => {
+    ov.querySelector('input[type=file]').onchange = async ev => {
+      const file = ev.target.files?.[0];
+      ev.target.value = '';
+      if (!file) return;
+      stopLive(); say('กำลังอ่านจากรูป…');
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
-      } catch { st.textContent = 'เปิดกล้องไม่ได้ · อนุญาตให้ Safari ใช้กล้องก่อน'; return; }
-      if (done) { stream.getTracks().forEach(t => t.stop()); return; }
+        const [det, img] = await Promise.all([getDetector(), createImageBitmap(file)]);
+        const found = await det.detect(img);
+        if (found.length) { finish(found[0].rawValue); return; }
+        say('อ่านจากรูปไม่ได้ · ถ่ายใหม่ให้บาร์โค้ดชัดและเต็มภาพ หรือพิมพ์เลข');
+      } catch { say('อ่านรูปไม่ได้ · ลองใหม่อีกครั้ง'); }
+      startLive();
+    };
+    const startLive = async () => {
+      const run = ++live;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: false,
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } });
+      } catch { say('เปิดกล้องไม่ได้ · อนุญาตให้ Safari ใช้กล้อง หรือกด “ถ่ายรูป”'); return; }
+      if (done || run !== live) { stream.getTracks().forEach(t => t.stop()); return; }
+      stream.getVideoTracks()[0]?.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {});
       video.srcObject = stream;
       await video.play().catch(() => {});
-      st.textContent = 'กำลังโหลดตัวอ่านบาร์โค้ด…';
+      say('กำลังโหลดตัวอ่านบาร์โค้ด…');
       let det;
-      try { det = await getDetector(); } catch { st.textContent = 'โหลดตัวอ่านไม่ได้ · เช็กอินเทอร์เน็ต'; return; }
-      st.textContent = 'เล็งบาร์โค้ดให้อยู่ในกรอบ';
-      while (!done) {
-        const found = video.readyState >= 2 ? await det.detect(video).catch(() => []) : [];
+      try { det = await getDetector(); } catch { say('โหลดตัวอ่านไม่ได้ · เช็กอินเทอร์เน็ต'); return; }
+      say('ถือห่างประมาณ 15–20 ซม. ให้ภาพชัด · แสงพอ');
+      for (let n = 0; !done && run === live; n++) {
+        let found = [];
+        if (video.readyState >= 2 && video.videoWidth) {
+          const w = video.videoWidth, h = video.videoHeight;
+          if (n % 2) found = await det.detect(video).catch(() => []);
+          else {
+            const bh = Math.round(h * 0.45);
+            canvas.width = w; canvas.height = bh;
+            canvas.getContext('2d').drawImage(video, 0, Math.round((h - bh) / 2), w, bh, 0, 0, w, bh);
+            found = await det.detect(canvas).catch(() => []);
+          }
+        }
         if (found.length) { finish(found[0].rawValue); return; }
-        await new Promise(r => setTimeout(r, 120));
+        await new Promise(r => setTimeout(r, 80));
       }
-    })();
+    };
+    startLive();
   });
 }
 
