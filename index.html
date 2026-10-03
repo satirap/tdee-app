@@ -553,6 +553,8 @@ function trend(p) {
 // ---------- rendering ----------
 const C = id => id === 'ton' ? 'var(--ton)' : 'var(--patt)';
 const CS = id => id === 'ton' ? 'var(--ton-soft)' : 'var(--patt-soft)';
+// Draw charts in one go: mobile Safari can throttle or stall animation frames, leaving a chart blank until reload.
+if (window.Chart) Chart.defaults.animation = false;
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 let charts = [];
 
@@ -929,8 +931,9 @@ function drawIntake(id) {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
       onClick: (_, els) => {
         if (!els.length) return;
-        goDay(days[els[0].index].d); render();
-        document.querySelector('.daynav')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        const d = days[els[0].index].d;
+        // Re-render after Chart.js finishes this event; destroying the chart inside its own handler throws and can stall later charts.
+        setTimeout(() => { goDay(d); render(); document.querySelector('.daynav')?.scrollIntoView({ block: 'center', behavior: 'smooth' }); });
       },
       onHover: (ev, els) => { ev.native.target.style.cursor = els.length ? 'pointer' : 'default'; },
       plugins: {
