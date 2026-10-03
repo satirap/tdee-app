@@ -96,16 +96,14 @@ button.x:hover{color:var(--danger)}
 .eaten select{font-size:12px;padding:2px 4px;width:auto;border-radius:6px}
 .eaten .amt{width:58px;padding:2px 6px;font-size:12px;border-radius:6px;text-align:right}
 .eaten em{font-style:normal;font-size:12px;color:var(--muted)}
-.foodform .w2{grid-column:span 2}
-.units .ul{display:block;font-size:12px;color:var(--muted)}
-.urow{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-top:6px;font-size:12px}
-button.sm{font-size:12px;padding:3px 10px;margin-top:6px}
+
 .foodform{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;align-items:end}
 .foodform .wide{grid-column:1/-1}
 .foodform button{white-space:nowrap}
+.foodform input,.foodform select{height:38px}
 .foodform .btn:last-child{grid-column:span 2}
 .search{margin-top:16px}
-.search input{padding:11px 14px;border-radius:12px;background:var(--surface-2);border-color:transparent}
+.search > input{padding:11px 14px;border-radius:12px;background:var(--surface-2);border-color:transparent}
 .results{margin-top:4px}
 .res{display:flex;align-items:center;gap:2px;border-bottom:1px solid var(--border)}
 .res:last-child{border-bottom:0}
@@ -404,25 +402,49 @@ const foodSearch = (key, mode) => `<div class="search" data-search="${key}" data
 
 const macroLine = f => `${fmt(foodKcal(f))} kcal · P ${num(f.p || 0)} · C ${num(f.c || 0)} · F ${num(f.f || 0)}`;
 
-// Nutrition is stored per 1 base unit (the serving). With its weight in grams, the food also converts to grams and any extra units.
+// Measurable units convert through ml, taking 1 ml ≈ 1 g (close enough for drinks and everyday food).
+const MEAS = [['g', 'กรัม', 1], ['ml', 'มล.', 1], ['oz', 'oz', 29.57], ['tsp', 'ช้อนชา', 5], ['tbsp', 'ช้อนโต๊ะ', 15], ['cup', 'ถ้วยตวง', 240], ['ladle', 'ทัพพี', 60]].map(([k, n, ml]) => ({ k, n, ml }));
+const COUNT = ['ที่', 'จาน', 'ชาม', 'แก้ว', 'ถ้วย', 'ชิ้น', 'ฟอง', 'ลูก', 'ผล', 'ซอง', 'กล่อง', 'ขวด', 'แท่ง'];
+const MEAS_BY = Object.fromEntries(MEAS.map(u => [u.k, u]));
 const unitName = s => String(s || '').replace(/^1\s+/, '') || 'ที่';
+
+// Nutrition is stored for one serving; g is that serving in grams/ml, which unlocks every measurable unit.
 function unitsOf(f) {
-  const list = [{ k: 's', n: unitName(f?.serving), r: 1 }];
+  const own = MEAS_BY[f?.unit];
+  const list = own ? [] : [{ k: 's', n: unitName(f?.serving), r: 1 }];
   if (+f?.g) {
-    (f.units || []).forEach((u, i) => { if (u.n && +u.g) list.push({ k: 'u' + i, n: u.n, r: u.g / f.g }); });
-    list.push({ k: 'g', n: 'กรัม', r: 1 / f.g });
+    (f.units || []).forEach((u, i) => list.push({ k: 'u' + i, n: u.n, r: u.g / f.g }));
+    MEAS.forEach(u => { if (!list.some(x => x.n === u.n)) list.push({ k: u.k, n: u.n, r: u.ml / f.g }); });
   }
   return list;
 }
-const unitRow = (u = {}) => `<div class="urow"><input name="un" value="${esc(u.n ?? '')}" placeholder="เช่น จาน"><input name="ug" type="number" step="any" min="0" value="${esc(u.g ?? '')}" placeholder="กรัม"><button type="button" class="x" data-delunit title="ลบ">✕</button></div>`;
-const nutritionFields = (v = {}) => `
-      <label class="w2">หน่วย<input name="serving" value="${esc(v.serving ?? '')}" placeholder="เช่น ทัพพี, จาน, แก้ว"></label>
-      <label>กรัม / หน่วย<input name="g" type="number" step="any" min="0" value="${esc(v.g || '')}" placeholder="ไม่บังคับ"></label>
+
+// Best guess of amount + unit for the form, also for older foods that only have a serving label.
+function servingParts(v) {
+  if (v.unit) return { amt: v.amt ?? 1, unit: v.unit };
+  const str = String(v.serving || '');
+  const m = str.match(/^([\d.]+)\s*(ก\.|กรัม|มล\.|oz)/i);
+  if (m) return { amt: +m[1], unit: { 'ก.': 'g', 'กรัม': 'g', 'มล.': 'ml' }[m[2]] || 'oz' };
+  const c = str.match(/^([\d.]+|½)\s*(\S+)/), name = c?.[2];
+  const amt = c ? (c[1] === '½' ? 0.5 : +c[1]) : 1;
+  const meas = MEAS.find(u => u.n === name);
+  return meas ? { amt, unit: meas.k } : { amt, unit: COUNT.includes(name) ? name : 'ที่' };
+}
+
+const nutritionFields = (v = {}) => {
+  const { amt, unit } = servingParts(v), counted = !MEAS_BY[unit];
+  return `
+      <label>ปริมาณ<input name="amt" type="number" step="any" min="0" value="${esc(v.name ? amt : '')}" placeholder="1"></label>
+      <label>หน่วย<select name="unit">
+        <optgroup label="แปลงหน่วยได้">${MEAS.map(u => `<option value="${u.k}" ${unit === u.k ? 'selected' : ''}>${u.n}</option>`).join('')}</optgroup>
+        <optgroup label="หน่วยนับ">${COUNT.map(n => `<option value="${n}" ${unit === n ? 'selected' : ''}>${n}</option>`).join('')}</optgroup>
+      </select></label>
+      <label class="cw" ${counted ? '' : 'hidden'}>≈ กรัม<input name="g" type="number" step="any" min="0" value="${esc(counted && v.g ? v.g : '')}" placeholder="ไม่บังคับ"></label>
       <label>โปรตีน ก.<input name="p" type="number" step="0.1" min="0" value="${esc(v.p ?? '')}"></label>
       <label>คาร์บ ก.<input name="c" type="number" step="0.1" min="0" value="${esc(v.c ?? '')}"></label>
       <label>ไขมัน ก.<input name="f" type="number" step="0.1" min="0" value="${esc(v.f ?? '')}"></label>
-      <label>kcal<input name="kcal" type="number" min="0" value="${esc(v.kcal || '')}" placeholder="อัตโนมัติ"></label>
-      <div class="wide units"><span class="ul">หน่วยอื่น</span>${(v.units || []).map(unitRow).join('')}<button type="button" class="ghost sm" data-addunit>+ หน่วย</button></div>`;
+      <label>kcal<input name="kcal" type="number" min="0" value="${esc(v.kcal || '')}" placeholder="อัตโนมัติ"></label>`;
+};
 
 function drawResults(root) {
   const q = root.querySelector('input').value.trim(), out = root.querySelector('.results');
@@ -439,7 +461,7 @@ function drawResults(root) {
     return;
   }
   out.innerHTML = hits.map(f => {
-    const body = `<span class="n">${esc(f.name)}${f.serving ? `<span class="s">${esc(f.serving)}${f.g && !/^\d+\s*ก\.?$/.test(f.serving) ? ` · ${num(f.g)} ก.` : ''}</span>` : ''}${f.std ? '' : '<span class="tag">My</span>'}</span><span class="m">${macroLine(f)}</span>`;
+    const body = `<span class="n">${esc(f.name)}${f.serving ? `<span class="s">${esc(f.serving)}${f.g && !MEAS_BY[f.unit] && !/^\d+\s*ก\.?$/.test(f.serving) ? ` · ${num(f.g)} ก.` : ''}</span>` : ''}${f.std ? '' : '<span class="tag">My</span>'}</span><span class="m">${macroLine(f)}</span>`;
     if (!manage) return `<div class="res"><button class="res-main" data-pick="${f.id}">${body}</button></div>`;
     const acts = f.std
       ? `<button class="x" data-copystd="${f.id}" title="คัดลอกไป My Food เพื่อแก้ไข">✎</button>`
@@ -987,7 +1009,9 @@ function bind() {
     p.today.items.push({ id: uid(), qty: 1, ...item }); save(); render();
   };
   const eatFood = (fid, f) => {
-    eat({ foodId: fid, name: f.name, p: +f.p || 0, c: +f.c || 0, f: +f.f || 0, kcal: foodKcal(f), amount: 1, unit: 's', unitName: unitName(f.serving) });
+    const own = MEAS_BY[f.unit];
+    eat({ foodId: fid, name: f.name, p: +f.p || 0, c: +f.c || 0, f: +f.f || 0, kcal: foodKcal(f),
+      ...(own ? { amount: f.amt, unit: own.k, unitName: own.n } : { amount: 1, unit: 's', unitName: unitName(f.serving) }) });
     sharedWrite({ [`uses.${fid}`]: increment(1) });
   };
   document.querySelectorAll('[data-uneat]').forEach(b => b.onclick = () => { p.today.items = p.today.items.filter(x => x.id !== b.dataset.uneat); save(); render(); });
@@ -1004,7 +1028,7 @@ function bind() {
     const it = item(sel), u = unitsOf(getFood(it?.foodId)).find(u => u.k === sel.value);
     if (!it || !u) return;
     const raw = (it.qty ?? 1) / u.r;
-    it.amount = u.k === 'g' ? Math.round(raw) : Math.round(raw * 10) / 10 || 0.1;
+    it.amount = u.k === 'g' || u.k === 'ml' ? Math.round(raw) : Math.round(raw * 10) / 10 || 0.1;
     it.qty = it.amount * u.r; it.unit = u.k; it.unitName = u.n; save(); render();
   });
   bindSearch('eat-' + id, {
@@ -1023,11 +1047,10 @@ function bind() {
 function readFood(fd) {
   const name = (fd.get('name') || '').trim();
   const n = k => fd.get(k) === '' || fd.get(k) == null ? 0 : +fd.get(k);
-  const names = fd.getAll('un'), grams = fd.getAll('ug');
-  const units = names.map((u, i) => ({ n: u.trim(), g: +grams[i] })).filter(u => u.n && u.g > 0);
-  const food = { name, p: n('p'), c: n('c'), f: n('f'), kcal: n('kcal'), serving: (fd.get('serving') || '').trim(), g: n('g') || null, units };
+  const amt = n('amt') || 1, unit = fd.get('unit') || 'ที่', meas = MEAS_BY[unit];
+  const food = { name, p: n('p'), c: n('c'), f: n('f'), kcal: n('kcal'), amt, unit,
+    serving: `${num(amt)} ${meas ? meas.n : unit}`, g: meas ? amt * meas.ml : n('g') || null, units: [] };
   if (!name || !(food.p || food.c || food.f || food.kcal)) { alert('ใส่ชื่อ และค่าโภชนาการอย่างน้อย 1 ช่อง'); return null; }
-  if (units.length && !food.g) { alert('ใส่ “กรัม / หน่วย” ของหน่วยหลักก่อน จึงจะแปลงเป็นหน่วยอื่นได้'); return null; }
   if (!food.kcal) food.kcal = Math.round(foodKcal(food));
   return food;
 }
@@ -1047,12 +1070,10 @@ function bindFoods() {
   if (ce) ce.onclick = () => { editingFood = null; render(); };
 }
 
-document.addEventListener('click', ev => {
-  const t = ev.target.closest('[data-addunit],[data-delunit]');
-  if (!t) return;
-  ev.preventDefault();
-  if (t.hasAttribute('data-addunit')) t.insertAdjacentHTML('beforebegin', unitRow());
-  else t.closest('.urow').remove();
+// The "≈ กรัม" field only matters for count units (จาน, ฟอง…); measurable units convert on their own.
+document.addEventListener('change', ev => {
+  if (ev.target.name !== 'unit' || !ev.target.closest('.foodform')) return;
+  ev.target.closest('.foodform').querySelector('.cw').hidden = !!MEAS_BY[ev.target.value];
 });
 
 function setTab(t) { S.tab = t; sub = 'today'; save(); render(); window.scrollTo(0, 0); }
