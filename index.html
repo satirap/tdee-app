@@ -111,7 +111,14 @@ button.x:hover{color:var(--danger)}
 .foodform input,.foodform select{height:38px}
 .foodform .btn:last-child{grid-column:span 2}
 .search{margin-top:16px}
-.card h2+.search{margin-top:0}
+.card h2+.search,.daynav+.search{margin-top:0}
+.daynav{display:flex;align-items:center;gap:4px;margin:-6px 0 10px}
+.daynav .x{font-size:24px;line-height:1;padding:2px 10px;color:var(--text)}
+.daynav .x:disabled{opacity:.25;cursor:default}
+.daynav .x:hover{color:var(--c)}
+.dlabel{position:relative;flex-direction:row;font-size:15px;font-weight:600;color:var(--text);padding:2px 6px;cursor:pointer}
+.dlabel input{position:absolute;inset:0;opacity:0;cursor:pointer;padding:0}
+.daynav .sm{margin-left:auto;font-size:12px;padding:3px 10px}
 .search > input{padding:11px 14px;border-radius:12px;background:var(--surface-2);border-color:transparent}
 .results{margin-top:4px}
 .res{display:flex;align-items:center;gap:2px;border-bottom:1px solid var(--border)}
@@ -242,7 +249,8 @@ function save() {
   try { localStorage.setItem(PREF_KEY, JSON.stringify({ tab: S.tab, intakeRange: S.intakeRange })); } catch {}
   if (!pin || loaded.size < IDS.length) return;
   for (const id of IDS) {
-    recordDay(S.people[id]);
+    recordDay(S.people[id], todayStr(), false);
+    pruneLog(S.people[id]);
     const json = JSON.stringify(S.people[id]);
     if (json === synced[id]) continue;
     synced[id] = json;
@@ -251,13 +259,27 @@ function save() {
 }
 
 // Daily kcal total plus that day's target, so a week's balance is judged against the target in effect each day.
-function recordDay(p) {
-  const d = todayStr(), items = todayItems(p);
+// Today follows the live target; a past day keeps the target it had (or today's, if it never had one).
+function recordDay(p, d, edited) {
+  const items = dayItems(p, d);
   p.days ||= {};
-  if (!items.length) { delete p.days[d]; return; }
+  if (!items.length) { if (edited) delete p.days[d]; return; }
   const kcal = Math.round(items.reduce((s, x) => s + (+x.kcal || 0) * (x.qty ?? 1), 0));
-  const target = Math.round(macros(p)?.kcal ?? p.days[d]?.target ?? 0);
-  p.days[d] = { kcal, target };
+  const live = Math.round(macros(p)?.kcal ?? 0);
+  p.days[d] = { kcal, target: d === todayStr() ? live || p.days[d]?.target || 0 : p.days[d]?.target ?? live };
+}
+
+// Item-level logs only for ~13 months so the person doc stays well under Firestore's 1 MB; daily totals stay forever.
+function pruneLog(p) {
+  const cutoff = new Date(dayMs(todayStr()) - 400 * 864e5).toISOString().slice(0, 10);
+  for (const d of Object.keys(p.log || {})) if (d < cutoff || !p.log[d].length) delete p.log[d];
+}
+
+// Older data kept only today's items under p.today; move them into the per-day log.
+function moveToday(p) {
+  if (!p.today) return;
+  if (p.today.items?.length) { p.log ||= {}; if (!p.log[p.today.date]?.length) p.log[p.today.date] = p.today.items; }
+  delete p.today;
 }
 
 function onDbError(err) {
@@ -271,7 +293,7 @@ function listen() {
   unsubs.forEach(u => u()); unsubs = []; loaded = new Set(); dbError = null;
   for (const id of IDS) {
     unsubs.push(onSnapshot(personDoc(id), snap => {
-      if (snap.exists()) { S.people[id] = snap.data(); synced[id] = JSON.stringify(S.people[id]); dropMet(S.people[id]); }
+      if (snap.exists()) { S.people[id] = snap.data(); synced[id] = JSON.stringify(S.people[id]); dropMet(S.people[id]); moveToday(S.people[id]); }
       else { S.people[id] = defaults().people[id]; synced[id] = ''; }
       loaded.add(id);
       if (loaded.size === IDS.length) save();
@@ -505,7 +527,12 @@ function bindSearch(key, { pick, add }) {
 }
 const rulesAlert = () => `<div class="alert">ใช้ My Food ไม่ได้: ต้องอัปเดต Firestore Rules ก่อน (ดูวิธีใน README.md) <span class="muted">(${esc(sharedError)})</span></div>`;
 const openProg = {};
-const todayItems = p => p.today?.date === todayStr() ? p.today.items : [];
+const dayItems = (p, d) => p.log?.[d] || [];
+// Which day the person page is logging; null means today (so it rolls over at midnight on its own).
+let logDate = null;
+const viewDay = () => logDate || todayStr();
+const dayLabel = d => d === todayStr() ? 'วันนี้' : new Date(dayMs(d)).toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+const goDay = d => { logDate = !d || d >= todayStr() ? null : d; };
 
 
 
@@ -654,7 +681,7 @@ function statsBlock(id, withExtras = true) {
 
 // Donut of the day's calories: protein slice centred at the top, grams printed inside each slice,
 // total kcal in the middle.
-const todaySum = (p, k) => todayItems(p).reduce((s, x) => s + (+x[k] || 0) * (x.qty ?? 1), 0);
+const daySum = (p, d, k) => dayItems(p, d).reduce((s, x) => s + (+x[k] || 0) * (x.qty ?? 1), 0);
 
 // Two progress rings: outer = kcal eaten vs target (a second red lap shows the overshoot), inner = protein.
 function rings(m, kcal, prot) {
@@ -680,10 +707,11 @@ function rings(m, kcal, prot) {
     <text x="${c}" y="${c + 30}" text-anchor="middle" class="rl">kcal</text></svg>`;
 }
 
-function energyBlock(id) {
-  const p = S.people[id], r = calc(p), m = macros(p);
+function energyBlock(id, d = todayStr()) {
+  const p = S.people[id], r = calc(p), m0 = macros(p);
   if (!r) return `<div class="alert">${!profileReady(p) ? 'กรอก <b>เพศ อายุ ส่วนสูง</b> ในแท็บ “ข้อมูลส่วนตัว” ก่อน' : 'บันทึกน้ำหนักอย่างน้อย 1 ครั้ง'} เพื่อคำนวณ TDEE</div>`;
-  const kcal = todaySum(p, 'kcal'), prot = todaySum(p, 'p'), over = kcal - m.kcal, protLeft = m.prot.g - prot;
+  const m = d === todayStr() ? m0 : { ...m0, kcal: p.days?.[d]?.target || m0.kcal };
+  const kcal = dayItems(p, d).length ? daySum(p, d, 'kcal') : p.days?.[d]?.kcal || 0, prot = daySum(p, d, 'p'), over = kcal - m.kcal, protLeft = m.prot.g - prot;
   let week = '';
   if (over > 0) {
     const logged = lastDays(p, 7).filter(x => x.kcal != null), bal = logged.reduce((s, x) => s + x.kcal - x.target, 0);
@@ -697,17 +725,24 @@ function energyBlock(id) {
         <span class="${protLeft <= 0 ? 'good' : 'muted'}">${protLeft <= 0 ? 'ครบแล้ว ✓' : `เหลือ ${fmt(protLeft)} ก.`}</span></div>
     </div>
     ${week}
-    <div class="ring-minor">คาร์บ ${fmt(todaySum(p, 'c'))} / ${fmt(m.carb.g)} ก. · ไขมัน ${fmt(todaySum(p, 'f'))} / ${fmt(m.fat.g)} ก.</div>
+    <div class="ring-minor">คาร์บ ${fmt(daySum(p, d, 'c'))} / ${fmt(m.carb.g)} ก. · ไขมัน ${fmt(daySum(p, d, 'f'))} / ${fmt(m.fat.g)} ก.</div>
     ${r.target < r.floor ? `<div class="alert">เป้าคำนวณได้ ${fmt(r.target)} kcal ต่ำกว่าขั้นต่ำที่แนะนำ (${r.floor}) จึงแสดงเป็น ${r.floor} แทน · ลองลด “ลดวันละ” ลง</div>` : ''}`;
 }
 
 function eatenBlock(id) {
   const p = S.people[id], m = macros(p);
   if (!m) return '<div class="muted">กรอกข้อมูลร่างกายและบันทึกน้ำหนักก่อน</div>';
-  const items = todayItems(p);
+  const d = viewDay(), isToday = d === todayStr(), items = dayItems(p, d), oldTotal = p.days?.[d]?.kcal;
   return `
+    <div class="daynav">
+      <button class="x" data-day="-1" aria-label="วันก่อนหน้า">‹</button>
+      <label class="dlabel">${dayLabel(d)}<input type="date" data-pickday max="${todayStr()}" value="${d}" aria-label="เลือกวันที่"></label>
+      <button class="x" data-day="1" aria-label="วันถัดไป" ${isToday ? 'disabled' : ''}>›</button>
+      ${isToday ? '' : '<button class="ghost sm" data-day="0">กลับวันนี้</button>'}
+    </div>
     ${sharedError ? rulesAlert() : ''}
     ${foodSearch('eat-' + id, 'eat')}
+    ${!items.length && oldTotal ? `<div class="eaten muted" style="font-size:13px">บันทึกไว้ ${fmt(oldTotal)} kcal (ไม่มีรายการ)</div>` : ''}
     ${items.length ? `<div class="eaten">${items.map(x => {
       const us = unitsOf(x.foodId ? getFood(x.foodId) : null), cur = x.unit || 's', amt = x.amount ?? x.qty ?? 1;
       const unit = us.some(u => u.k === cur)
@@ -872,6 +907,7 @@ function drawIntake(id) {
       labels: days.map(x => label(x.d)),
       datasets: [
         { type: 'bar', data: days.map(x => x.kcal ?? null), backgroundColor: days.map(x => soft(x.kcal > x.target ? over : col)), hoverBackgroundColor: days.map(x => x.kcal > x.target ? over : col),
+          borderColor: css('--text'), borderWidth: days.map(x => x.d === viewDay() ? 2 : 0),
           borderRadius: 6, borderSkipped: false, barPercentage: n === 7 ? .55 : .75, categoryPercentage: 1 },
         { type: 'line', target: true, data: days.map(x => x.target || nowTarget || null), borderColor: text, borderWidth: 1.5,
           borderDash: [5, 4], pointRadius: 0, pointHitRadius: 0, stepped: 'middle', spanGaps: true }
@@ -879,6 +915,12 @@ function drawIntake(id) {
     },
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      onClick: (_, els) => {
+        if (!els.length) return;
+        goDay(days[els[0].index].d); render();
+        document.querySelector('.daynav')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      },
+      onHover: (ev, els) => { ev.native.target.style.cursor = els.length ? 'pointer' : 'default'; },
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -906,8 +948,8 @@ function personPage(id) {
   let body;
   if (sub === 'today') body = `
     <div class="grid g2">
-      <div class="card"><h2>🍽️ ควรกินต่อวัน</h2>${energyBlock(id)}</div>
-      <div class="card"><h2>🥗 วันนี้กินไปแล้ว</h2>${eatenBlock(id)}</div>
+      <div class="card"><h2>🍽️ ควรกินต่อวัน${viewDay() === todayStr() ? '' : ` <span class="muted" style="font-weight:400">· ${dayLabel(viewDay())}</span>`}</h2>${energyBlock(id, viewDay())}</div>
+      <div class="card"><h2>🥗 ${viewDay() === todayStr() ? 'วันนี้กินไปแล้ว' : 'กินไปแล้ว'}</h2>${eatenBlock(id)}</div>
     </div>
     ${intakeCard(id)}`;
   else if (sub === 'weight') {
@@ -1074,9 +1116,13 @@ function bind() {
   });
   document.querySelectorAll('[data-f]').forEach(inp => inp.onchange = () => { p[inp.dataset.f] = inp.dataset.f === 'exPct' ? +inp.value : inp.value; save(); render(); });
   document.querySelectorAll('[data-chip]').forEach(b => b.onclick = ev => { ev.preventDefault(); p[b.dataset.chip] = +b.dataset.v; save(); render(); });
+  const day = viewDay();
+  const list = () => ((p.log ||= {})[day] ||= []);
+  const changed = () => { recordDay(p, day, true); save(); render(); };
   const eat = item => {
-    if (p.today?.date !== todayStr()) p.today = { date: todayStr(), items: [] };
-    p.today.items.push({ id: uid(), qty: 1, ...item }); save(); render();
+    // A day that only had a total (from before per-day lists) keeps it as a line item, so adding food doesn't wipe it.
+    if (!dayItems(p, day).length && p.days?.[day]?.kcal) list().push({ id: uid(), name: 'ยอดที่บันทึกไว้ก่อนหน้า', p: 0, c: 0, f: 0, kcal: p.days[day].kcal, qty: 1, amount: 1, unit: 's' });
+    list().push({ id: uid(), qty: 1, ...item }); changed();
   };
   const eatFood = (fid, f) => {
     const own = MEAS_BY[f.unit];
@@ -1084,14 +1130,20 @@ function bind() {
       ...(own ? { amount: f.amt, unit: own.k, unitName: own.n } : { amount: 1, unit: 's', unitName: unitName(f.serving) }) });
     sharedWrite({ [`uses.${fid}`]: increment(1) });
   };
-  document.querySelectorAll('[data-uneat]').forEach(b => b.onclick = () => { p.today.items = p.today.items.filter(x => x.id !== b.dataset.uneat); save(); render(); });
-  const item = el => p.today.items.find(x => x.id === (el.dataset.amt || el.dataset.unit));
+  document.querySelectorAll('[data-uneat]').forEach(b => b.onclick = () => { p.log[day] = list().filter(x => x.id !== b.dataset.uneat); changed(); });
+  const item = el => list().find(x => x.id === (el.dataset.amt || el.dataset.unit));
+  document.querySelectorAll('[data-day]').forEach(b => b.onclick = () => {
+    const n = +b.dataset.day;
+    goDay(n ? new Date(dayMs(day) + n * 864e5).toISOString().slice(0, 10) : null); render();
+  });
+  const pick = document.querySelector('[data-pickday]');
+  if (pick) pick.onchange = () => { if (pick.value) { goDay(pick.value); render(); } };
   document.querySelectorAll('[data-amt]').forEach(inp => inp.onchange = () => {
     const it = item(inp), v = +inp.value;
     if (!it || !(v > 0)) { render(); return; }
     const u = unitsOf(getFood(it.foodId)).find(u => u.k === (it.unit || 's'));
     it.qty = u ? v * u.r : (it.qty ?? 1) * v / (it.amount ?? it.qty ?? 1);
-    it.amount = v; save(); render();
+    it.amount = v; changed();
   });
   // Switching unit keeps the same portion: 2 ทัพพี becomes 120 กรัม, then you adjust the number.
   document.querySelectorAll('[data-unit]').forEach(sel => sel.onchange = () => {
@@ -1099,7 +1151,7 @@ function bind() {
     if (!it || !u) return;
     const raw = (it.qty ?? 1) / u.r;
     it.amount = u.k === 'g' || u.k === 'ml' ? Math.round(raw) : Math.round(raw * 10) / 10 || 0.1;
-    it.qty = it.amount * u.r; it.unit = u.k; it.unitName = u.n; save(); render();
+    it.qty = it.amount * u.r; it.unit = u.k; it.unitName = u.n; changed();
   });
   bindSearch('eat-' + id, {
     pick: fid => { const f = getFood(fid); if (f) eatFood(fid, f); },
@@ -1146,7 +1198,7 @@ document.addEventListener('change', ev => {
   ev.target.closest('.foodform').querySelector('.cw').hidden = !!MEAS_BY[ev.target.value];
 });
 
-function setTab(t) { S.tab = t; sub = 'today'; save(); render(); window.scrollTo(0, 0); }
+function setTab(t) { S.tab = t; sub = 'today'; logDate = null; save(); render(); window.scrollTo(0, 0); }
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => setTab(b.dataset.tab));
 
 document.getElementById('exportBtn').onclick = () => {
@@ -1160,7 +1212,7 @@ document.getElementById('importFile').onchange = async ev => {
     const data = JSON.parse(await f.text());
     if (!data.people?.ton || !data.people?.patt) throw 0;
     if (confirm('แทนที่ข้อมูลของทั้งสองคนด้วยไฟล์นี้?')) {
-      S.people = data.people; IDS.forEach(id => dropMet(S.people[id])); save();
+      S.people = data.people; IDS.forEach(id => { dropMet(S.people[id]); moveToday(S.people[id]); }); save();
       if (data.shared) setDoc(sharedDoc(), data.shared).catch(onSharedError);
       render();
     }
