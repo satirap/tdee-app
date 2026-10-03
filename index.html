@@ -123,8 +123,16 @@ button.x:hover{color:var(--danger)}
 .dlabel{position:relative;flex-direction:row;font-size:15px;font-weight:600;color:var(--text);padding:2px 6px;cursor:pointer}
 .dlabel input{position:absolute;inset:0;opacity:0;cursor:pointer;padding:0}
 .daynav .sm{margin-left:auto;font-size:12px;padding:3px 10px}
-.search > input{padding:11px 14px;border-radius:12px;background:var(--surface-2);border-color:transparent}
+.searchrow{display:flex;gap:8px}
+.searchrow > input{padding:11px 14px;border-radius:12px;background:var(--surface-2);border-color:transparent}
 .results{margin-top:4px}
+.scanbtn{display:none;flex:none;width:46px;border:0;border-radius:12px;background:var(--surface-2);color:var(--text);place-items:center;cursor:pointer}
+@media (max-width:760px),(pointer:coarse){.scanbtn{display:grid}}
+.scanner{position:fixed;inset:0;z-index:50;background:#000}
+.scanner video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.scanner .frame{position:absolute;left:8%;right:8%;top:36%;height:20%;border:2px solid rgba(255,255,255,.9);border-radius:16px;box-shadow:0 0 0 100vmax rgba(0,0,0,.4)}
+.scanner .sbar{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:18px 18px calc(18px + env(safe-area-inset-bottom));color:#fff;font-size:14px}
+.scanner .sbar button{flex:none;background:rgba(255,255,255,.2);color:#fff;border:0;border-radius:99px;padding:10px 20px;font:inherit;cursor:pointer}
 .res{display:flex;align-items:center;gap:2px;border-bottom:1px solid var(--border)}
 .res:last-child{border-bottom:0}
 .res-main{flex:1;min-width:0;display:flex;flex-direction:column;border:0;background:transparent;color:var(--text);font:inherit;text-align:left;padding:10px 6px;border-radius:8px}
@@ -421,7 +429,7 @@ function searchFoods(q) {
   q = q.trim().toLowerCase();
   if (!q) return [];
   const rank = f => [-usesOf(f.id), f.std ? 1 : 0, f.name.toLowerCase().startsWith(q) ? 0 : 1];
-  return allFoods().filter(f => f.name.toLowerCase().includes(q)).sort((a, b) => {
+  return allFoods().filter(f => f.name.toLowerCase().includes(q) || f.barcode?.includes(q)).sort((a, b) => {
     const x = rank(a), y = rank(b);
     for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] - y[i];
     return a.name.localeCompare(b.name, 'th');
@@ -430,8 +438,10 @@ function searchFoods(q) {
 
 // Query survives re-renders; results are drawn straight into the DOM so typing never loses focus.
 const searchQ = {};
+// A scanned barcode that wasn't in My Food waits here as a draft form until saved or a new search starts.
+const scanDraft = {};
 const foodSearch = (key, mode) => `<div class="search" data-search="${key}" data-mode="${mode}">
-    <input type="search" placeholder="ค้นหาอาหาร" value="${esc(searchQ[key] || '')}" autocomplete="off">
+    <div class="searchrow"><input type="search" placeholder="ค้นหาอาหาร" value="${esc(searchQ[key] || '')}" autocomplete="off"><button type="button" class="scanbtn" data-scan aria-label="สแกนบาร์โค้ด"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M8 9v6M11 9v6M14 9v6M17 9v6" stroke-width="1.5"/></svg></button></div>
     <div class="results"></div>
   </div>`;
 
@@ -469,7 +479,7 @@ function servingParts(v) {
 const nutritionFields = (v = {}) => {
   const { amt, unit } = servingParts(v), counted = !MEAS_BY[unit];
   return `
-      <label>ปริมาณ<input name="amt" type="number" step="any" min="0" value="${esc(v.name ? amt : '')}" placeholder="1"></label>
+      <label>ปริมาณ<input name="amt" type="number" step="any" min="0" value="${esc(v.name || v.amt != null ? amt : '')}" placeholder="1"></label>
       <label>หน่วย<select name="unit">
         <optgroup label="แปลงหน่วยได้">${MEAS.map(u => `<option value="${u.k}" ${unit === u.k ? 'selected' : ''}>${u.n}</option>`).join('')}</optgroup>
         <optgroup label="หน่วยนับ">${COUNT.map(n => `<option value="${n}" ${unit === n ? 'selected' : ''}>${n}</option>`).join('')}</optgroup>
@@ -478,23 +488,25 @@ const nutritionFields = (v = {}) => {
       <label>โปรตีน ก.<input name="p" type="number" step="0.1" min="0" value="${esc(v.p ?? '')}"></label>
       <label>คาร์บ ก.<input name="c" type="number" step="0.1" min="0" value="${esc(v.c ?? '')}"></label>
       <label>ไขมัน ก.<input name="f" type="number" step="0.1" min="0" value="${esc(v.f ?? '')}"></label>
-      <label>kcal<input name="kcal" type="number" min="0" value="${esc(v.kcal || '')}" placeholder="อัตโนมัติ"></label>`;
+      <label>kcal<input name="kcal" type="number" min="0" value="${esc(v.kcal || '')}" placeholder="อัตโนมัติ"></label>
+      <label class="wide">บาร์โค้ด<input name="barcode" inputmode="numeric" value="${esc(v.barcode ?? '')}" placeholder="ไม่บังคับ"></label>`;
 };
+
+function newFoodForm(root, v, note) {
+  root.querySelector('.results').innerHTML = `<div class="empty">${note}</div>
+      <form class="foodform addnew">
+        <label class="wide">ชื่อ<input name="name" value="${esc(v.name || '')}" required></label>
+        ${nutritionFields(v)}
+        <button class="btn" type="submit">${root.dataset.mode === 'manage' ? 'เพิ่มเมนู' : 'เพิ่มและกิน'}</button>
+      </form>`;
+}
 
 function drawResults(root) {
   const q = root.querySelector('input').value.trim(), out = root.querySelector('.results');
-  const manage = root.dataset.mode === 'manage';
-  if (!q) { out.innerHTML = ''; return; }
+  const manage = root.dataset.mode === 'manage', draft = scanDraft[root.dataset.search];
+  if (!q) { if (draft) newFoodForm(root, draft.v, draft.note); else out.innerHTML = ''; return; }
   const hits = searchFoods(q);
-  if (!hits.length) {
-    out.innerHTML = `<div class="empty">ไม่พบ “${esc(q)}” · เพิ่มเป็นเมนูใหม่</div>
-      <form class="foodform addnew">
-        <label class="wide">ชื่อ<input name="name" value="${esc(q)}" required></label>
-        ${nutritionFields()}
-        <button class="btn" type="submit">${manage ? 'เพิ่มเมนู' : 'เพิ่มและกิน'}</button>
-      </form>`;
-    return;
-  }
+  if (!hits.length) { newFoodForm(root, { name: q }, `ไม่พบ “${esc(q)}” · เพิ่มเป็นเมนูใหม่`); return; }
   out.innerHTML = hits.map(f => {
     const body = `<span class="n">${esc(f.name)}${f.serving ? `<span class="s">${esc(f.serving)}${f.g && !MEAS_BY[f.unit] && !/^\d+\s*ก\.?$/.test(f.serving) ? ` · ${num(f.g)} ก.` : ''}</span>` : ''}${f.std ? '' : '<span class="tag">My</span>'}</span><span class="m">${macroLine(f)}</span>`;
     if (!manage) return `<div class="res"><button class="res-main" data-pick="${f.id}">${body}</button></div>`;
@@ -509,11 +521,12 @@ function bindSearch(key, { pick, add }) {
   const root = document.querySelector(`[data-search="${key}"]`);
   if (!root) return;
   const input = root.querySelector('input');
-  input.oninput = () => { searchQ[key] = input.value; drawResults(root); };
+  input.oninput = () => { searchQ[key] = input.value; delete scanDraft[key]; drawResults(root); };
   root.onclick = ev => {
     const t = ev.target.closest('button');
     if (!t) return;
-    if (t.dataset.pick) { searchQ[key] = ''; pick(t.dataset.pick); }
+    if (t.hasAttribute('data-scan')) scanInto(root, key, pick);
+    else if (t.dataset.pick) { searchQ[key] = ''; pick(t.dataset.pick); }
     else if (t.dataset.editfood) { editingFood = t.dataset.editfood; render(); window.scrollTo(0, 0); }
     else if (t.dataset.delfood) {
       const id = t.dataset.delfood;
@@ -527,11 +540,89 @@ function bindSearch(key, { pick, add }) {
     ev.preventDefault();
     const food = readFood(new FormData(ev.target));
     if (!food) return;
-    searchQ[key] = '';
+    searchQ[key] = ''; delete scanDraft[key];
     add(food);
   };
   drawResults(root);
 }
+// ---------- barcode scanning ----------
+// iPhone Safari has no native BarcodeDetector, so load a WebAssembly polyfill (ZXing) only when someone scans.
+let detectorP;
+const getDetector = () => detectorP ||= import('https://cdn.jsdelivr.net/npm/barcode-detector@3.2.2/ponyfill/+esm')
+  .then(m => new m.BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code'] }))
+  .catch(e => { detectorP = null; throw e; });
+
+function scanBarcode() {
+  return new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.className = 'scanner';
+    ov.innerHTML = `<video playsinline muted></video><div class="frame"></div>
+      <div class="sbar"><span class="st">กำลังเปิดกล้อง…</span><button type="button">ปิด</button></div>`;
+    document.body.append(ov);
+    const video = ov.querySelector('video'), st = ov.querySelector('.st');
+    let stream, done = false;
+    const finish = code => {
+      if (done) return;
+      done = true; stream?.getTracks().forEach(t => t.stop()); ov.remove(); resolve(code);
+    };
+    ov.querySelector('button').onclick = () => finish(null);
+    (async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+      } catch { st.textContent = 'เปิดกล้องไม่ได้ · อนุญาตให้ Safari ใช้กล้องก่อน'; return; }
+      if (done) { stream.getTracks().forEach(t => t.stop()); return; }
+      video.srcObject = stream;
+      await video.play().catch(() => {});
+      st.textContent = 'กำลังโหลดตัวอ่านบาร์โค้ด…';
+      let det;
+      try { det = await getDetector(); } catch { st.textContent = 'โหลดตัวอ่านไม่ได้ · เช็กอินเทอร์เน็ต'; return; }
+      st.textContent = 'เล็งบาร์โค้ดให้อยู่ในกรอบ';
+      while (!done) {
+        const found = video.readyState >= 2 ? await det.detect(video).catch(() => []) : [];
+        if (found.length) { finish(found[0].rawValue); return; }
+        await new Promise(r => setTimeout(r, 120));
+      }
+    })();
+  });
+}
+
+// Only the barcode number is sent to Open Food Facts, to prefill name and nutrition for a new food.
+async function lookupBarcode(code) {
+  try {
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 6000);
+    const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,product_name_th,brands,serving_size,serving_quantity,quantity,nutriments`, { signal: ctl.signal });
+    clearTimeout(timer);
+    const j = await r.json(), pr = j.product;
+    if (!pr) return null;
+    const n = pr.nutriments || {};
+    const per = +pr.serving_quantity && (n.proteins_serving != null || n['energy-kcal_serving'] != null) ? 'serving' : '100g';
+    const val = k => n[`${k}_${per}`] == null ? '' : Math.round(n[`${k}_${per}`] * 10) / 10;
+    const title = (pr.product_name_th || pr.product_name || '').trim(), brand = pr.brands?.split(',')[0]?.trim() || '';
+    const name = !title ? brand : brand && brand.length <= 20 && !title.toLowerCase().includes(brand.toLowerCase()) ? `${brand} ${title}` : title;
+    const ml = /ml|มล|\d\s*l\b/i.test(per === 'serving' ? pr.serving_size || '' : pr.quantity || '');
+    return { name, amt: per === 'serving' ? +pr.serving_quantity : 100, unit: ml ? 'ml' : 'g',
+      p: val('proteins'), c: val('carbohydrates'), f: val('fat'), kcal: val('energy-kcal') };
+  } catch { return null; }
+}
+
+async function scanInto(root, key, pick) {
+  const code = (await scanBarcode())?.trim();
+  if (!code) return;
+  const mine = foodList().find(f => f.barcode === code);
+  if (mine) {
+    if (root.dataset.mode === 'manage') { editingFood = mine.id; render(); window.scrollTo(0, 0); }
+    else { searchQ[key] = ''; pick(mine.id); }
+    return;
+  }
+  const live = () => document.querySelector(`[data-search="${key}"]`) || root;
+  searchQ[key] = ''; live().querySelector('input').value = '';
+  live().querySelector('.results').innerHTML = `<div class="empty">ไม่พบบาร์โค้ด ${esc(code)} ใน My Food · กำลังค้นข้อมูลสินค้า…</div>`;
+  const off = await lookupBarcode(code);
+  scanDraft[key] = { v: { ...(off || {}), barcode: code },
+    note: off ? 'พบข้อมูลจาก Open Food Facts · ตรวจสอบก่อนบันทึก' : `ไม่พบบาร์โค้ด ${esc(code)} · กรอกข้อมูลเมนูใหม่` };
+  newFoodForm(live(), scanDraft[key].v, scanDraft[key].note);
+}
+
 const rulesAlert = () => `<div class="alert">ใช้ My Food ไม่ได้: ต้องอัปเดต Firestore Rules ก่อน (ดูวิธีใน README.md) <span class="muted">(${esc(sharedError)})</span></div>`;
 const openProg = {};
 const dayItems = (p, d) => p.log?.[d] || [];
@@ -1209,7 +1300,7 @@ function readFood(fd) {
   const name = (fd.get('name') || '').trim();
   const n = k => fd.get(k) === '' || fd.get(k) == null ? 0 : +fd.get(k);
   const amt = n('amt') || 1, unit = fd.get('unit') || 'ที่', meas = MEAS_BY[unit];
-  const food = { name, p: n('p'), c: n('c'), f: n('f'), kcal: n('kcal'), amt, unit,
+  const food = { name, p: n('p'), c: n('c'), f: n('f'), kcal: n('kcal'), amt, unit, barcode: (fd.get('barcode') || '').trim() || null,
     serving: `${num(amt)} ${meas ? meas.n : unit}`, g: meas ? amt * meas.ml : n('g') || null, units: [] };
   if (!name || !(food.p || food.c || food.f || food.kcal)) { alert('ใส่ชื่อ และค่าโภชนาการอย่างน้อย 1 ช่อง'); return null; }
   if (!food.kcal) food.kcal = Math.round(foodKcal(food));
