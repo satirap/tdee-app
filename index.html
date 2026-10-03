@@ -59,7 +59,7 @@ h3{font-size:15px;margin:0 0 8px}
 .person-card{border-top:4px solid var(--c)}
 .rings{display:block;width:100%;max-width:230px;margin:4px auto 0}
 .rings text{font-family:inherit;dominant-baseline:middle}
-.rings .rt{font-size:10.5px;font-weight:600;dominant-baseline:central;letter-spacing:.02em}
+.rings .rt{font-size:10.5px;font-weight:700;dominant-baseline:central;letter-spacing:.02em;fill:var(--text);stroke:var(--surface);stroke-width:3px;stroke-linejoin:round;paint-order:stroke}
 .rings .rl{font-size:13px;fill:var(--muted)}
 .rings .rv{font-size:40px;font-weight:700;fill:var(--text);letter-spacing:-.02em}
 .rings .rv.bad{fill:var(--danger)}
@@ -878,17 +878,17 @@ function rings(m, kcal, prot) {
       stroke-dasharray="${f >= 1 ? L : f * L} ${L}" transform="rotate(-90 ${c} ${c})"/>`;
   };
   const over = kcal - m.kcal, kf = kcal / m.kcal, pf = prot / m.prot.g;
-  // Name each ring along its track just before 12 o'clock; white once the coloured arc has wrapped round under it.
+  // Name each ring along its track just before 12 o'clock; dark text with a surface-coloured halo reads on both the grey track and the coloured arc.
   const pt = (r, deg) => { const a = deg * Math.PI / 180; return `${(c + r * Math.cos(a)).toFixed(1)} ${(c + r * Math.sin(a)).toFixed(1)}`; };
-  const label = (id, r, text, filled) => `<path id="${id}" d="M ${pt(r, -175)} A ${r} ${r} 0 0 1 ${pt(r, -97)}" fill="none"/>
-    <text class="rt" style="fill:${filled ? '#fff' : 'var(--muted)'}"><textPath href="#${id}" startOffset="100%" text-anchor="end">${text}</textPath></text>`;
+  const label = (id, r, text) => `<path id="${id}" d="M ${pt(r, -175)} A ${r} ${r} 0 0 1 ${pt(r, -97)}" fill="none"/>
+    <text class="rt"><textPath href="#${id}" startOffset="100%" text-anchor="end">${text}</textPath></text>`;
   const uid2 = Math.random().toString(36).slice(2, 7);
   return `<svg class="rings" viewBox="0 0 240 240" role="img" aria-label="แคลอรี ${fmt(kcal)} จาก ${fmt(m.kcal)} kcal, โปรตีน ${fmt(prot)} จาก ${fmt(m.prot.g)} กรัม">
     <circle cx="${c}" cy="${c}" r="104" fill="none" stroke="var(--surface-2)" stroke-width="18"/>
     <circle cx="${c}" cy="${c}" r="80" fill="none" stroke="var(--surface-2)" stroke-width="18"/>
     ${ring(104, 18, kf, 'var(--c)')}${over > 0 ? ring(104, 18, kf - 1, 'var(--danger)') : ''}
     ${ring(80, 18, pf, 'var(--prot)')}
-    ${label('rk' + uid2, 104, 'แคลอรี', kf >= 0.8)}${label('rp' + uid2, 80, 'โปรตีน', pf >= 0.78)}
+    ${label('rk' + uid2, 104, 'แคลอรี')}${label('rp' + uid2, 80, 'โปรตีน')}
     <text x="${c}" y="${c - 30}" text-anchor="middle" class="rl">${over > 0 ? 'เกิน' : 'เหลือ'}</text>
     <text x="${c}" y="${c + 2}" text-anchor="middle" class="rv ${over > 0 ? 'bad' : ''}">${fmt(Math.abs(m.kcal - kcal))}</text>
     <text x="${c}" y="${c + 30}" text-anchor="middle" class="rl">kcal</text></svg>`;
