@@ -84,6 +84,12 @@ details.prog .stat .v{font-size:17px}
 .subtabs button.on{color:var(--text);font-weight:600;border-bottom-color:var(--c)}
 .weighform{display:grid;grid-template-columns:1.3fr 1fr 1fr auto;gap:8px;align-items:end}
 @media (max-width:560px){.weighform{grid-template-columns:1fr 1fr auto}.weighform .wd{grid-column:1/-1}}
+.mname{font-size:12px;margin-bottom:4px}
+.mname input{font-size:15px}
+.mlabel{font-size:12px;color:var(--muted);margin:14px 0 6px}
+.mlabel+.search{margin-top:0}
+.meal-total{margin-top:14px;padding-top:12px;border-top:1px solid var(--border);font-size:14px;font-variant-numeric:tabular-nums}
+.meal-total b{font-size:20px}
 .plan-note{font-size:13px;margin-bottom:6px;min-height:1px}
 .intake-sum{display:flex;gap:32px;margin:2px 0 12px}
 .intake-sum .l{display:block;font-size:12px;color:var(--muted)}
@@ -259,7 +265,7 @@ let pin = null, loaded = new Set(), dbError = null, pinError = '', unsubs = [];
 try { pin = localStorage.getItem(PIN_KEY); } catch {}
 const personDoc = id => doc(db, 'vault', pin, 'people', id);
 const sharedDoc = () => doc(db, 'vault', pin, 'shared', 'foods');
-let sharedError = null, editingFood = null;
+let sharedError = null, editingFood = null, foodsView = 'food', mealDraft = null;
 const synced = {};
 
 function save() {
@@ -423,15 +429,28 @@ const foodKcal = f => +f.kcal || (+f.p || 0) * 4 + (+f.c || 0) * 4 + (+f.f || 0)
 const foodList = () => Object.entries(S.shared?.foods || {}).map(([id, f]) => ({ id, ...f }));
 const usesOf = id => S.shared?.uses?.[id] || 0;
 const STD_BY_ID = Object.fromEntries(STD_FOODS.map(f => [f.id, f]));
-const allFoods = () => [...foodList(), ...STD_FOODS];
-const getFood = id => S.shared?.foods?.[id] ? { id, ...S.shared.foods[id] } : STD_BY_ID[id];
+// A meal is a saved set of foods with amounts; it acts like one food ("1 ชุด") whose nutrition is the sum.
+// Ingredients use the food's current values when it still exists, else the snapshot taken when added.
+function mealTotals(items) {
+  const t = { p: 0, c: 0, f: 0, kcal: 0 };
+  for (const it of items || []) {
+    const b = (it.foodId && (S.shared?.foods?.[it.foodId] || STD_BY_ID[it.foodId])) || it, q = it.qty ?? 1;
+    t.p += (+b.p || 0) * q; t.c += (+b.c || 0) * q; t.f += (+b.f || 0) * q; t.kcal += foodKcal(b) * q;
+  }
+  for (const k in t) t[k] = Math.round(t[k] * 10) / 10;
+  return t;
+}
+const mealFood = (id, m) => ({ id, name: m.name, serving: '1 ชุด', meal: true, n: (m.items || []).length, ...mealTotals(m.items) });
+const mealList = () => Object.entries(S.shared?.meals || {}).map(([id, m]) => mealFood(id, m));
+const allFoods = (withMeals = false) => [...(withMeals ? mealList() : []), ...foodList(), ...STD_FOODS];
+const getFood = id => S.shared?.foods?.[id] ? { id, ...S.shared.foods[id] } : S.shared?.meals?.[id] ? mealFood(id, S.shared.meals[id]) : STD_BY_ID[id];
 
 // Best matches first: most eaten, then My Food over the reference list, then names that start with the query.
-function searchFoods(q) {
+function searchFoods(q, withMeals) {
   q = q.trim().toLowerCase();
   if (!q) return [];
   const rank = f => [-usesOf(f.id), f.std ? 1 : 0, f.name.toLowerCase().startsWith(q) ? 0 : 1];
-  return allFoods().filter(f => f.name.toLowerCase().includes(q) || f.barcode?.includes(q)).sort((a, b) => {
+  return allFoods(withMeals).filter(f => f.name.toLowerCase().includes(q) || f.barcode?.includes(q)).sort((a, b) => {
     const x = rank(a), y = rank(b);
     for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] - y[i];
     return a.name.localeCompare(b.name, 'th');
@@ -507,10 +526,10 @@ function drawResults(root) {
   const q = root.querySelector('input').value.trim(), out = root.querySelector('.results');
   const manage = root.dataset.mode === 'manage', draft = scanDraft[root.dataset.search];
   if (!q) { if (draft) newFoodForm(root, draft.v, draft.note); else out.innerHTML = ''; return; }
-  const hits = searchFoods(q);
+  const hits = searchFoods(q, root.dataset.mode === 'eat');
   if (!hits.length) { newFoodForm(root, { name: q }, `ไม่พบ “${esc(q)}” · เพิ่มเป็นเมนูใหม่`); return; }
   out.innerHTML = hits.map(f => {
-    const body = `<span class="n">${esc(f.name)}${f.serving ? `<span class="s">${esc(f.serving)}${f.g && !MEAS_BY[f.unit] && !/^\d+\s*ก\.?$/.test(f.serving) ? ` · ${num(f.g)} ก.` : ''}</span>` : ''}${f.std ? '' : '<span class="tag">My</span>'}</span><span class="m">${macroLine(f)}</span>`;
+    const body = `<span class="n">${f.meal ? '🍱 ' : ''}${esc(f.name)}${f.serving ? `<span class="s">${esc(f.serving)}${f.g && !MEAS_BY[f.unit] && !/^\d+\s*ก\.?$/.test(f.serving) ? ` · ${num(f.g)} ก.` : ''}</span>` : ''}${f.std ? '' : `<span class="tag">${f.meal ? 'Meal' : 'My'}</span>`}</span><span class="m">${macroLine(f)}</span>`;
     if (!manage) return `<div class="res"><button class="res-main" data-pick="${f.id}">${body}</button></div>`;
     const acts = f.std
       ? `<button class="x" data-copystd="${f.id}" title="คัดลอกไป My Food เพื่อแก้ไข">✎</button>`
@@ -881,6 +900,30 @@ function macroSettings(id) {
     ${m.carb.pct < 40 ? `<div class="alert">คาร์บเหลือแค่ ${fmt(m.carb.pct)}% (แนะนำ 45–65%) ลองลดไขมันเป็น 25%</div>` : ''}`;
 }
 
+// One logged/meal line: name, free amount, and a unit picker that converts between the food's units.
+function itemChip(x, ns = '') {
+  const us = unitsOf(x.foodId ? getFood(x.foodId) : null), cur = x.unit || 's', amt = x.amount ?? x.qty ?? 1;
+  const unit = us.some(u => u.k === cur)
+    ? (us.length > 1 ? `<select data-${ns}unit="${x.id}">${us.map(u => `<option value="${u.k}" ${u.k === cur ? 'selected' : ''}>${esc(u.n)}</option>`).join('')}</select>` : `<em>${esc(us[0].n)}</em>`)
+    : `<em>${esc(x.unitName || 'ที่')}</em>`;
+  return `<span>${x.mealId || getFood(x.foodId)?.meal ? '🍱 ' : ''}${esc(x.name)}<input class="amt" type="number" inputmode="decimal" step="any" min="0" data-${ns}amt="${x.id}" value="${+(+amt).toFixed(2)}">${unit}<button class="x" data-${ns || 'un'}${ns ? 'del' : 'eat'}="${x.id}" title="ลบ">✕</button></span>`;
+}
+function setAmount(it, v) {
+  const u = unitsOf(getFood(it.foodId)).find(u => u.k === (it.unit || 's'));
+  it.qty = u ? v * u.r : (it.qty ?? 1) * v / (it.amount ?? it.qty ?? 1);
+  it.amount = v;
+}
+// Switching unit keeps the same portion: 2 ทัพพี becomes 120 กรัม, then you adjust the number.
+function setUnit(it, k) {
+  const u = unitsOf(getFood(it.foodId)).find(u => u.k === k);
+  if (!u) return false;
+  const raw = (it.qty ?? 1) / u.r;
+  it.amount = u.k === 'g' || u.k === 'ml' ? Math.round(raw) : Math.round(raw * 10) / 10 || 0.1;
+  it.qty = it.amount * u.r; it.unit = u.k; it.unitName = u.n;
+  return true;
+}
+const servingOf = f => { const own = MEAS_BY[f.unit]; return own ? { amount: f.amt, unit: own.k, unitName: own.n } : { amount: 1, unit: 's', unitName: unitName(f.serving) }; };
+
 function eatenBlock(id) {
   const p = S.people[id], m = macros(p);
   if (!m) return '<div class="muted">กรอกข้อมูลร่างกายและบันทึกน้ำหนักก่อน</div>';
@@ -895,13 +938,7 @@ function eatenBlock(id) {
     ${sharedError ? rulesAlert() : ''}
     ${foodSearch('eat-' + id, 'eat')}
     ${!items.length && oldTotal ? `<div class="eaten muted" style="font-size:13px">บันทึกไว้ ${fmt(oldTotal)} kcal (ไม่มีรายการ)</div>` : ''}
-    ${items.length ? `<div class="eaten">${items.map(x => {
-      const us = unitsOf(x.foodId ? getFood(x.foodId) : null), cur = x.unit || 's', amt = x.amount ?? x.qty ?? 1;
-      const unit = us.some(u => u.k === cur)
-        ? (us.length > 1 ? `<select data-unit="${x.id}">${us.map(u => `<option value="${u.k}" ${u.k === cur ? 'selected' : ''}>${esc(u.n)}</option>`).join('')}</select>` : `<em>${esc(us[0].n)}</em>`)
-        : `<em>${esc(x.unitName || 'ที่')}</em>`;
-      return `<span>${esc(x.name)}<input class="amt" type="number" inputmode="decimal" step="any" min="0" data-amt="${x.id}" value="${+(+amt).toFixed(2)}">${unit}<button class="x" data-uneat="${x.id}" title="ลบ">✕</button></span>`;
-    }).join('')}</div>` : ''}`;
+    ${items.length ? `<div class="eaten">${items.map(x => itemChip(x)).join('')}</div>` : ''}`;
 }
 
 function foodsPage() {
@@ -909,15 +946,38 @@ function foodsPage() {
   if (!S.shared) return '<div class="center"><p>กำลังโหลด…</p></div>';
   // Editing a reference food only drafts a copy; it's added to My Food on save.
   const ed = editingFood && (S.shared.foods?.[editingFood] || STD_BY_ID[editingFood]);
-  return `<div class="card foods-page">
-    <h2>${ed ? (ed.std ? 'เพิ่มเข้า My Food' : 'แก้ไขเมนู') : 'My Food'}</h2>
-    ${ed ? `<form class="foodform" id="editFood">
-        <label class="wide">ชื่อ<input name="name" value="${esc(ed.name)}" required></label>
-        ${nutritionFields(ed)}
-        <button class="btn" type="submit">บันทึก</button>
-        <button class="ghost" type="button" id="cancelEdit">ยกเลิก</button>
-      </form>` : foodSearch('manage', 'manage')}
+  if (ed) return `<div class="card foods-page">
+    <h2>${ed.std ? 'เพิ่มเข้า My Food' : 'แก้ไขเมนู'}</h2>
+    <form class="foodform" id="editFood">
+      <label class="wide">ชื่อ<input name="name" value="${esc(ed.name)}" required></label>
+      ${nutritionFields(ed)}
+      <button class="btn" type="submit">บันทึก</button>
+      <button class="ghost" type="button" id="cancelEdit">ยกเลิก</button>
+    </form>
   </div>`;
+  if (foodsView === 'meal' && mealDraft) return `<div class="card foods-page"><h2>🍱 ${mealDraft.id ? 'แก้ไข Meal' : 'สร้าง Meal'}</h2>${mealEditor()}</div>`;
+  const seg = `<div class="seg">${[['food', 'My Food'], ['meal', 'My Meal']].map(([k, l]) => `<button data-fview="${k}" class="${foodsView === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+  const head = t => `<div class="person-head"><h2 style="margin:0">${t}</h2>${seg}</div>`;
+  if (foodsView === 'food') return `<div class="card foods-page">${head('My Food')}${foodSearch('manage', 'manage')}</div>`;
+  const meals = mealList().sort((a, b) => a.name.localeCompare(b.name, 'th'));
+  return `<div class="card foods-page">${head('🍱 My Meal')}
+    <button class="btn" data-newmeal>+ สร้าง Meal</button>
+    <div class="results" style="margin-top:8px">${meals.map(m => `<div class="res"><div class="res-main">
+        <span class="n">${esc(m.name)}<span class="s">${m.n} รายการ</span></span><span class="m">${macroLine(m)}</span></div>
+        <button class="x" data-editmeal="${m.id}" title="แก้ไข">✎</button><button class="x" data-delmeal="${m.id}" title="ลบ">✕</button></div>`).join('')
+      || '<div class="empty">ยังไม่มี Meal · รวมเมนูที่กินด้วยกันบ่อย ๆ เป็นชุดเดียว เช่น อาหารเช้าประจำ</div>'}</div>
+  </div>`;
+}
+
+function mealEditor() {
+  const t = mealTotals(mealDraft.items);
+  return `
+    <label class="mname">ชื่อ Meal<input id="mealName" value="${esc(mealDraft.name)}" placeholder="เช่น อาหารเช้าประจำ" autocomplete="off"></label>
+    <div class="mlabel">ส่วนประกอบ</div>
+    ${foodSearch('meal', 'meal')}
+    ${mealDraft.items.length ? `<div class="eaten">${mealDraft.items.map(x => itemChip(x, 'm')).join('')}</div>` : ''}
+    <div class="meal-total"><span class="muted">รวม</span> <b>${fmt(t.kcal)}</b> kcal · P ${num(t.p)} · C ${num(t.c)} · F ${num(t.f)}</div>
+    <div class="row" style="margin-top:14px"><button class="btn" id="saveMeal">บันทึก Meal</button><button class="ghost" id="cancelMeal">ยกเลิก</button></div>`;
 }
 
 function summaryCard(id) {
@@ -1291,9 +1351,7 @@ function bind() {
     list().push({ id: uid(), qty: 1, ...item }); changed();
   };
   const eatFood = (fid, f) => {
-    const own = MEAS_BY[f.unit];
-    eat({ foodId: fid, name: f.name, p: +f.p || 0, c: +f.c || 0, f: +f.f || 0, kcal: foodKcal(f),
-      ...(own ? { amount: f.amt, unit: own.k, unitName: own.n } : { amount: 1, unit: 's', unitName: unitName(f.serving) }) });
+    eat({ foodId: fid, name: f.name, p: +f.p || 0, c: +f.c || 0, f: +f.f || 0, kcal: foodKcal(f), ...servingOf(f) });
     sharedWrite({ [`uses.${fid}`]: increment(1) });
   };
   document.querySelectorAll('[data-uneat]').forEach(b => b.onclick = () => { p.log[day] = list().filter(x => x.id !== b.dataset.uneat); changed(); });
@@ -1307,18 +1365,9 @@ function bind() {
   document.querySelectorAll('[data-amt]').forEach(inp => inp.onchange = () => {
     const it = item(inp), v = +inp.value;
     if (!it || !(v > 0)) { render(); return; }
-    const u = unitsOf(getFood(it.foodId)).find(u => u.k === (it.unit || 's'));
-    it.qty = u ? v * u.r : (it.qty ?? 1) * v / (it.amount ?? it.qty ?? 1);
-    it.amount = v; changed();
+    setAmount(it, v); changed();
   });
-  // Switching unit keeps the same portion: 2 ทัพพี becomes 120 กรัม, then you adjust the number.
-  document.querySelectorAll('[data-unit]').forEach(sel => sel.onchange = () => {
-    const it = item(sel), u = unitsOf(getFood(it?.foodId)).find(u => u.k === sel.value);
-    if (!it || !u) return;
-    const raw = (it.qty ?? 1) / u.r;
-    it.amount = u.k === 'g' || u.k === 'ml' ? Math.round(raw) : Math.round(raw * 10) / 10 || 0.1;
-    it.qty = it.amount * u.r; it.unit = u.k; it.unitName = u.n; changed();
-  });
+  document.querySelectorAll('[data-unit]').forEach(sel => sel.onchange = () => { const it = item(sel); if (it && setUnit(it, sel.value)) changed(); });
   bindSearch('eat-' + id, {
     pick: fid => { const f = getFood(fid); if (f) eatFood(fid, f); },
     add: food => { if (S.shared && !sharedError) eatFood(addFood(food), food); else eat(food); }
@@ -1345,6 +1394,19 @@ function readFood(fd) {
 
 function bindFoods() {
   bindSearch('manage', { add: food => addFood(food) });
+  document.querySelectorAll('[data-fview]').forEach(b => b.onclick = () => { foodsView = b.dataset.fview; render(); });
+  const nm = document.querySelector('[data-newmeal]');
+  if (nm) nm.onclick = () => { mealDraft = { id: null, name: '', items: [] }; render(); };
+  document.querySelectorAll('[data-editmeal]').forEach(b => b.onclick = () => {
+    const m = S.shared.meals[b.dataset.editmeal];
+    mealDraft = { id: b.dataset.editmeal, name: m.name, created: m.created, items: structuredClone(m.items || []) };
+    render(); window.scrollTo(0, 0);
+  });
+  document.querySelectorAll('[data-delmeal]').forEach(b => b.onclick = () => {
+    const id = b.dataset.delmeal;
+    if (confirm(`ลบ Meal “${S.shared.meals[id].name}”?`)) sharedWrite({ [`meals.${id}`]: deleteField(), [`uses.${id}`]: deleteField() });
+  });
+  if (mealDraft && foodsView === 'meal') bindMealEditor();
   const ef = document.getElementById('editFood');
   if (ef) ef.onsubmit = ev => {
     ev.preventDefault();
@@ -1363,6 +1425,29 @@ document.addEventListener('change', ev => {
   if (ev.target.name !== 'unit' || !ev.target.closest('.foodform')) return;
   ev.target.closest('.foodform').querySelector('.cw').hidden = !!MEAS_BY[ev.target.value];
 });
+
+function bindMealEditor() {
+  const nameEl = document.getElementById('mealName');
+  if (nameEl) nameEl.oninput = () => { mealDraft.name = nameEl.value; };
+  const addIng = (fid, f = getFood(fid)) => {
+    if (!f) return;
+    mealDraft.items.push({ id: uid(), foodId: fid, name: f.name, p: +f.p || 0, c: +f.c || 0, f: +f.f || 0, kcal: foodKcal(f), qty: 1, ...servingOf(f) });
+    render();
+  };
+  bindSearch('meal', { pick: fid => addIng(fid), add: food => addIng(addFood(food), food) });
+  const it = el => mealDraft.items.find(x => x.id === (el.dataset.mamt || el.dataset.munit || el.dataset.mdel));
+  document.querySelectorAll('[data-mamt]').forEach(inp => inp.onchange = () => { const x = it(inp), v = +inp.value; if (x && v > 0) setAmount(x, v); render(); });
+  document.querySelectorAll('[data-munit]').forEach(sel => sel.onchange = () => { const x = it(sel); if (x) setUnit(x, sel.value); render(); });
+  document.querySelectorAll('[data-mdel]').forEach(b => b.onclick = () => { mealDraft.items = mealDraft.items.filter(x => x.id !== b.dataset.mdel); render(); });
+  document.getElementById('cancelMeal').onclick = () => { mealDraft = null; render(); };
+  document.getElementById('saveMeal').onclick = () => {
+    const name = mealDraft.name.trim();
+    if (!name) { alert('ตั้งชื่อ Meal ก่อน'); return; }
+    if (!mealDraft.items.length) { alert('เพิ่มส่วนประกอบอย่างน้อย 1 รายการ'); return; }
+    sharedWrite({ [`meals.${mealDraft.id || uid()}`]: { name, items: mealDraft.items, created: mealDraft.created || Date.now() } });
+    mealDraft = null; render();
+  };
+}
 
 function setTab(t) { S.tab = t; sub = 'today'; logDate = null; save(); render(); window.scrollTo(0, 0); }
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => setTab(b.dataset.tab));

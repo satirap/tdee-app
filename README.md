@@ -36,5 +36,5 @@ Then open http://localhost:8000 .
 ## Data
 
 - `vault/{pin}/people/ton` and `vault/{pin}/people/patt` in Firestore — profile, goals, activities, weight entries, food log per day (`log`, last ~13 months) and daily kcal totals (`days`)
-- `vault/{pin}/shared/foods` — the shared My Food library (foods and how often each is eaten); `foods-th.js` holds the built-in reference foods
+- `vault/{pin}/shared/foods` — the shared My Food library (foods, My Meal sets of foods, and how often each is eaten); `foods-th.js` holds the built-in reference foods
 - Use the Export button at the bottom of the page to back up to JSON periodically
