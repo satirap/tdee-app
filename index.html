@@ -729,6 +729,18 @@ function energyBlock(id, d = todayStr()) {
     ${r.target < r.floor ? `<div class="alert">เป้าคำนวณได้ ${fmt(r.target)} kcal ต่ำกว่าขั้นต่ำที่แนะนำ (${r.floor}) จึงแสดงเป็น ${r.floor} แทน · ลองลด “ลดวันละ” ลง</div>` : ''}`;
 }
 
+function macroSettings(id) {
+  const p = S.people[id], m = macros(p);
+  if (!m) return '<div class="muted">กรอกข้อมูลส่วนตัวและบันทึกน้ำหนักก่อน</div>';
+  const chips = (field, opts, val, unit) => `<div class="chips">${opts.map(v => `<button data-chip="${field}" data-v="${v}" class="${+val === v ? 'on' : ''}">${v}${unit}</button>`).join('')}</div>`;
+  return `
+    <div class="goal-grid">
+      <label>โปรตีน (ก. ต่อ กก. น้ำหนักตัว)${chips('proteinPerKg', [1, 1.2, 1.6], m.perKg, '')}</label>
+      <label>ไขมัน (% ของแคล)${chips('fatPct', [25, 30, 35], m.fatPct, '%')}</label>
+    </div>
+    ${m.carb.pct < 40 ? `<div class="alert">คาร์บเหลือแค่ ${fmt(m.carb.pct)}% (แนะนำ 45–65%) ลองลดไขมันเป็น 25%</div>` : ''}`;
+}
+
 function eatenBlock(id) {
   const p = S.people[id], m = macros(p);
   if (!m) return '<div class="muted">กรอกข้อมูลร่างกายและบันทึกน้ำหนักก่อน</div>';
