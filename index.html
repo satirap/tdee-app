@@ -143,6 +143,7 @@ button.x:hover{color:var(--danger)}
 .scanner .sb{flex:1;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.2);color:#fff;border:0;border-radius:99px;padding:11px 8px;font:inherit;font-size:14px;cursor:pointer;white-space:nowrap}
 .res{display:flex;align-items:center;gap:2px;border-bottom:1px solid var(--border)}
 .res:last-child{border-bottom:0}
+.res button.x{display:grid;place-items:center;width:30px;height:30px;padding:0}
 .res-main{flex:1;min-width:0;display:flex;flex-direction:column;border:0;background:transparent;color:var(--text);font:inherit;text-align:left;padding:10px 6px;border-radius:8px}
 button.res-main{cursor:pointer}
 button.res-main:hover{background:var(--surface-2)}
@@ -542,7 +543,7 @@ function resultRow(f, manage) {
   if (!manage) return `<div class="res"><button class="res-main" data-pick="${f.id}">${body}</button></div>`;
   const acts = f.std
     ? `<button class="x" data-copystd="${f.id}" title="คัดลอกไป My Food เพื่อแก้ไข">✎</button>`
-    : `<button class="x" data-editfood="${f.id}" title="แก้ไข">✎</button><button class="x" data-delfood="${f.id}" title="ลบ">✕</button>`;
+    : `<button class="x" data-editfood="${f.id}" title="แก้ไข">✎</button><button class="x" data-dupfood="${f.id}" title="คัดลอกเป็นเมนูใหม่"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button><button class="x" data-delfood="${f.id}" title="ลบ">✕</button>`;
   return `<div class="res"><div class="res-main">${body}</div>${acts}</div>`;
 }
 
@@ -557,6 +558,7 @@ function bindSearch(key, { pick, add }) {
     if (t.hasAttribute('data-scan')) scanInto(root, key, pick);
     else if (t.dataset.pick) { searchQ[key] = ''; pick(t.dataset.pick); }
     else if (t.dataset.editfood) { editingFood = t.dataset.editfood; render(); window.scrollTo(0, 0); }
+    else if (t.dataset.dupfood) { editingFood = 'dup:' + t.dataset.dupfood; render(); window.scrollTo(0, 0); }
     else if (t.dataset.delfood) {
       const id = t.dataset.delfood;
       if (confirm(`ลบ “${S.shared.foods[id].name}” ออกจาก My Food?`)) sharedWrite({ [`foods.${id}`]: deleteField(), [`uses.${id}`]: deleteField() });
@@ -952,10 +954,12 @@ function eatenBlock(id) {
 function foodsPage() {
   if (sharedError) return `<div class="card">${rulesAlert()}</div>`;
   if (!S.shared) return '<div class="center"><p>กำลังโหลด…</p></div>';
-  // Editing a reference food only drafts a copy; it's added to My Food on save.
-  const ed = editingFood && (S.shared.foods?.[editingFood] || STD_BY_ID[editingFood]);
+  // Editing a reference food or duplicating one only drafts a copy; it's added to My Food on save.
+  const dupOf = editingFood?.startsWith('dup:') && S.shared.foods?.[editingFood.slice(4)];
+  const ed = dupOf ? { ...dupOf, name: `${dupOf.name} (สำเนา)`, barcode: null, dup: true }
+    : editingFood && (S.shared.foods?.[editingFood] || STD_BY_ID[editingFood]);
   if (ed) return `<div class="card foods-page">
-    <h2>${ed.std ? 'เพิ่มเข้า My Food' : 'แก้ไขเมนู'}</h2>
+    <h2>${ed.dup ? 'คัดลอกเป็นเมนูใหม่' : ed.std ? 'เพิ่มเข้า My Food' : 'แก้ไขเมนู'}</h2>
     <form class="foodform" id="editFood">
       <label class="wide">ชื่อ<input name="name" value="${esc(ed.name)}" required></label>
       ${nutritionFields(ed)}
@@ -1425,7 +1429,7 @@ function bindFoods() {
     ev.preventDefault();
     const food = readFood(new FormData(ef));
     if (!food) return;
-    if (STD_BY_ID[editingFood]) addFood(food);
+    if (STD_BY_ID[editingFood] || editingFood.startsWith('dup:')) addFood(food);
     else sharedWrite({ [`foods.${editingFood}`]: { ...S.shared.foods[editingFood], ...food } });
     editingFood = null; render();
   };
