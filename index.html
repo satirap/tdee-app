@@ -43,6 +43,11 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:"IBM Plex Sans 
 .wrap{max-width:1080px;margin:0 auto;padding:20px 16px 60px}
 header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
 h1{font-size:22px;margin:0;font-weight:700}
+.brand{display:flex;align-items:center;gap:10px}
+.refresh{display:grid;place-items:center;width:34px;height:34px;border:0;border-radius:50%;background:var(--surface-2);color:var(--muted);cursor:pointer}
+.refresh:hover{color:var(--text)}
+.refresh.spin svg{animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 h1 small{display:block;font-size:13px;font-weight:400;color:var(--muted)}
 h2{font-size:17px;margin:0 0 12px}
 h3{font-size:15px;margin:0 0 8px}
@@ -200,7 +205,8 @@ footer{margin-top:24px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;fo
 <body>
 <div class="wrap">
   <header>
-    <h1>TDEE Tracker<small>ลดไขมัน · ต้น & พัช</small></h1>
+    <div class="brand"><h1>TDEE Tracker<small>ลดไขมัน · ต้น & พัช</small></h1>
+      <button id="refreshBtn" class="refresh" aria-label="รีเฟรช" title="โหลดเวอร์ชันล่าสุด"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg></button></div>
     <nav class="tabs hidden" id="tabs">
       <button data-tab="overview">ภาพรวม</button>
       <button data-tab="ton">ต้น</button>
@@ -1510,6 +1516,13 @@ document.getElementById('importFile').onchange = async ev => {
   ev.target.value = '';
 };
 document.getElementById('logoutBtn').onclick = () => lock();
+// The home-screen app has no browser reload; refetch the app files past the HTTP cache, then reload.
+document.getElementById('refreshBtn').onclick = async ev => {
+  ev.currentTarget.classList.add('spin');
+  await Promise.all(['./', './index.html', './foods-th.js', './firebase-config.js']
+    .map(u => fetch(u, { cache: 'reload' }).catch(() => {})));
+  location.reload();
+};
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render);
 // Mobile Safari sometimes misses canvas resizes (rotation, pinch-zoom, back/forward cache) — force a refit.
 let resizeTimer;
