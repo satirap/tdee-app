@@ -888,18 +888,25 @@ function personPage(id) {
         <td class="muted">${r ? fmt(calc(p, x.weight).target) : '–'}</td>
         <td style="text-align:right"><button class="x" data-del="${x.id}" title="ลบ">✕</button></td></tr>`;
     }).join('');
+    const fats = e.filter(x => x.fat != null), fd = fats.length > 1 ? fats[0].fat - fats.at(-1).fat : null;
     body = `
-    <div class="card">
-      <h2 style="margin-bottom:2px">น้ำหนัก</h2>
-      <div class="plan-note">${planStatus(p)}</div>
-      <div class="chart-box"><canvas id="chartOne"></canvas></div>
-      ${progress(id)}
-      ${insight(id)}
+    <div class="grid g2">
+      <div class="card">
+        <h2 style="margin-bottom:2px">⚖️ น้ำหนัก</h2>
+        <div class="plan-note">${planStatus(p)}</div>
+        <div class="chart-box"><canvas id="chartOne"></canvas></div>
+        ${progress(id)}
+        ${insight(id)}
+      </div>
+      <div class="card">
+        <h2 style="margin-bottom:2px">🔥 % ไขมัน</h2>
+        <div class="plan-note">${fats.length ? `<span class="muted">ล่าสุด ${fmt(fats[0].fat, 1)}%</span>${fd != null ? ` · <span class="${fd < 0 ? 'good' : fd > 0 ? 'bad' : 'muted'}">${fd > 0 ? '+' : ''}${fmt(fd, 1)}% จากครั้งแรก</span>` : ''}` : ''}</div>
+        ${fats.length ? '<div class="chart-box"><canvas id="fatChart"></canvas></div>' : '<div class="muted" style="display:grid;place-items:center;min-height:120px;text-align:center;font-size:13px">ยังไม่มีข้อมูล<br>ใส่ % ไขมันตอนบันทึกน้ำหนัก</div>'}
+      </div>
     </div>
-    ${e.some(x => x.fat != null) ? `<div class="card" style="margin-top:14px"><h2>% ไขมัน</h2><div class="chart-box short"><canvas id="fatChart"></canvas></div></div>` : ''}
     <div class="grid g2" style="margin-top:14px">
-      <div class="card"><h2>บันทึกน้ำหนัก</h2>${quickAdd(id)}${statsBlock(id)}</div>
-      <div class="card"><h2>ประวัติ <span class="muted" style="font-weight:400">(${e.length})</span></h2>
+      <div class="card"><h2>✏️ บันทึกน้ำหนัก</h2>${quickAdd(id)}${statsBlock(id)}</div>
+      <div class="card"><h2>🗓️ ประวัติ <span class="muted" style="font-weight:400">(${e.length})</span></h2>
         ${e.length ? `<div class="scroll" style="max-height:420px;overflow-y:auto"><table class="log"><thead><tr><th>วันที่</th><th>กก.</th><th>±</th><th>ไขมัน</th><th>เป้า kcal</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="muted">ยังไม่มีข้อมูล</div>'}
       </div>
     </div>`;
