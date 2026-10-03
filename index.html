@@ -72,6 +72,8 @@ details.prog .stat .v{font-size:17px}
 .subtabs{display:flex;gap:24px;border-bottom:1px solid var(--border);margin:0 0 16px;overflow-x:auto;scrollbar-width:none}
 .subtabs button{border:0;background:none;font:inherit;color:var(--muted);padding:4px 0 10px;cursor:pointer;white-space:nowrap;border-bottom:2px solid transparent;margin-bottom:-1px}
 .subtabs button.on{color:var(--text);font-weight:600;border-bottom-color:var(--c)}
+.weighform{display:grid;grid-template-columns:1.3fr 1fr 1fr auto;gap:8px;align-items:end}
+@media (max-width:560px){.weighform{grid-template-columns:1fr 1fr auto}.weighform .wd{grid-column:1/-1}}
 .plan-note{font-size:13px;margin-bottom:6px;min-height:1px}
 .intake-sum{display:flex;gap:32px;margin:2px 0 12px}
 .intake-sum .l{display:block;font-size:12px;color:var(--muted)}
@@ -567,6 +569,7 @@ function render() {
     app.innerHTML = personPage(S.tab);
     drawChart('chartOne', [S.tab]);
     drawIntake(S.tab);
+    drawFat(S.tab);
   }
   bind();
 }
@@ -607,11 +610,13 @@ function statsBlock(id, withExtras = true) {
   const p = S.people[id], e = sorted(p), r = calc(p);
   const cur = e.length ? +e[e.length - 1].weight : null, start = e.length ? +e[0].weight : null;
   const diff = cur != null ? cur - start : null;
+  const fats = e.filter(x => x.fat != null), fd = fats.length > 1 ? fats.at(-1).fat - fats[0].fat : null;
   return `<div class="stats">
     <div class="stat"><div class="l">น้ำหนักล่าสุด</div><div class="v">${fmt(cur, 1)} <small>กก.</small></div></div>
     <div class="stat"><div class="l">เปลี่ยนแปลงรวม</div><div class="v ${diff < 0 ? 'good' : diff > 0 ? 'bad' : ''}">${diff == null ? '–' : (diff > 0 ? '+' : '') + fmt(diff, 1)} <small>กก.</small></div></div>
     <div class="stat"><div class="l">คาดว่าถึงเป้า</div><div class="v" style="font-size:17px">${etaText(p)}</div></div>
     ${withExtras ? `<div class="stat"><div class="l">BMI</div><div class="v">${fmt(r?.bmi, 1)}</div></div>` : ''}
+    ${withExtras && fats.length ? `<div class="stat"><div class="l">% ไขมัน</div><div class="v">${fmt(fats.at(-1).fat, 1)} <small>%${fats.length > 1 ? ` · <span class="${fd < 0 ? 'good' : fd > 0 ? 'bad' : ''}">${fd > 0 ? '+' : ''}${fmt(fd, 1)}</span>` : ''}</small></div></div>` : ''}
   </div>`;
 }
 
@@ -752,9 +757,10 @@ function goalCard(id) {
 
 function quickAdd(id) {
   const last = latest(S.people[id]);
-  return `<form class="row" data-add="${id}">
-    <label style="flex:1.2">วันที่<input type="date" name="date" value="${todayStr()}" required></label>
-    <label style="flex:1">น้ำหนัก (กก.)<input type="number" name="weight" step="0.1" min="20" max="300" placeholder="${last ? last.weight : '65.0'}" required></label>
+  return `<form class="weighform" data-add="${id}">
+    <label class="wd">วันที่<input type="date" name="date" value="${todayStr()}" required></label>
+    <label>น้ำหนัก (กก.)<input type="number" name="weight" step="0.1" min="20" max="300" placeholder="${last ? last.weight : '65.0'}" required></label>
+    <label>% ไขมัน<input type="number" name="fat" step="0.1" min="3" max="70" placeholder="${last?.fat ?? 'ไม่บังคับ'}"></label>
     <button class="btn" type="submit">บันทึก</button>
   </form>`;
 }
@@ -795,6 +801,30 @@ function intakeCard(id) {
     </div>
     <div class="chart-box short"><canvas id="intakeChart"></canvas></div>
   </div>`;
+}
+
+function drawFat(id) {
+  const el = document.getElementById('fatChart');
+  if (!el || !window.Chart) return;
+  const pts = sorted(S.people[id]).filter(x => x.fat != null);
+  const text = css('--muted'), grid = css('--border'), col = css(id === 'ton' ? '--ton' : '--patt'), surface = css('--surface');
+  charts.push(new Chart(el, {
+    type: 'line',
+    data: { datasets: [{ data: pts.map(x => ({ x: dayMs(x.date), y: +x.fat, w: +x.weight })), borderColor: col, backgroundColor: col,
+      borderWidth: 2.5, tension: .3, pointRadius: 3.5, pointHoverRadius: 6, pointBackgroundColor: surface, pointBorderColor: col, pointBorderWidth: 2 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'nearest', intersect: false },
+      plugins: { legend: { display: false }, tooltip: { callbacks: {
+        title: it => new Date(it[0].parsed.x).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }),
+        label: it => `${fmt(it.parsed.y, 1)}% · ไขมัน ${fmt(it.raw.w * it.parsed.y / 100, 1)} กก.` } } },
+      scales: {
+        x: { type: 'linear', min: dayMs(pts[0].date) - 864e5 / 2, max: Math.max(dayMs(pts.at(-1).date), dayMs(pts[0].date) + 7 * 864e5) + 864e5 / 2,
+          grid: { display: false }, border: { color: grid },
+          ticks: { color: text, maxTicksLimit: 6, callback: v => new Date(v).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', timeZone: 'UTC' }) } },
+        y: { grace: '15%', grid: { color: grid }, border: { display: false }, ticks: { color: text, maxTicksLimit: 5, callback: v => +v.toFixed(1) + '%' } }
+      }
+    }
+  }));
 }
 
 function drawIntake(id) {
@@ -854,6 +884,7 @@ function personPage(id) {
       const prev = e[i + 1], d = prev ? x.weight - prev.weight : null;
       return `<tr><td>${fmtDate(x.date)}</td><td><b>${fmt(x.weight, 1)}</b></td>
         <td class="${d < 0 ? 'good' : d > 0 ? 'bad' : 'muted'}">${d == null ? '–' : (d > 0 ? '+' : '') + fmt(d, 1)}</td>
+        <td>${x.fat != null ? fmt(x.fat, 1) + '%' : '<span class="muted">–</span>'}</td>
         <td class="muted">${r ? fmt(calc(p, x.weight).target) : '–'}</td>
         <td style="text-align:right"><button class="x" data-del="${x.id}" title="ลบ">✕</button></td></tr>`;
     }).join('');
@@ -865,10 +896,11 @@ function personPage(id) {
       ${progress(id)}
       ${insight(id)}
     </div>
+    ${e.some(x => x.fat != null) ? `<div class="card" style="margin-top:14px"><h2>% ไขมัน</h2><div class="chart-box short"><canvas id="fatChart"></canvas></div></div>` : ''}
     <div class="grid g2" style="margin-top:14px">
       <div class="card"><h2>บันทึกน้ำหนัก</h2>${quickAdd(id)}${statsBlock(id)}</div>
       <div class="card"><h2>ประวัติ <span class="muted" style="font-weight:400">(${e.length})</span></h2>
-        ${e.length ? `<div class="scroll" style="max-height:420px;overflow-y:auto"><table class="log"><thead><tr><th>วันที่</th><th>กก.</th><th>±</th><th>เป้า kcal</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="muted">ยังไม่มีข้อมูล</div>'}
+        ${e.length ? `<div class="scroll" style="max-height:420px;overflow-y:auto"><table class="log"><thead><tr><th>วันที่</th><th>กก.</th><th>±</th><th>ไขมัน</th><th>เป้า kcal</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="muted">ยังไม่มีข้อมูล</div>'}
       </div>
     </div>`;
   } else if (sub === 'goals') body = `
@@ -990,7 +1022,7 @@ function bind() {
   document.querySelectorAll('form[data-add]').forEach(f => f.onsubmit = ev => {
     ev.preventDefault();
     const p = S.people[f.dataset.add], fd = new FormData(f);
-    const entry = { id: uid(), date: fd.get('date'), weight: +fd.get('weight') };
+    const entry = { id: uid(), date: fd.get('date'), weight: +fd.get('weight'), ...(fd.get('fat') ? { fat: +fd.get('fat') } : {}) };
     const i = p.entries.findIndex(x => x.date === entry.date);
     if (i >= 0) p.entries[i] = { ...p.entries[i], ...entry, id: p.entries[i].id }; else p.entries.push(entry);
     save(); render();
