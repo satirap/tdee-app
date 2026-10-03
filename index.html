@@ -596,6 +596,34 @@ function planStatus(p) {
   return `${legend} · ${st}`;
 }
 
+// Body-fat plan: from the first fat reading, assume the planned weekly weight loss is all fat.
+function fatPlan(p) {
+  const pts = sorted(p).filter(x => x.fat != null), goal = +p.goalFat;
+  if (!pts.length || !goal) return null;
+  const w0 = +pts[0].weight, f0 = +pts[0].fat, d0 = dayMs(pts[0].date), rate = calc(p, w0)?.expectedRate;
+  if (!rate || f0 <= goal) return null;
+  const fm0 = w0 * f0 / 100;
+  // fat% after t weeks = (fm0 - rate·t) / (w0 - rate·t); solve for the goal
+  const weeks = (fm0 - goal / 100 * w0) / (rate * (1 - goal / 100));
+  const at = t => { const wk = Math.min(Math.max(0, (t - d0) / (7 * 864e5)), weeks); return (fm0 - rate * wk) / (w0 - rate * wk) * 100; };
+  const end = d0 + weeks * 7 * 864e5, n = Math.max(2, Math.ceil(weeks));
+  return { goal, end, at, points: Array.from({ length: n + 1 }, (_, i) => { const x = d0 + (end - d0) * i / n; return { x, y: at(x) }; }) };
+}
+
+function fatStatus(p) {
+  const pl = fatPlan(p), pts = sorted(p).filter(x => x.fat != null);
+  if (!pts.length) return '';
+  const last = pts.at(-1), first = pts[0], chg = last.fat - first.fat;
+  let out = `<span class="muted">ล่าสุด ${fmt(last.fat, 1)}%</span>`;
+  if (pts.length > 1) out += ` · <span class="${chg < 0 ? 'good' : chg > 0 ? 'bad' : 'muted'}">${chg > 0 ? '+' : ''}${fmt(chg, 1)}%</span>`;
+  if (pl && pts.length > 1) {
+    const diff = last.fat - pl.at(dayMs(last.date));
+    out += ' · ' + (Math.abs(diff) < 0.5 ? '<span class="good">ตามแผน</span>'
+      : diff > 0 ? `<span class="bad">ช้ากว่าแผน ${fmt(diff, 1)}%</span>` : `<span class="good">เร็วกว่าแผน ${fmt(-diff, 1)}%</span>`);
+  }
+  return out;
+}
+
 function etaText(p) {
   const r = calc(p), t = trend(p), cur = latest(p)?.weight, goal = +p.goalWeight;
   if (!cur || !goal) return '–';
@@ -746,6 +774,7 @@ function goalCard(id) {
     <h2>เป้าหมาย</h2>
     <div class="goal-grid">
       <label>น้ำหนักเป้าหมาย (กก.)<input type="number" data-f="goalWeight" step="0.5" value="${esc(p.goalWeight)}" placeholder="เช่น 70"></label>
+      <label>% ไขมันเป้าหมาย<input type="number" data-f="goalFat" step="0.5" min="5" max="50" value="${esc(p.goalFat ?? '')}" placeholder="เช่น 15"></label>
       <label>ลดวันละ (kcal)<input type="number" data-f="deficit" step="50" min="0" max="1000" value="${esc(p.deficit)}">
         ${chips('deficit', [300, 400, 500], p.deficit)}</label>
       <label>นับแคลจากการออกกำลังกาย
@@ -806,22 +835,26 @@ function intakeCard(id) {
 function drawFat(id) {
   const el = document.getElementById('fatChart');
   if (!el || !window.Chart) return;
-  const pts = sorted(S.people[id]).filter(x => x.fat != null);
+  const p = S.people[id], pts = sorted(p).filter(x => x.fat != null), pl = fatPlan(p), goal = +p.goalFat;
   const text = css('--muted'), grid = css('--border'), col = css(id === 'ton' ? '--ton' : '--patt'), surface = css('--surface');
+  const datasets = [{ data: pts.map(x => ({ x: dayMs(x.date), y: +x.fat, w: +x.weight })), borderColor: col, backgroundColor: col,
+    borderWidth: 2.5, tension: .3, pointRadius: 3.5, pointHoverRadius: 6, pointBackgroundColor: surface, pointBorderColor: col, pointBorderWidth: 2 }];
+  if (pl) datasets.push({ plan: true, data: pl.points, borderColor: col + '80', borderWidth: 1.5, borderDash: [3, 4], pointRadius: 0, pointHitRadius: 0, tension: .2 });
+  const xEnd = Math.max(dayMs(pts.at(-1).date), dayMs(pts[0].date) + 7 * 864e5, pl ? pl.end : 0);
   charts.push(new Chart(el, {
-    type: 'line',
-    data: { datasets: [{ data: pts.map(x => ({ x: dayMs(x.date), y: +x.fat, w: +x.weight })), borderColor: col, backgroundColor: col,
-      borderWidth: 2.5, tension: .3, pointRadius: 3.5, pointHoverRadius: 6, pointBackgroundColor: surface, pointBorderColor: col, pointBorderWidth: 2 }] },
+    type: 'line', data: { datasets }, plugins: [tagPlugin],
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'nearest', intersect: false },
-      plugins: { legend: { display: false }, tooltip: { callbacks: {
+      layout: { padding: { top: 10, right: 8 } },
+      plugins: { legend: { display: false }, tags: { goals: goal ? [{ y: goal, color: col, tag: `เป้า ${fmt(goal, 1)}%` }] : [] },
+        tooltip: { filter: it => !it.dataset.plan, callbacks: {
         title: it => new Date(it[0].parsed.x).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }),
         label: it => `${fmt(it.parsed.y, 1)}% · ไขมัน ${fmt(it.raw.w * it.parsed.y / 100, 1)} กก.` } } },
       scales: {
-        x: { type: 'linear', min: dayMs(pts[0].date) - 864e5 / 2, max: Math.max(dayMs(pts.at(-1).date), dayMs(pts[0].date) + 7 * 864e5) + 864e5 / 2,
+        x: { type: 'linear', min: dayMs(pts[0].date) - 864e5 / 2, max: xEnd + 864e5 / 2,
           grid: { display: false }, border: { color: grid },
           ticks: { color: text, maxTicksLimit: 6, callback: v => new Date(v).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', timeZone: 'UTC' }) } },
-        y: { grace: '15%', grid: { color: grid }, border: { display: false }, ticks: { color: text, maxTicksLimit: 5, callback: v => +v.toFixed(1) + '%' } }
+        y: { grace: '15%', suggestedMin: goal || undefined, grid: { color: grid }, border: { display: false }, ticks: { color: text, maxTicksLimit: 6, callback: v => +v.toFixed(1) + '%' } }
       }
     }
   }));
@@ -888,7 +921,7 @@ function personPage(id) {
         <td class="muted">${r ? fmt(calc(p, x.weight).target) : '–'}</td>
         <td style="text-align:right"><button class="x" data-del="${x.id}" title="ลบ">✕</button></td></tr>`;
     }).join('');
-    const fats = e.filter(x => x.fat != null), fd = fats.length > 1 ? fats[0].fat - fats.at(-1).fat : null;
+    const fats = e.filter(x => x.fat != null);
     body = `
     <div class="grid g2">
       <div class="card">
@@ -900,7 +933,7 @@ function personPage(id) {
       </div>
       <div class="card">
         <h2 style="margin-bottom:2px">🔥 % ไขมัน</h2>
-        <div class="plan-note">${fats.length ? `<span class="muted">ล่าสุด ${fmt(fats[0].fat, 1)}%</span>${fd != null ? ` · <span class="${fd < 0 ? 'good' : fd > 0 ? 'bad' : 'muted'}">${fd > 0 ? '+' : ''}${fmt(fd, 1)}% จากครั้งแรก</span>` : ''}` : ''}</div>
+        <div class="plan-note">${fatStatus(p)}</div>
         ${fats.length ? '<div class="chart-box"><canvas id="fatChart"></canvas></div>' : '<div class="muted" style="display:grid;place-items:center;min-height:120px;text-align:center;font-size:13px">ยังไม่มีข้อมูล<br>ใส่ % ไขมันตอนบันทึกน้ำหนัก</div>'}
       </div>
     </div>
