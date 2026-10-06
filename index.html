@@ -157,12 +157,21 @@ button.link{border:0;background:none;padding:0;font:inherit;font-weight:500;colo
 .it .nm{font-size:14px;font-weight:500;min-width:0}
 .it .kc{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
 .it .kc small{font-size:11px;font-weight:500;color:var(--muted)}
-.it .l2{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;color:var(--muted)}
+.it .l2{display:flex;align-items:center;gap:6px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);font-size:12px;color:var(--muted)}
 .it .amt{width:64px;padding:3px 7px;font-size:13px;border-radius:7px;text-align:right}
 .it select{width:auto;font-size:13px;padding:3px 6px;border-radius:7px}
 .it em{font-style:normal;font-size:13px}
 .it .mac{margin-left:auto;font-variant-numeric:tabular-nums;white-space:nowrap}
-.it .x{padding:2px 4px 2px 8px}
+.it .x{padding:2px 0 2px 10px}
+.eaten .it{cursor:pointer}
+.eaten .it.open{box-shadow:0 0 0 1.5px color-mix(in srgb, var(--mc,var(--ton)) 60%, transparent),0 4px 14px rgba(0,0,0,.08)}
+.res.picking{background:var(--surface-2);border-radius:12px}
+.res.picking .res-main:hover{background:transparent}
+.pickpanel{flex:1 0 100%;display:flex;align-items:center;gap:8px;padding:0 6px 10px}
+.pickpanel .amt{width:80px;text-align:right;height:38px}
+.pickpanel select{width:auto;height:38px}
+.pickpanel em{font-style:normal;font-size:14px;color:var(--muted)}
+.pickpanel .btn{margin-left:auto;padding:8px 18px}
 
 
 .foodform{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;align-items:end}
@@ -191,10 +200,10 @@ button.link{border:0;background:none;padding:0;font:inherit;font-weight:500;colo
 .scanner .st{margin-bottom:12px;text-align:center}
 .scanner .sbtns{display:flex;gap:8px}
 .scanner .sb{flex:1;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.2);color:#fff;border:0;border-radius:99px;padding:11px 8px;font:inherit;font-size:14px;cursor:pointer;white-space:nowrap}
-.res{display:flex;align-items:center;gap:2px;border-bottom:1px solid var(--border)}
+.res{display:flex;flex-wrap:wrap;align-items:center;gap:2px;border-bottom:1px solid var(--border)}
 .res:last-child{border-bottom:0}
 .res button.x{display:grid;place-items:center;width:30px;height:30px;padding:0}
-.res-main{flex:1;min-width:0;display:flex;flex-direction:column;border:0;background:transparent;color:var(--text);font:inherit;text-align:left;padding:10px 6px;border-radius:8px}
+.res-main{flex:1 1 0;min-width:0;display:flex;flex-direction:column;border:0;background:transparent;color:var(--text);font:inherit;text-align:left;padding:10px 6px;border-radius:8px}
 button.res-main{cursor:pointer}
 button.res-main:hover{background:var(--surface-2)}
 .res .n{font-size:14px;font-weight:500}
@@ -619,9 +628,17 @@ function drawResults(root) {
 
 const timesEaten = id => usesOf(id) ? ` · กิน ${fmt(usesOf(id))} ครั้ง` : '';
 const COPY_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>';
+// Tapping a search result opens an amount + unit row (prefilled with the food's own serving) before adding it.
+let pickOpen = null;
+function pickPanel(f) {
+  const us = unitsOf(f), sv = servingOf(f), k = us.some(u => u.k === sv.unit) ? sv.unit : us[0].k;
+  return `<div class="pickpanel"><input class="amt" type="number" inputmode="decimal" step="any" min="0" value="${+(+sv.amount).toFixed(2)}" data-pamt>
+    ${us.length > 1 ? `<select data-punit data-prev="${k}">${us.map(u => `<option value="${u.k}" ${u.k === k ? 'selected' : ''}>${esc(u.n)}</option>`).join('')}</select>` : `<em data-punit-fixed="${k}">${esc(us[0].n)}</em>`}
+    <button class="btn" data-addpick="${f.id}">เพิ่ม</button></div>`;
+}
 function resultRow(f, manage) {
   const body = `<span class="n">${f.meal ? '🍱 ' : ''}${esc(f.name)}${f.serving ? `<span class="s">${esc(f.serving)}${f.g && !MEAS_BY[f.unit] && !/^\d+\s*ก\.?$/.test(f.serving) ? ` · ${num(f.g)} ก.` : ''}</span>` : ''}${f.std ? '' : `<span class="tag">${f.meal ? 'Meal' : 'My'}</span>`}</span><span class="m">${macroLine(f)}${manage ? timesEaten(f.id) : ''}</span>`;
-  if (!manage) return `<div class="res"><button class="res-main" data-pick="${f.id}">${body}</button></div>`;
+  if (!manage) return `<div class="res${pickOpen === f.id ? ' picking' : ''}"><button class="res-main" data-pick="${f.id}">${body}</button>${pickOpen === f.id ? pickPanel(f) : ''}</div>`;
   const acts = f.std
     ? `<button class="x" data-copystd="${f.id}" title="คัดลอกเป็นเมนูใหม่ใน My Food">${COPY_ICON}</button><button class="x" data-hidestd="${f.id}" title="ลบ">✕</button>`
     : `<button class="x" data-editfood="${f.id}" title="แก้ไข">✎</button><button class="x" data-dupfood="${f.id}" title="คัดลอกเป็นเมนูใหม่">${COPY_ICON}</button><button class="x" data-delfood="${f.id}" title="ลบ">✕</button>`;
@@ -640,12 +657,21 @@ function bindSearch(key, { pick, add }) {
   const root = document.querySelector(`[data-search="${key}"]`);
   if (!root) return;
   const input = root.querySelector('input');
-  input.oninput = () => { searchQ[key] = input.value; delete scanDraft[key]; drawResults(root); };
+  input.oninput = () => { searchQ[key] = input.value; delete scanDraft[key]; pickOpen = null; drawResults(root); };
   root.onclick = ev => {
     const t = ev.target.closest('button');
     if (!t) return;
     if (t.hasAttribute('data-scan')) scanInto(root, key, pick);
-    else if (t.dataset.pick) { searchQ[key] = ''; pick(t.dataset.pick); }
+    else if (t.dataset.pick) {
+      pickOpen = pickOpen === t.dataset.pick ? null : t.dataset.pick; drawResults(root);
+      const a = root.querySelector('[data-pamt]');
+      if (a) { a.focus(); a.select(); }
+    } else if (t.dataset.addpick) {
+      const panel = t.closest('.pickpanel'), amount = +panel.querySelector('[data-pamt]').value;
+      const unit = panel.querySelector('[data-punit]')?.value || panel.querySelector('[data-punit-fixed]')?.dataset.punitFixed;
+      if (!(amount > 0)) return;
+      searchQ[key] = ''; pickOpen = null; pick(t.dataset.addpick, { amount, unit });
+    }
     else if (t.dataset.editfood) { editingFood = t.dataset.editfood; render(); window.scrollTo(0, 0); }
     else if (t.dataset.dupfood || t.dataset.copystd) {
       if (sharedError || !S.shared) { alert('ใช้ My Food ไม่ได้ตอนนี้'); return; }
@@ -663,6 +689,16 @@ function bindSearch(key, { pick, add }) {
       if (confirm(`ลบ “${STD_BY_ID[id].name}” ออกจากรายการอาหาร?`)) sharedWrite({ [`hidden.${id}`]: true });
     }
   };
+  // Changing the unit keeps the same portion (e.g. 1 ทัพพี → 60 กรัม); Enter in the amount adds it.
+  root.onchange = ev => {
+    const sel = ev.target.closest('[data-punit]');
+    if (!sel) return;
+    const us = unitsOf(getFood(pickOpen)), from = us.find(u => u.k === sel.dataset.prev), to = us.find(u => u.k === sel.value);
+    const a = root.querySelector('[data-pamt]');
+    if (from && to && a) { const raw = +a.value * from.r / to.r; a.value = to.k === 'g' || to.k === 'ml' ? Math.round(raw) : Math.round(raw * 10) / 10; }
+    sel.dataset.prev = sel.value;
+  };
+  root.onkeydown = ev => { if (ev.key === 'Enter' && ev.target.matches('[data-pamt]')) { ev.preventDefault(); root.querySelector('[data-addpick]')?.click(); } };
   root.onsubmit = ev => {
     ev.preventDefault();
     const food = readFood(new FormData(ev.target));
@@ -1015,24 +1051,23 @@ function macroSettings(id) {
 // Logged items carry a meal slot; older items without one show under "ไม่ระบุมื้อ" until moved.
 const MEALS = [['b', 'เช้า', '🌅'], ['l', 'กลางวัน', '☀️'], ['d', 'เย็น', '🌙'], ['s', 'ของว่าง', '🍪']];
 const autoMeal = () => { const h = new Date().getHours(); return h >= 4 && h < 11 ? 'b' : h >= 11 && h < 15 ? 'l' : h >= 17 && h < 22 ? 'd' : 's'; };
-let addMeal = null, movingItem = null, dragEnded = 0;
+let addMeal = null, openItem = null, dragEnded = 0;
 const curMeal = () => addMeal || autoMeal();
 const prevDay = d => new Date(dayMs(d) - 864e5).toISOString().slice(0, 10);
 
-// One logged/meal line as a card: name and kcal on top; amount, unit and macros below.
+// One logged/meal line as a card: name, kcal and ✕; tap it to open amount, unit, macros (and meal move).
 const lineKcal = x => (+x.kcal || 0) * (x.qty ?? 1);
-function itemChip(x, ns = '', total = 0) {
+function itemChip(x, ns = '') {
   const us = unitsOf(x.foodId ? getFood(x.foodId) : null), cur = x.unit || 's', amt = x.amount ?? x.qty ?? 1, q = x.qty ?? 1;
   const unit = us.some(u => u.k === cur)
     ? (us.length > 1 ? `<select data-${ns}unit="${x.id}">${us.map(u => `<option value="${u.k}" ${u.k === cur ? 'selected' : ''}>${esc(u.n)}</option>`).join('')}</select>` : `<em>${esc(us[0].n)}</em>`)
     : `<em>${esc(x.unitName || 'ที่')}</em>`;
-  const kc = lineKcal(x);
-  const r1 = v => num(Math.round((+v || 0) * q * 10) / 10);
-  return `<div class="it"${ns ? '' : ` data-row="${x.id}"`}>
-    <div class="l1">${ns ? '<span class="nm">' : `<button class="nm" data-move="${x.id}" title="ย้ายมื้อ">`}${x.mealId || getFood(x.foodId)?.meal ? '🍱 ' : ''}${esc(x.name)}${ns ? '</span>' : '</button>'}<span class="kc">${fmt(kc)} <small>kcal</small></span></div>
-    <div class="l2"><input class="amt" type="number" inputmode="decimal" step="any" min="0" data-${ns}amt="${x.id}" value="${+(+amt).toFixed(2)}">${unit}
-      <span class="mac">P ${r1(x.p)} · C ${r1(x.c)} · F ${r1(x.f)}</span><button class="x" data-${ns || 'un'}${ns ? 'del' : 'eat'}="${x.id}" title="ลบ">✕</button></div>
-    ${!ns && movingItem === x.id ? `<div class="mv">ย้ายไป ${MEALS.map(([k, n]) => `<button class="${x.meal === k ? 'on' : ''}" data-tomeal="${k}" data-item="${x.id}">${n}</button>`).join('')}</div>` : ''}
+  const r1 = v => num(Math.round((+v || 0) * q * 10) / 10), open = openItem === x.id;
+  return `<div class="it${open ? ' open' : ''}" data-${ns}row="${x.id}">
+    <div class="l1"><span class="nm">${x.mealId || getFood(x.foodId)?.meal ? '🍱 ' : ''}${esc(x.name)}</span><span class="kc">${fmt(lineKcal(x))} <small>kcal</small></span><button class="x" data-${ns || 'un'}${ns ? 'del' : 'eat'}="${x.id}" title="ลบ">✕</button></div>
+    ${open ? `<div class="l2"><input class="amt" type="number" inputmode="decimal" step="any" min="0" data-${ns}amt="${x.id}" value="${+(+amt).toFixed(2)}">${unit}
+      <span class="mac">P ${r1(x.p)} · C ${r1(x.c)} · F ${r1(x.f)}</span></div>
+      ${ns ? '' : `<div class="mv">ย้ายไป ${MEALS.map(([k, n]) => `<button class="${x.meal === k ? 'on' : ''}" data-tomeal="${k}" data-item="${x.id}">${n}</button>`).join('')}</div>`}` : ''}
   </div>`;
 }
 function setAmount(it, v) {
@@ -1049,7 +1084,22 @@ function setUnit(it, k) {
   it.qty = it.amount * u.r; it.unit = u.k; it.unitName = u.n;
   return true;
 }
-const servingOf = f => { const own = MEAS_BY[f.unit]; return own ? { amount: f.amt, unit: own.k, unitName: own.n } : { amount: 1, unit: 's', unitName: unitName(f.serving) }; };
+// Build a log/meal line for food f at its own serving, or at a chosen amount + unit.
+function lineFor(fid, f, o) {
+  const line = { foodId: fid, name: f.name, p: +f.p || 0, c: +f.c || 0, f: +f.f || 0, kcal: foodKcal(f), qty: 1, ...servingOf(f) };
+  const u = o && unitsOf(f).find(u => u.k === o.unit);
+  if (u && o.amount > 0) Object.assign(line, { amount: o.amount, unit: u.k, unitName: u.n, qty: o.amount * u.r });
+  return line;
+}
+// Default amount + unit for a food: its own measurable unit, or one parsed from a label like "100 ก." / "200 มล."
+// (so typing 150 means 150 g, not 150 × 100 g); otherwise 1 serving.
+const servingOf = f => {
+  const own = MEAS_BY[f.unit];
+  if (own) return { amount: f.amt, unit: own.k, unitName: own.n };
+  const sp = !f.unit && +f.g ? servingParts(f) : null, meas = sp && MEAS_BY[sp.unit];
+  if (meas && unitsOf(f).some(u => u.k === meas.k)) return { amount: sp.amt, unit: meas.k, unitName: meas.n };
+  return { amount: 1, unit: 's', unitName: unitName(f.serving) };
+};
 
 function eatenBlock(id) {
   const p = S.people[id], m = macros(p);
@@ -1070,7 +1120,7 @@ function eatenBlock(id) {
 }
 
 function mealGroups(p, d, items) {
-  const total = items.reduce((t, y) => t + lineKcal(y), 0), yItems = dayItems(p, prevDay(d));
+  const yItems = dayItems(p, prevDay(d));
   const groups = [...MEALS, ['', 'ไม่ระบุมื้อ', '•']].map(([k, n, ic]) => {
     const its = items.filter(x => k ? x.meal === k : !MEALS.some(m => m[0] === x.meal));
     if (!k && !its.length) return '';
@@ -1078,7 +1128,7 @@ function mealGroups(p, d, items) {
     return `<div class="mgroup" data-mealslot="${k}">
       <div class="mhead"><span>${ic} ${n}</span>${its.length ? `<b>${fmt(kc)} <small>kcal</small></b>`
         : ycount ? `<button class="link" data-copymeal="${k}">คัดลอกจากเมื่อวาน (${ycount})</button>` : '<span class="muted">–</span>'}</div>
-      ${its.map(x => itemChip(x, '', total)).join('')}
+      ${its.map(x => itemChip(x)).join('')}
     </div>`;
   }).join('');
   return `<div class="eaten">${groups}</div>`;
@@ -1120,7 +1170,7 @@ function mealEditor() {
     <label class="mname">ชื่อ Meal<input id="mealName" value="${esc(mealDraft.name)}" placeholder="เช่น อาหารเช้าประจำ" autocomplete="off"></label>
     <div class="mlabel">ส่วนประกอบ</div>
     ${foodSearch('meal', 'meal')}
-    ${mealDraft.items.length ? `<div class="eaten">${mealDraft.items.map(x => itemChip(x, 'm', t.kcal)).join('')}</div>` : ''}
+    ${mealDraft.items.length ? `<div class="eaten">${mealDraft.items.map(x => itemChip(x, 'm')).join('')}</div>` : ''}
     <div class="meal-total"><span class="muted">รวม</span> <b>${fmt(t.kcal)}</b> kcal · P ${num(t.p)} · C ${num(t.c)} · F ${num(t.f)}</div>
     <div class="row" style="margin-top:14px"><button class="btn" id="saveMeal">บันทึก Meal</button><button class="ghost" id="cancelMeal">ยกเลิก</button></div>`;
 }
@@ -1551,14 +1601,14 @@ function bind() {
     list().push({ id: uid(), qty: 1, meal: curMeal(), ...item }); changed();
   };
   document.querySelectorAll('[data-addmeal]').forEach(b => b.onclick = () => { addMeal = b.dataset.addmeal; render(); });
-  document.querySelectorAll('[data-move]').forEach(b => b.onclick = () => {
-    if (Date.now() - dragEnded < 500) return;
-    movingItem = movingItem === b.dataset.move ? null : b.dataset.move; render();
-  });
+  document.querySelectorAll('.eaten .it[data-row]').forEach(row => row.addEventListener('click', e => {
+    if (e.target.closest('input,select,button') || Date.now() - dragEnded < 500) return;
+    openItem = openItem === row.dataset.row ? null : row.dataset.row; render();
+  }));
   document.querySelectorAll('[data-tomeal]').forEach(b => b.onclick = () => {
     const it = list().find(x => x.id === b.dataset.item);
     if (it) it.meal = b.dataset.tomeal;
-    movingItem = null; changed();
+    changed();
   });
   // Long-press anywhere on a card (not its inputs or ✕) to lift it, then drag onto another meal.
   // A quick swipe still scrolls: moving before the press timer fires cancels the drag.
@@ -1606,7 +1656,7 @@ function bind() {
       alive = false; dragEnded = Date.now();
       row.removeEventListener('pointermove', move); row.removeEventListener('pointerup', end); row.removeEventListener('pointercancel', end);
       delete row.dataset.dragging; ghost.remove(); row.classList.remove('dragging'); target?.classList.remove('drop');
-      if (target && target.dataset.mealslot !== it.meal) { it.meal = target.dataset.mealslot; movingItem = null; changed(); }
+      if (target && target.dataset.mealslot !== it.meal) { it.meal = target.dataset.mealslot; changed(); }
     };
     row.addEventListener('pointermove', move); row.addEventListener('pointerup', end); row.addEventListener('pointercancel', end);
   };
@@ -1619,8 +1669,8 @@ function bind() {
     }
     changed();
   });
-  const eatFood = (fid, f) => {
-    eat({ foodId: fid, name: f.name, p: +f.p || 0, c: +f.c || 0, f: +f.f || 0, kcal: foodKcal(f), ...servingOf(f) });
+  const eatFood = (fid, f, o) => {
+    eat(lineFor(fid, f, o));
     sharedWrite({ [`uses.${fid}`]: increment(1) });
   };
   document.querySelectorAll('[data-uneat]').forEach(b => b.onclick = () => { p.log[day] = list().filter(x => x.id !== b.dataset.uneat); changed(); });
@@ -1638,7 +1688,7 @@ function bind() {
   });
   document.querySelectorAll('[data-unit]').forEach(sel => sel.onchange = () => { const it = item(sel); if (it && setUnit(it, sel.value)) changed(); });
   bindSearch('eat-' + id, {
-    pick: fid => { const f = getFood(fid); if (f) eatFood(fid, f); },
+    pick: (fid, o) => { const f = getFood(fid); if (f) eatFood(fid, f, o); },
     add: food => { if (S.shared && !sharedError) eatFood(addFood(food), food); else eat(food); }
   });
   document.querySelectorAll('[data-act]').forEach(row => {
@@ -1699,16 +1749,20 @@ document.addEventListener('change', ev => {
 function bindMealEditor() {
   const nameEl = document.getElementById('mealName');
   if (nameEl) nameEl.oninput = () => { mealDraft.name = nameEl.value; };
-  const addIng = (fid, f = getFood(fid)) => {
+  const addIng = (fid, f = getFood(fid), o) => {
     if (!f) return;
-    mealDraft.items.push({ id: uid(), foodId: fid, name: f.name, p: +f.p || 0, c: +f.c || 0, f: +f.f || 0, kcal: foodKcal(f), qty: 1, ...servingOf(f) });
+    mealDraft.items.push({ id: uid(), ...lineFor(fid, f, o) });
     render();
   };
-  bindSearch('meal', { pick: fid => addIng(fid), add: food => addIng(addFood(food), food) });
+  bindSearch('meal', { pick: (fid, o) => addIng(fid, undefined, o), add: food => addIng(addFood(food), food) });
   const it = el => mealDraft.items.find(x => x.id === (el.dataset.mamt || el.dataset.munit || el.dataset.mdel));
   document.querySelectorAll('[data-mamt]').forEach(inp => inp.onchange = () => { const x = it(inp), v = +inp.value; if (x && v > 0) setAmount(x, v); render(); });
   document.querySelectorAll('[data-munit]').forEach(sel => sel.onchange = () => { const x = it(sel); if (x) setUnit(x, sel.value); render(); });
   document.querySelectorAll('[data-mdel]').forEach(b => b.onclick = () => { mealDraft.items = mealDraft.items.filter(x => x.id !== b.dataset.mdel); render(); });
+  document.querySelectorAll('[data-mrow]').forEach(row => row.addEventListener('click', e => {
+    if (e.target.closest('input,select,button')) return;
+    openItem = openItem === row.dataset.mrow ? null : row.dataset.mrow; render();
+  }));
   document.getElementById('cancelMeal').onclick = () => { mealDraft = null; render(); };
   document.getElementById('saveMeal').onclick = () => {
     const name = mealDraft.name.trim();
@@ -1719,7 +1773,7 @@ function bindMealEditor() {
   };
 }
 
-function setTab(t) { S.tab = t; sub = 'today'; logDate = null; addMeal = null; movingItem = null; save(); render(); window.scrollTo(0, 0); }
+function setTab(t) { S.tab = t; sub = 'today'; logDate = null; addMeal = null; openItem = null; save(); render(); window.scrollTo(0, 0); }
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => setTab(b.dataset.tab));
 
 document.getElementById('exportBtn').onclick = () => {
