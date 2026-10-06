@@ -131,10 +131,10 @@ button.x:hover{color:var(--danger)}
 [data-mc="s"],[data-mealslot="s"]{--mc:#d9628f}
 [data-mealslot=""]{--mc:var(--muted)}
 .mealpick button.on[data-mc]{background:var(--mc);color:#fff}
-.mgroup{background:color-mix(in srgb, var(--mc) 10%, var(--surface));border-radius:14px;padding:2px 10px 10px;margin-top:10px;transition:box-shadow .15s}
+.mgroup{background:color-mix(in srgb, var(--mc) 10%, var(--surface));border:1.5px solid color-mix(in srgb, var(--mc) 55%, transparent);border-radius:16px;padding:2px 10px 10px;margin-top:12px;transition:box-shadow .15s}
 .mgroup .mhead span{color:var(--mc)}
-.mgroup.drop{box-shadow:0 0 0 2px var(--mc)}
-.eaten .it{background:var(--surface);border:0;border-radius:12px;padding:10px 12px;margin-top:8px;box-shadow:0 1px 2px rgba(0,0,0,.06);-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.mgroup.drop{box-shadow:0 0 0 3px color-mix(in srgb, var(--mc) 35%, transparent);border-color:var(--mc)}
+.eaten .it{background:var(--surface);border:0;border-radius:12px;padding:10px 12px;margin-top:8px;box-shadow:0 1px 2px rgba(0,0,0,.07),0 4px 14px rgba(0,0,0,.08);-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
 .eaten .it input{-webkit-user-select:text;user-select:text}
 .eaten .it.dragging{opacity:.3}
 .it.lifted{position:fixed;z-index:60;margin:0;background:var(--surface);border-radius:12px;padding:10px 12px;box-shadow:0 14px 34px rgba(0,0,0,.22);transform:scale(1.03);pointer-events:none}
@@ -1252,28 +1252,59 @@ function drawFat(id) {
   }));
 }
 
+// Bars fill toward a soft "track" at each day's target, so under-target days read as a gauge and over-target days
+// break through it. Gradient fills, kcal labels on top (7-day view), and the selected day's label emphasised.
 function drawIntake(id) {
   const el = document.getElementById('intakeChart');
   if (!el || !window.Chart) return;
-  const p = S.people[id], n = S.intakeRange, days = lastDays(p, n);
-  const text = css('--muted'), grid = css('--border'), col = css('--good'), over = css('--danger');
+  const p = S.people[id], n = S.intakeRange, days = lastDays(p, n), sel = viewDay();
+  const muted = css('--muted'), strong = css('--text'), track = css('--surface-2'), good = css('--good'), bad = css('--danger'), surface = css('--surface'), border = css('--border');
   const nowTarget = Math.round(macros(p)?.kcal || 0);
+  const tgt = x => x.target || nowTarget || 0;
   const WD = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
   const label = d => { const t = new Date(dayMs(d)); return n === 7 ? [WD[t.getUTCDay()], String(t.getUTCDate())] : String(t.getUTCDate()); };
-  const soft = c => c + 'd9';
+  const top = Math.max(1, ...days.map(x => Math.max(x.kcal || 0, tgt(x))));
+  const fill = (ctx, base) => {
+    const a = ctx.chart.chartArea;
+    if (!a) return base;
+    const g = ctx.chart.ctx.createLinearGradient(0, a.top, 0, a.bottom);
+    g.addColorStop(0, base); g.addColorStop(1, base + '59');
+    return g;
+  };
+  const isOver = x => x.kcal != null && x.kcal > tgt(x);
+  const labels = {
+    id: 'kcalLabels',
+    afterDatasetsDraw(chart) {
+      if (n !== 7) return;
+      const { ctx } = chart, bars = chart.getDatasetMeta(1).data, tracks = chart.getDatasetMeta(0).data;
+      ctx.save();
+      ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+      days.forEach((x, i) => {
+        if (x.kcal == null || !bars[i]) return;
+        const y = Math.min(bars[i].y, tracks[i]?.y ?? bars[i].y) - 5;
+        ctx.font = `${x.d === sel ? 700 : 600} 11px "IBM Plex Sans Thai", sans-serif`;
+        ctx.fillStyle = isOver(x) ? bad : x.d === sel ? strong : muted;
+        ctx.fillText(fmt(x.kcal), bars[i].x, y);
+      });
+      ctx.restore();
+    }
+  };
+  const common = { grouped: false, borderSkipped: false, borderRadius: n === 7 ? 10 : 5, barPercentage: n === 7 ? .62 : .78, categoryPercentage: .92, maxBarThickness: 36 };
   charts.push(new Chart(el, {
+    type: 'bar',
+    plugins: [labels],
     data: {
       labels: days.map(x => label(x.d)),
       datasets: [
-        { type: 'bar', data: days.map(x => x.kcal ?? null), backgroundColor: days.map(x => soft(x.kcal > x.target ? over : col)), hoverBackgroundColor: days.map(x => x.kcal > x.target ? over : col),
-          borderColor: css('--text'), borderWidth: days.map(x => x.d === viewDay() ? 2 : 0),
-          borderRadius: 6, borderSkipped: false, barPercentage: n === 7 ? .55 : .75, categoryPercentage: 1 },
-        { type: 'line', target: true, data: days.map(x => x.target || nowTarget || null), borderColor: text, borderWidth: 1.5,
-          borderDash: [5, 4], pointRadius: 0, pointHitRadius: 0, stepped: 'middle', spanGaps: true }
+        { ...common, track: true, order: 2, data: days.map(tgt), backgroundColor: track, hoverBackgroundColor: track },
+        { ...common, order: 1, data: days.map(x => x.kcal ?? null),
+          backgroundColor: ctx => fill(ctx, isOver(days[ctx.dataIndex]) ? bad : good),
+          hoverBackgroundColor: ctx => isOver(days[ctx.dataIndex]) ? bad : good }
       ]
     },
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      layout: { padding: { top: n === 7 ? 20 : 6 } },
       onClick: (_, els) => {
         if (!els.length) return;
         const d = days[els[0].index].d;
@@ -1284,16 +1315,22 @@ function drawIntake(id) {
       plugins: {
         legend: { display: false },
         tooltip: {
-          filter: it => !it.dataset.target && it.raw != null,
+          backgroundColor: surface, titleColor: strong, bodyColor: strong, borderColor: border, borderWidth: 1,
+          padding: 10, cornerRadius: 10, displayColors: false, caretSize: 5,
+          titleFont: { family: 'IBM Plex Sans Thai', weight: '600' }, bodyFont: { family: 'IBM Plex Sans Thai' },
+          filter: it => !it.dataset.track && it.raw != null,
           callbacks: {
             title: it => new Date(dayMs(days[it[0].dataIndex].d)).toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'UTC' }),
-            label: it => { const x = days[it.dataIndex], d = x.kcal - x.target; return `${fmt(x.kcal)} kcal · ${d > 0 ? 'เกิน' : 'ขาด'} ${fmt(Math.abs(d))}`; }
+            label: it => { const x = days[it.dataIndex], d = x.kcal - tgt(x); return [`${fmt(x.kcal)} kcal`, `${d > 0 ? 'เกิน' : 'ขาด'} ${fmt(Math.abs(d))} · เป้า ${fmt(tgt(x))}`]; }
           }
         }
       },
       scales: {
-        x: { grid: { display: false }, border: { color: grid }, ticks: { color: text, autoSkip: true, maxRotation: 0, maxTicksLimit: n === 7 ? 7 : 10 } },
-        y: { beginAtZero: true, grace: '10%', grid: { color: grid }, border: { display: false }, ticks: { color: text, maxTicksLimit: 5 } }
+        x: { grid: { display: false }, border: { display: false },
+          ticks: { autoSkip: true, maxRotation: 0, maxTicksLimit: n === 7 ? 7 : 10,
+            color: ctx => days[ctx.index]?.d === sel ? strong : muted,
+            font: ctx => ({ family: 'IBM Plex Sans Thai', size: 11, weight: days[ctx.index]?.d === sel ? '700' : '400' }) } },
+        y: { display: false, beginAtZero: true, suggestedMax: top * 1.08 }
       }
     }
   }));
