@@ -76,6 +76,7 @@ h3{font-size:15px;margin:0 0 8px}
 .rings .rl{font-size:13px;fill:var(--muted)}
 .rings .rv{font-size:40px;font-weight:700;fill:var(--text);letter-spacing:-.02em}
 .rings .rv.bad{fill:var(--danger)}
+.rings .rv.good{fill:var(--good)}
 .ring-rows{margin:14px 0 0;display:grid;gap:8px}
 .ring-rows>div{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;font-size:14px;font-variant-numeric:tabular-nums}
 .ring-rows>div>span:last-child{min-width:92px;text-align:right}
@@ -948,13 +949,14 @@ function statsBlock(id, withExtras = true) {
 const daySum = (p, d, k) => dayItems(p, d).reduce((s, x) => s + (+x[k] || 0) * (x.qty ?? 1), 0);
 
 // Two progress rings: outer = kcal eaten vs target (a second red lap shows the overshoot), inner = protein.
-function rings(m, kcal, prot) {
+function rings(m, kcal, prot, tol = 50) {
   const c = 120, ring = (r, w, frac, color) => {
     const L = 2 * Math.PI * r, f = Math.min(1, Math.max(0, frac));
     return f <= 0 ? '' : `<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="round"
       stroke-dasharray="${f >= 1 ? L : f * L} ${L}" transform="rotate(-90 ${c} ${c})"/>`;
   };
-  const over = kcal - m.kcal, kf = kcal / m.kcal, pf = prot / m.prot.g;
+  // Within ±tol of the target counts as reached: green, no red overshoot lap (estimates are rarely that precise).
+  const over = Math.round(kcal - m.kcal), kf = kcal / m.kcal, pf = prot / m.prot.g, hit = Math.abs(over) <= tol;
   // Name each ring along its track just before 12 o'clock; dark text with a surface-coloured halo reads on both the grey track and the coloured arc.
   const pt = (r, deg) => { const a = deg * Math.PI / 180; return `${(c + r * Math.cos(a)).toFixed(1)} ${(c + r * Math.sin(a)).toFixed(1)}`; };
   const label = (id, r, text) => `<path id="${id}" d="M ${pt(r, -175)} A ${r} ${r} 0 0 1 ${pt(r, -97)}" fill="none"/>
@@ -963,28 +965,32 @@ function rings(m, kcal, prot) {
   return `<svg class="rings" viewBox="0 0 240 240" role="img" aria-label="แคลอรี ${fmt(kcal)} จาก ${fmt(m.kcal)} kcal, โปรตีน ${fmt(prot)} จาก ${fmt(m.prot.g)} กรัม">
     <circle cx="${c}" cy="${c}" r="104" fill="none" stroke="var(--surface-2)" stroke-width="18"/>
     <circle cx="${c}" cy="${c}" r="80" fill="none" stroke="var(--surface-2)" stroke-width="18"/>
-    ${ring(104, 18, kf, 'var(--c)')}${over > 0 ? ring(104, 18, kf - 1, 'var(--danger)') : ''}
+    ${ring(104, 18, hit ? 1 : kf, hit ? 'var(--good)' : 'var(--c)')}${over > tol ? ring(104, 18, kf - 1, 'var(--danger)') : ''}
     ${ring(80, 18, pf, 'var(--prot)')}
     ${label('rk' + uid2, 104, 'แคลอรี')}${label('rp' + uid2, 80, 'โปรตีน')}
-    <text x="${c}" y="${c - 30}" text-anchor="middle" class="rl">${over > 0 ? 'เกิน' : 'เหลือ'}</text>
-    <text x="${c}" y="${c + 2}" text-anchor="middle" class="rv ${over > 0 ? 'bad' : ''}">${fmt(Math.abs(m.kcal - kcal))}</text>
-    <text x="${c}" y="${c + 30}" text-anchor="middle" class="rl">kcal</text></svg>`;
+    ${hit ? `<text x="${c}" y="${c - 30}" text-anchor="middle" class="rl">ถึงเป้า</text>
+    <text x="${c}" y="${c + 2}" text-anchor="middle" class="rv good">✓</text>
+    <text x="${c}" y="${c + 30}" text-anchor="middle" class="rl">${over > 0 ? '+' : over < 0 ? '−' : ''}${fmt(Math.abs(over))} kcal</text>`
+    : `<text x="${c}" y="${c - 30}" text-anchor="middle" class="rl">${over > 0 ? 'เกิน' : 'เหลือ'}</text>
+    <text x="${c}" y="${c + 2}" text-anchor="middle" class="rv ${over > 0 ? 'bad' : ''}">${fmt(Math.abs(over))}</text>
+    <text x="${c}" y="${c + 30}" text-anchor="middle" class="rl">kcal</text>`}</svg>`;
 }
 
 function energyBlock(id, d = todayStr()) {
   const p = S.people[id], r = calc(p), m0 = macros(p);
   if (!r) return `<div class="alert">${!profileReady(p) ? 'กรอก <b>เพศ อายุ ส่วนสูง</b> ในแท็บ “ข้อมูลส่วนตัว” ก่อน' : 'บันทึกน้ำหนักอย่างน้อย 1 ครั้ง'} เพื่อคำนวณ TDEE</div>`;
   const m = d === todayStr() ? m0 : { ...m0, kcal: p.days?.[d]?.target || m0.kcal };
-  const kcal = dayItems(p, d).length ? daySum(p, d, 'kcal') : p.days?.[d]?.kcal || 0, prot = daySum(p, d, 'p'), over = kcal - m.kcal, protLeft = m.prot.g - prot;
+  const kcal = dayItems(p, d).length ? daySum(p, d, 'kcal') : p.days?.[d]?.kcal || 0, prot = daySum(p, d, 'p'), over = Math.round(kcal - m.kcal), protLeft = m.prot.g - prot;
+  const tol = +p.tol || 50, hit = Math.abs(over) <= tol;
   let week = '';
-  if (over > 0) {
+  if (over > tol) {
     const logged = lastDays(p, 7).filter(x => x.kcal != null), bal = logged.reduce((s, x) => s + x.kcal - x.target, 0);
     if (logged.length > 1) week = `<div class="ring-week ${bal > 0 ? 'bad' : 'good'}">รวม ${logged.length} วันล่าสุด${bal > 0 ? ` เกิน ${fmt(bal)} kcal` : ` ยังขาด ${fmt(-bal)} kcal ✓`}</div>`;
   }
-  return `${rings(m, kcal, prot)}
+  return `${rings(m, kcal, prot, tol)}
     <div class="ring-rows">
       <div><span class="rk"><i style="background:var(--c)"></i>🔥 แคลอรี</span><span><b>${fmt(kcal)}</b> / ${fmt(m.kcal)}</span>
-        <span class="${over > 0 ? 'bad' : 'muted'}">${over > 0 ? `เกิน ${fmt(over)}` : `เหลือ ${fmt(-over)}`}</span></div>
+        <span class="${hit ? 'good' : over > 0 ? 'bad' : 'muted'}">${hit ? 'ถึงเป้า ✓' : over > 0 ? `เกิน ${fmt(over)}` : `เหลือ ${fmt(-over)}`}</span></div>
       <div><span class="rk"><i style="background:var(--prot)"></i>🥩 โปรตีน</span><span><b>${fmt(prot)}</b> / ${fmt(m.prot.g)} ก.</span>
         <span class="${protLeft <= 0 ? 'good' : 'muted'}">${protLeft <= 0 ? 'ครบแล้ว ✓' : `เหลือ ${fmt(protLeft)} ก.`}</span></div>
     </div>
@@ -1173,6 +1179,7 @@ function goalCard(id) {
       <label>% ไขมันเป้าหมาย<input type="number" data-f="goalFat" step="0.5" min="5" max="50" value="${esc(p.goalFat ?? '')}" placeholder="เช่น 15"></label>
       <label>ลดวันละ (kcal)<input type="number" data-f="deficit" step="50" min="0" max="1000" value="${esc(p.deficit)}">
         ${chips('deficit', [300, 400, 500], p.deficit)}</label>
+      <label>ช่วงถึงเป้า (± kcal)${chips('tol', [50, 100, 150], p.tol ?? 50)}</label>
       <label>นับแคลจากการออกกำลังกาย
         <select data-f="exPct">${[[100, '100% (นับเต็ม)'], [75, '75% (แนะนำ)'], [50, '50% (เผื่อเยอะ)'], [0, '0% (ไม่นับเลย)']].map(([v, l]) => `<option value="${v}" ${exPct == v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     </div>
