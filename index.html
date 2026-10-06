@@ -337,7 +337,7 @@ function listen() {
       if (snap.exists()) { S.people[id] = snap.data(); synced[id] = JSON.stringify(S.people[id]); dropMet(S.people[id]); moveToday(S.people[id]); }
       else { S.people[id] = defaults().people[id]; synced[id] = ''; }
       loaded.add(id);
-      if (loaded.size === IDS.length) save();
+      if (loaded.size === IDS.length) { syncLogs(); save(); }
       scheduleRender();
     }, onDbError));
   }
@@ -353,8 +353,29 @@ function listen() {
       return;
     }
     S.shared = snap.data(); sharedError = null;
+    if (loaded.size === IDS.length) { syncLogs(); save(); }
     scheduleRender();
   }, onSharedError));
+}
+
+// Logged items keep a copy of their food's nutrition. When a My Food item or meal is edited, bring every logged
+// line that uses it up to date (name, nutrition, and servings for the same amount + unit), then refresh daily totals.
+// save() only writes when something actually changed, so this is a no-op on unrelated updates.
+function syncLogs() {
+  if (!S.shared) return;
+  for (const id of IDS) {
+    const p = S.people[id];
+    for (const [d, items] of Object.entries(p?.log || {})) {
+      for (const it of items) {
+        const food = it.foodId && getFood(it.foodId);
+        if (!food) continue;
+        const u = unitsOf(food).find(u => u.k === (it.unit || 's'));
+        Object.assign(it, { name: food.name, p: +food.p || 0, c: +food.c || 0, f: +food.f || 0, kcal: foodKcal(food) });
+        if (u && it.amount != null) { it.qty = it.amount * u.r; it.unitName = u.n; }
+      }
+      recordDay(p, d, false);
+    }
+  }
 }
 
 function onSharedError(err) {
