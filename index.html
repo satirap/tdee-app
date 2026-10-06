@@ -100,6 +100,9 @@ details.prog .stat .v{font-size:17px}
 @media (max-width:560px){.weighform{grid-template-columns:1fr 1fr auto}.weighform .wd{grid-column:1/-1}}
 .mname{font-size:12px;margin-bottom:4px}
 .mname input{font-size:15px}
+.listbar{display:flex;align-items:center;gap:8px;margin:12px 0 4px}
+.listbar .seg button{font-size:13px;padding:5px 10px}
+.listbar [data-newitem]{margin-left:auto;font-size:13px;padding:6px 12px;white-space:nowrap}
 .mlabel{font-size:12px;color:var(--muted);margin:14px 0 6px}
 .mlabel+.search{margin-top:0}
 .meal-total{margin-top:14px;padding-top:12px;border-top:1px solid var(--border);font-size:14px;font-variant-numeric:tabular-nums}
@@ -617,15 +620,19 @@ function drawResults(root) {
   const manage = root.dataset.mode === 'manage', draft = scanDraft[root.dataset.search];
   if (!q && draft) { newFoodForm(root, draft.v, draft.note); return; }
   if (!q && !manage) { out.innerHTML = ''; return; }
-  // Empty search on the My Food tab: the 10 foods both people eat most, newest My Food filling in until there's history.
+  // Empty search on the My Food tab: the 10 newest My Food items, or the 10 foods both people eat most.
   const hits = q ? searchFoods(q, root.dataset.mode === 'eat')
+    : listView === 'new' ? foodList().sort((a, b) => (b.created || 0) - (a.created || 0)).slice(0, 10)
     : [...foodList(), ...stdFoods()].filter(f => usesOf(f.id) || !f.std)
       .sort((a, b) => usesOf(b.id) - usesOf(a.id) || (b.created || 0) - (a.created || 0)).slice(0, 10);
-  if (!q) { out.innerHTML = hits.length ? `<div class="mlabel">⭐ ยอดนิยม</div>${hits.map(f => resultRow(f, true)).join('')}` : ''; return; }
+  if (!q) { out.innerHTML = listBar() + (hits.map(f => resultRow(f, true)).join('') || '<div class="empty">ยังไม่มีเมนู</div>'); return; }
   if (!hits.length) { newFoodForm(root, { name: q }, `ไม่พบ “${esc(q)}” · เพิ่มเป็นเมนูใหม่`); return; }
   out.innerHTML = hits.map(f => resultRow(f, manage)).join('');
 }
 
+// Empty-search lists on the My Food tab: newest first by default, or most eaten; plus a create button.
+let listView = 'new';
+const listBar = () => `<div class="listbar"><div class="seg">${[['new', '🆕 เพิ่มล่าสุด'], ['top', '⭐ ยอดนิยม']].map(([k, l]) => `<button data-listview="${k}" class="${listView === k ? 'on' : ''}">${l}</button>`).join('')}</div><button class="ghost sm" data-newitem>+ เพิ่มใหม่</button></div>`;
 const timesEaten = id => usesOf(id) ? ` · กิน ${fmt(usesOf(id))} ครั้ง` : '';
 const COPY_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>';
 // Tapping a search result opens an amount + unit row (prefilled with the food's own serving) before adding it.
@@ -662,6 +669,8 @@ function bindSearch(key, { pick, add }) {
     const t = ev.target.closest('button');
     if (!t) return;
     if (t.hasAttribute('data-scan')) scanInto(root, key, pick);
+    else if (t.dataset.listview) { listView = t.dataset.listview; drawResults(root); }
+    else if (t.hasAttribute('data-newitem')) { editingFood = 'new'; render(); window.scrollTo(0, 0); }
     else if (t.dataset.pick) {
       pickOpen = pickOpen === t.dataset.pick ? null : t.dataset.pick; drawResults(root);
       const a = root.querySelector('[data-pamt]');
@@ -1142,11 +1151,11 @@ function mealGroups(p, d, items) {
 function foodsPage() {
   if (sharedError) return `<div class="card">${rulesAlert()}</div>`;
   if (!S.shared) return '<div class="center"><p>กำลังโหลด…</p></div>';
-  const ed = editingFood && S.shared.foods?.[editingFood];
+  const isNew = editingFood === 'new', ed = isNew ? {} : editingFood && S.shared.foods?.[editingFood];
   if (ed) return `<div class="card foods-page">
-    <h2>แก้ไขเมนู</h2>
+    <h2>${isNew ? 'เพิ่มเมนูใหม่' : 'แก้ไขเมนู'}</h2>
     <form class="foodform" id="editFood">
-      <label class="wide">ชื่อ<input name="name" value="${esc(ed.name)}" required></label>
+      <label class="wide">ชื่อ<input name="name" value="${esc(ed.name || '')}" required placeholder="เช่น กะเพราไก่ร้านประจำ"></label>
       ${nutritionFields(ed)}
       <button class="btn" type="submit">บันทึก</button>
       <button class="ghost" type="button" id="cancelEdit">ยกเลิก</button>
@@ -1156,16 +1165,17 @@ function foodsPage() {
   const seg = `<div class="seg">${[['food', 'My Food'], ['meal', 'My Meal']].map(([k, l]) => `<button data-fview="${k}" class="${foodsView === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
   const head = t => `<div class="person-head"><h2 style="margin:0">${t}</h2>${seg}</div>`;
   if (foodsView === 'food') return `<div class="card foods-page">${head('My Food')}${foodSearch('manage', 'manage')}</div>`;
-  const sortedMeals = mealList().sort((a, b) => usesOf(b.id) - usesOf(a.id) || a.name.localeCompare(b.name, 'th', { numeric: true }));
+  const created = id => S.shared.meals?.[id]?.created || 0;
+  const sortedMeals = mealList().sort(listView === 'new' ? (a, b) => created(b.id) - created(a.id)
+    : (a, b) => usesOf(b.id) - usesOf(a.id) || a.name.localeCompare(b.name, 'th', { numeric: true }));
   const meals = allMeals ? sortedMeals : sortedMeals.slice(0, 10);
   return `<div class="card foods-page">${head('🍱 My Meal')}
-    <button class="btn" data-newmeal>+ สร้าง Meal</button>
-    ${meals.length ? '<div class="mlabel">⭐ ยอดนิยม</div>' : ''}
+    ${listBar()}
     <div class="results">${meals.map(m => `<div class="res"><div class="res-main">
         <span class="n">${esc(m.name)}<span class="s">${m.n} รายการ</span></span><span class="m">${macroLine(m)}${timesEaten(m.id)}</span></div>
         <button class="x" data-editmeal="${m.id}" title="แก้ไข">✎</button><button class="x" data-delmeal="${m.id}" title="ลบ">✕</button></div>`).join('')
       || '<div class="empty">ยังไม่มี Meal · รวมเมนูที่กินด้วยกันบ่อย ๆ เป็นชุดเดียว เช่น อาหารเช้าประจำ</div>'}</div>
-    ${sortedMeals.length > 10 ? `<button class="ghost sm" data-allmeals style="margin-top:10px">${allMeals ? 'แสดงแค่ยอดนิยม' : `ดูทั้งหมด (${sortedMeals.length})`}</button>` : ''}
+    ${sortedMeals.length > 10 ? `<button class="ghost sm" data-allmeals style="margin-top:10px">${allMeals ? 'แสดงแค่ 10 รายการ' : `ดูทั้งหมด (${sortedMeals.length})`}</button>` : ''}
   </div>`;
 }
 
@@ -1721,8 +1731,11 @@ function bindFoods() {
   document.querySelectorAll('[data-fview]').forEach(b => b.onclick = () => { foodsView = b.dataset.fview; render(); });
   const am = document.querySelector('[data-allmeals]');
   if (am) am.onclick = () => { allMeals = !allMeals; render(); };
-  const nm = document.querySelector('[data-newmeal]');
-  if (nm) nm.onclick = () => { mealDraft = { id: null, name: '', items: [] }; render(); };
+  if (foodsView === 'meal' && !mealDraft) {
+    document.querySelectorAll('[data-listview]').forEach(b => b.onclick = () => { listView = b.dataset.listview; render(); });
+    const nm = document.querySelector('[data-newitem]');
+    if (nm) nm.onclick = () => { mealDraft = { id: null, name: '', items: [] }; render(); };
+  }
   document.querySelectorAll('[data-editmeal]').forEach(b => b.onclick = () => {
     const m = S.shared.meals[b.dataset.editmeal];
     mealDraft = { id: b.dataset.editmeal, name: m.name, created: m.created, items: structuredClone(m.items || []) };
@@ -1738,7 +1751,8 @@ function bindFoods() {
     ev.preventDefault();
     const food = readFood(new FormData(ef));
     if (!food) return;
-    sharedWrite({ [`foods.${editingFood}`]: { ...S.shared.foods[editingFood], ...food } });
+    if (editingFood === 'new') addFood(food);
+    else sharedWrite({ [`foods.${editingFood}`]: { ...S.shared.foods[editingFood], ...food } });
     editingFood = null; render();
   };
   const ce = document.getElementById('cancelEdit');
