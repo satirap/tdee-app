@@ -104,7 +104,8 @@ details.prog .stat .v{font-size:17px}
 .meal-total{margin-top:14px;padding-top:12px;border-top:1px solid var(--border);font-size:14px;font-variant-numeric:tabular-nums}
 .meal-total b{font-size:20px}
 .plan-note{font-size:13px;margin-bottom:6px;min-height:1px}
-.intake-sum{display:flex;gap:32px;margin:2px 0 12px}
+.intake-sum{display:grid;grid-template-columns:repeat(3,auto);justify-content:start;gap:28px;margin:2px 0 12px}
+.intake-sum b.lim{color:var(--muted)}
 .intake-sum .l{display:block;font-size:12px;color:var(--muted)}
 .intake-sum b{font-size:24px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
 .intake-sum small{color:var(--muted);font-size:12px;margin-left:4px}
@@ -233,6 +234,9 @@ footer{margin-top:24px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;fo
   .act .dual{grid-column:1/-1}
   .chart-box,.chart-box.tall{height:280px}
   .chart-box.short{height:200px}
+  .intake-sum{gap:14px}
+  .intake-sum b{font-size:19px}
+  .intake-sum small{font-size:11px;margin-left:3px}
   .tabs button{padding:7px 12px}
   header h1{flex:1}
   header .refresh{order:2}
@@ -1219,6 +1223,7 @@ function intakeCard(id) {
       <div><span class="l">รวม ${logged.length}/${n} วัน</span>${logged.length
         ? `<b class="${bal > 0 ? 'bad' : 'good'}">${bal > 0 ? 'เกิน' : 'ขาด'} ${fmt(Math.abs(bal))}</b><small>kcal</small>` : '<b class="muted">–</b>'}</div>
       <div><span class="l">เฉลี่ยต่อวัน</span>${avg == null ? '<b class="muted">–</b>' : `<b>${fmt(avg)}</b><small>kcal</small>`}</div>
+      <div><span class="l">┄ เป้าต่อวัน</span><b class="lim">${fmt(Math.round(macros(S.people[id])?.kcal || 0))}</b><small>kcal</small></div>
     </div>
     <div class="chart-box short"><canvas id="intakeChart"></canvas></div>
   </div>`;
@@ -1272,6 +1277,22 @@ function drawIntake(id) {
     return g;
   };
   const isOver = x => x.kcal != null && x.kcal > tgt(x);
+  // Dashed limit line at each day's target, stepping where the target changed.
+  const limit = {
+    id: 'kcalLimit',
+    afterDatasetsDraw(chart) {
+      const { ctx, scales: { x: xs, y: ys } } = chart, half = (xs.getPixelForValue(1) - xs.getPixelForValue(0)) / 2 || 0;
+      ctx.save();
+      ctx.strokeStyle = strong; ctx.globalAlpha = .55; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      days.forEach((x, i) => {
+        const cx = xs.getPixelForValue(i), py = ys.getPixelForValue(tgt(x));
+        if (i === 0) ctx.moveTo(cx - half, py); else ctx.lineTo(cx - half, py);
+        ctx.lineTo(cx + half, py);
+      });
+      ctx.stroke(); ctx.restore();
+    }
+  };
   const labels = {
     id: 'kcalLabels',
     afterDatasetsDraw(chart) {
@@ -1292,7 +1313,7 @@ function drawIntake(id) {
   const common = { grouped: false, borderSkipped: false, borderRadius: n === 7 ? 10 : 5, barPercentage: n === 7 ? .62 : .78, categoryPercentage: .92, maxBarThickness: 36 };
   charts.push(new Chart(el, {
     type: 'bar',
-    plugins: [labels],
+    plugins: [limit, labels],
     data: {
       labels: days.map(x => label(x.d)),
       datasets: [
