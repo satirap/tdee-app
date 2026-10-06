@@ -122,22 +122,29 @@ button.x:hover{color:var(--danger)}
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
 .chips button{font:inherit;font-size:13px;border:1px solid var(--border);background:transparent;color:var(--text);border-radius:99px;padding:3px 11px;cursor:pointer}
 .chips button.on{background:var(--c);border-color:var(--c);color:#fff}
-.eaten{margin-top:14px;border-top:1px solid var(--border)}
-.eaten .it{border-bottom:1px solid var(--border)}
+.eaten{margin-top:4px}
 .seg.mealpick{display:flex;margin-bottom:10px}
 .mealpick button{flex:1;padding:6px 4px;font-size:13px;white-space:nowrap}
-.mgroup+.mgroup{border-top:1px solid var(--border)}
-.mgroup.drop{background:color-mix(in srgb, var(--c,var(--ton)) 10%, transparent);border-radius:10px}
-.grip{flex:none;align-self:center;margin-right:8px;color:var(--muted);font-size:14px;letter-spacing:-3px;line-height:1;padding:6px 4px 6px 0;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
+[data-mc="b"],[data-mealslot="b"]{--mc:#e8913a}
+[data-mc="l"],[data-mealslot="l"]{--mc:#1f9e8f}
+[data-mc="d"],[data-mealslot="d"]{--mc:#7a64d6}
+[data-mc="s"],[data-mealslot="s"]{--mc:#d9628f}
+[data-mealslot=""]{--mc:var(--muted)}
+.mealpick button.on[data-mc]{background:var(--mc);color:#fff}
+.mgroup{background:color-mix(in srgb, var(--mc) 10%, var(--surface));border-radius:14px;padding:2px 10px 10px;margin-top:10px;transition:box-shadow .15s}
+.mgroup .mhead span{color:var(--mc)}
+.mgroup.drop{box-shadow:0 0 0 2px var(--mc)}
+.eaten .it{background:var(--surface);border:0;border-radius:12px;padding:10px 12px;margin-top:8px;box-shadow:0 1px 2px rgba(0,0,0,.06);-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.eaten .it input{-webkit-user-select:text;user-select:text}
+.eaten .it.dragging{opacity:.3}
+.it.lifted{position:fixed;z-index:60;margin:0;background:var(--surface);border-radius:12px;padding:10px 12px;box-shadow:0 14px 34px rgba(0,0,0,.22);transform:scale(1.03);pointer-events:none}
 .it .l1{justify-content:flex-start}
 .it .l1 .kc{margin-left:auto}
-.it.dragging{opacity:.35}
-.it.ghost{position:fixed;z-index:60;margin:0;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 12px;box-shadow:0 10px 30px rgba(0,0,0,.18);pointer-events:none}
+
 .mhead{display:flex;justify-content:space-between;align-items:baseline;padding:12px 2px 2px;font-size:13px;font-weight:600;color:var(--muted)}
 .mhead b{color:var(--text);font-variant-numeric:tabular-nums}
 .mhead b small{font-size:11px;font-weight:500;color:var(--muted)}
 button.link{border:0;background:none;padding:0;font:inherit;font-weight:500;color:var(--c,var(--ton));cursor:pointer}
-.mgroup .it:last-child{border-bottom:0}
 .it button.nm{border:0;background:none;padding:0;font:inherit;font-size:14px;font-weight:500;color:var(--text);text-align:left;cursor:pointer}
 .mv{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px;font-size:12px;color:var(--muted)}
 .mv button{font:inherit;font-size:12px;border:1px solid var(--border);background:transparent;color:var(--text);border-radius:99px;padding:3px 10px;cursor:pointer}
@@ -154,7 +161,7 @@ button.link{border:0;background:none;padding:0;font:inherit;font-weight:500;colo
 .it em{font-style:normal;font-size:13px}
 .it .mac{margin-left:auto;font-variant-numeric:tabular-nums;white-space:nowrap}
 .it .x{padding:2px 4px 2px 8px}
-.it .share{position:absolute;left:0;bottom:-1px;height:2px;border-radius:2px;background:var(--c,var(--ton));opacity:.6}
+
 
 .foodform{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;align-items:end}
 .foodform .wide{grid-column:1/-1}
@@ -998,25 +1005,24 @@ function macroSettings(id) {
 // Logged items carry a meal slot; older items without one show under "ไม่ระบุมื้อ" until moved.
 const MEALS = [['b', 'เช้า', '🌅'], ['l', 'กลางวัน', '☀️'], ['d', 'เย็น', '🌙'], ['s', 'ของว่าง', '🍪']];
 const autoMeal = () => { const h = new Date().getHours(); return h >= 4 && h < 11 ? 'b' : h >= 11 && h < 15 ? 'l' : h >= 17 && h < 22 ? 'd' : 's'; };
-let addMeal = null, movingItem = null;
+let addMeal = null, movingItem = null, dragEnded = 0;
 const curMeal = () => addMeal || autoMeal();
 const prevDay = d => new Date(dayMs(d) - 864e5).toISOString().slice(0, 10);
 
-// One logged/meal line: name and kcal on top; amount, unit and macros below; a hairline shows its share of the total.
+// One logged/meal line as a card: name and kcal on top; amount, unit and macros below.
 const lineKcal = x => (+x.kcal || 0) * (x.qty ?? 1);
 function itemChip(x, ns = '', total = 0) {
   const us = unitsOf(x.foodId ? getFood(x.foodId) : null), cur = x.unit || 's', amt = x.amount ?? x.qty ?? 1, q = x.qty ?? 1;
   const unit = us.some(u => u.k === cur)
     ? (us.length > 1 ? `<select data-${ns}unit="${x.id}">${us.map(u => `<option value="${u.k}" ${u.k === cur ? 'selected' : ''}>${esc(u.n)}</option>`).join('')}</select>` : `<em>${esc(us[0].n)}</em>`)
     : `<em>${esc(x.unitName || 'ที่')}</em>`;
-  const kc = lineKcal(x), share = total > 0 ? Math.min(100, kc / total * 100) : 0;
+  const kc = lineKcal(x);
   const r1 = v => num(Math.round((+v || 0) * q * 10) / 10);
-  return `<div class="it">
-    <div class="l1">${ns ? '' : `<span class="grip" data-grip="${x.id}" aria-label="ลากเพื่อย้ายมื้อ">⋮⋮</span>`}${ns ? '<span class="nm">' : `<button class="nm" data-move="${x.id}" title="ย้ายมื้อ">`}${x.mealId || getFood(x.foodId)?.meal ? '🍱 ' : ''}${esc(x.name)}${ns ? '</span>' : '</button>'}<span class="kc">${fmt(kc)} <small>kcal</small></span></div>
+  return `<div class="it"${ns ? '' : ` data-row="${x.id}"`}>
+    <div class="l1">${ns ? '<span class="nm">' : `<button class="nm" data-move="${x.id}" title="ย้ายมื้อ">`}${x.mealId || getFood(x.foodId)?.meal ? '🍱 ' : ''}${esc(x.name)}${ns ? '</span>' : '</button>'}<span class="kc">${fmt(kc)} <small>kcal</small></span></div>
     <div class="l2"><input class="amt" type="number" inputmode="decimal" step="any" min="0" data-${ns}amt="${x.id}" value="${+(+amt).toFixed(2)}">${unit}
       <span class="mac">P ${r1(x.p)} · C ${r1(x.c)} · F ${r1(x.f)}</span><button class="x" data-${ns || 'un'}${ns ? 'del' : 'eat'}="${x.id}" title="ลบ">✕</button></div>
     ${!ns && movingItem === x.id ? `<div class="mv">ย้ายไป ${MEALS.map(([k, n]) => `<button class="${x.meal === k ? 'on' : ''}" data-tomeal="${k}" data-item="${x.id}">${n}</button>`).join('')}</div>` : ''}
-    ${share ? `<i class="share" style="width:${share.toFixed(1)}%"></i>` : ''}
   </div>`;
 }
 function setAmount(it, v) {
@@ -1047,7 +1053,7 @@ function eatenBlock(id) {
       ${isToday ? '' : '<button class="ghost sm" data-day="0">กลับวันนี้</button>'}
     </div>
     ${sharedError ? rulesAlert() : ''}
-    <div class="seg mealpick">${MEALS.map(([k, n, ic]) => `<button data-addmeal="${k}" class="${curMeal() === k ? 'on' : ''}">${ic} ${n}</button>`).join('')}</div>
+    <div class="seg mealpick">${MEALS.map(([k, n, ic]) => `<button data-addmeal="${k}" data-mc="${k}" class="${curMeal() === k ? 'on' : ''}">${ic} ${n}</button>`).join('')}</div>
     ${foodSearch('eat-' + id, 'eat')}
     ${!items.length && oldTotal ? `<div class="eaten muted" style="font-size:13px;padding-top:12px">บันทึกไว้ ${fmt(oldTotal)} kcal (ไม่มีรายการ)</div>` : ''}
     ${mealGroups(p, d, items)}`;
@@ -1480,22 +1486,39 @@ function bind() {
     list().push({ id: uid(), qty: 1, meal: curMeal(), ...item }); changed();
   };
   document.querySelectorAll('[data-addmeal]').forEach(b => b.onclick = () => { addMeal = b.dataset.addmeal; render(); });
-  document.querySelectorAll('[data-move]').forEach(b => b.onclick = () => { movingItem = movingItem === b.dataset.move ? null : b.dataset.move; render(); });
+  document.querySelectorAll('[data-move]').forEach(b => b.onclick = () => {
+    if (Date.now() - dragEnded < 500) return;
+    movingItem = movingItem === b.dataset.move ? null : b.dataset.move; render();
+  });
   document.querySelectorAll('[data-tomeal]').forEach(b => b.onclick = () => {
     const it = list().find(x => x.id === b.dataset.item);
     if (it) it.meal = b.dataset.tomeal;
     movingItem = null; changed();
   });
-  // Drag a row by its ⋮⋮ grip onto another meal. Pointer events so it works with touch on iPhone and with a mouse.
-  document.querySelectorAll('[data-grip]').forEach(g => g.onpointerdown = ev => {
-    const row = g.closest('.it'), it = list().find(x => x.id === g.dataset.grip);
-    if (!row || !it) return;
-    ev.preventDefault(); g.setPointerCapture(ev.pointerId);
-    const r = row.getBoundingClientRect(), dy = ev.clientY - r.top;
+  // Long-press anywhere on a card (not its inputs or ✕) to lift it, then drag onto another meal.
+  // A quick swipe still scrolls: moving before the press timer fires cancels the drag.
+  document.querySelectorAll('.eaten .it[data-row]').forEach(row => {
+    row.addEventListener('touchmove', e => { if (row.dataset.dragging) e.preventDefault(); }, { passive: false });
+    row.onpointerdown = ev => {
+      if (ev.button > 0 || ev.target.closest('input,select,.x')) return;
+      const it = list().find(x => x.id === row.dataset.row);
+      if (!it) return;
+      const sx = ev.clientX, sy = ev.clientY;
+      const off = () => { clearTimeout(timer); row.removeEventListener('pointermove', pre); row.removeEventListener('pointerup', off); row.removeEventListener('pointercancel', off); };
+      const pre = e => { if (Math.hypot(e.clientX - sx, e.clientY - sy) > 8) off(); };
+      row.addEventListener('pointermove', pre); row.addEventListener('pointerup', off); row.addEventListener('pointercancel', off);
+      const timer = setTimeout(() => { off(); dragRow(row, it, ev.pointerId, sy); }, ev.pointerType === 'mouse' ? 150 : 380);
+    };
+  });
+  const dragRow = (row, it, pid, y0) => {
+    try { row.setPointerCapture(pid); } catch {}
+    row.dataset.dragging = '1';
+    const r = row.getBoundingClientRect(), dy = y0 - r.top;
     const ghost = row.cloneNode(true);
-    ghost.className = 'it ghost'; Object.assign(ghost.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px' });
+    ghost.className = 'it lifted'; ghost.removeAttribute('data-row');
+    Object.assign(ghost.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px' });
     document.body.append(ghost); row.classList.add('dragging');
-    let y = ev.clientY, target = null, alive = true;
+    let y = y0, target = null, alive = true;
     const slotAt = cy => {
       ghost.style.display = 'none';
       const el = document.elementFromPoint(r.left + r.width / 2, cy)?.closest('[data-mealslot]');
@@ -1504,22 +1527,24 @@ function bind() {
     };
     const tick = () => {
       if (!alive) return;
-      const edge = 70, v = y < edge ? -(edge - y) / 4 : y > innerHeight - edge ? (y - innerHeight + edge) / 4 : 0;
-      if (v) window.scrollBy(0, v);
+      const edge = 80, v = y < edge ? -(edge - y) / 4 : y > innerHeight - edge ? (y - innerHeight + edge) / 4 : 0;
+      if (v) { window.scrollBy(0, v); const t = slotAt(y); if (t !== target) { target?.classList.remove('drop'); target = t; target?.classList.add('drop'); } }
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
-    g.onpointermove = e => {
+    const move = e => {
       y = e.clientY; ghost.style.top = (y - dy) + 'px';
       const t = slotAt(y);
       if (t !== target) { target?.classList.remove('drop'); target = t; target?.classList.add('drop'); }
     };
-    g.onpointerup = g.onpointercancel = () => {
-      alive = false; g.onpointermove = g.onpointerup = g.onpointercancel = null;
-      ghost.remove(); row.classList.remove('dragging'); target?.classList.remove('drop');
+    const end = () => {
+      alive = false; dragEnded = Date.now();
+      row.removeEventListener('pointermove', move); row.removeEventListener('pointerup', end); row.removeEventListener('pointercancel', end);
+      delete row.dataset.dragging; ghost.remove(); row.classList.remove('dragging'); target?.classList.remove('drop');
       if (target && target.dataset.mealslot !== it.meal) { it.meal = target.dataset.mealslot; movingItem = null; changed(); }
     };
-  });
+    row.addEventListener('pointermove', move); row.addEventListener('pointerup', end); row.addEventListener('pointercancel', end);
+  };
   // Copies yesterday's items in that meal as new lines (fresh ids), leaving yesterday untouched.
   document.querySelectorAll('[data-copymeal]').forEach(b => b.onclick = () => {
     const k = b.dataset.copymeal, src = dayItems(p, prevDay(day)).filter(x => x.meal === k);
