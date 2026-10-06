@@ -83,7 +83,7 @@ h3{font-size:15px;margin:0 0 8px}
 .rk{display:inline-flex;align-items:center;gap:6px}
 .rk i{width:8px;height:8px;border-radius:50%}
 .ring-week{font-size:13px;text-align:center;margin-top:10px}
-.ring-minor{font-size:12px;color:var(--muted);text-align:center;margin-top:10px}
+.ring-rows.limits{margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}
 .prog{margin-top:14px;border-top:1px solid var(--border);padding-top:12px}
 details.prog summary{list-style:none;cursor:pointer}
 details.prog summary::-webkit-details-marker{display:none}
@@ -1031,7 +1031,12 @@ function energyBlock(id, d = todayStr()) {
         <span class="${protLeft <= 0 ? 'good' : 'muted'}">${protLeft <= 0 ? 'ครบแล้ว ✓' : `เหลือ ${fmt(protLeft)} ก.`}</span></div>
     </div>
     ${week}
-    <div class="ring-minor">คาร์บ ${fmt(daySum(p, d, 'c'))} / ${fmt(m.carb.g)} ก. · ไขมัน ${fmt(daySum(p, d, 'f'))} / ${fmt(m.fat.g)} ก.</div>
+    <div class="ring-rows limits">${[['c', '🍚 คาร์บ', m.carb.g, 'carb'], ['f', '🧈 ไขมัน', m.fat.g, 'fat']].map(([k, label, max, col]) => {
+      // Carbs and fat are limits: anything over the target is flagged straight away (no tolerance band).
+      const v = Math.round(daySum(p, d, k)), left = Math.round(max) - v;
+      return `<div><span class="rk"><i style="background:var(--${col})"></i>${label}</span><span><b>${fmt(v)}</b> / ${fmt(max)} ก.</span>
+        <span class="${left < 0 ? 'bad' : 'muted'}">${left < 0 ? `เกิน ${fmt(-left)} ก.` : left === 0 ? 'พอดี' : `เหลือ ${fmt(left)} ก.`}</span></div>`;
+    }).join('')}</div>
     ${r.target < r.floor ? `<div class="alert">เป้าคำนวณได้ ${fmt(r.target)} kcal ต่ำกว่าขั้นต่ำที่แนะนำ (${r.floor}) จึงแสดงเป็น ${r.floor} แทน · ลองลด “ลดวันละ” ลง</div>` : ''}`;
 }
 
