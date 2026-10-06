@@ -123,6 +123,19 @@ button.x:hover{color:var(--danger)}
 .chips button{font:inherit;font-size:13px;border:1px solid var(--border);background:transparent;color:var(--text);border-radius:99px;padding:3px 11px;cursor:pointer}
 .chips button.on{background:var(--c);border-color:var(--c);color:#fff}
 .eaten{margin-top:14px;border-top:1px solid var(--border)}
+.eaten .it{border-bottom:1px solid var(--border)}
+.seg.mealpick{display:flex;margin-bottom:10px}
+.mealpick button{flex:1;padding:6px 4px;font-size:13px;white-space:nowrap}
+.mgroup+.mgroup{border-top:1px solid var(--border)}
+.mhead{display:flex;justify-content:space-between;align-items:baseline;padding:12px 2px 2px;font-size:13px;font-weight:600;color:var(--muted)}
+.mhead b{color:var(--text);font-variant-numeric:tabular-nums}
+.mhead b small{font-size:11px;font-weight:500;color:var(--muted)}
+button.link{border:0;background:none;padding:0;font:inherit;font-weight:500;color:var(--c,var(--ton));cursor:pointer}
+.mgroup .it:last-child{border-bottom:0}
+.it button.nm{border:0;background:none;padding:0;font:inherit;font-size:14px;font-weight:500;color:var(--text);text-align:left;cursor:pointer}
+.mv{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px;font-size:12px;color:var(--muted)}
+.mv button{font:inherit;font-size:12px;border:1px solid var(--border);background:transparent;color:var(--text);border-radius:99px;padding:3px 10px;cursor:pointer}
+.mv button.on{background:var(--c,var(--ton));border-color:transparent;color:#fff}
 .it{position:relative;padding:11px 2px 10px;border-bottom:1px solid var(--border)}
 .it:last-child{border-bottom:0}
 .it .l1{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
@@ -976,6 +989,13 @@ function macroSettings(id) {
 }
 
 // One logged/meal line: name, free amount, and a unit picker that converts between the food's units.
+// Logged items carry a meal slot; older items without one show under "ไม่ระบุมื้อ" until moved.
+const MEALS = [['b', 'เช้า', '🌅'], ['l', 'กลางวัน', '☀️'], ['d', 'เย็น', '🌙'], ['s', 'ของว่าง', '🍪']];
+const autoMeal = () => { const h = new Date().getHours(); return h >= 4 && h < 11 ? 'b' : h >= 11 && h < 15 ? 'l' : h >= 17 && h < 22 ? 'd' : 's'; };
+let addMeal = null, movingItem = null;
+const curMeal = () => addMeal || autoMeal();
+const prevDay = d => new Date(dayMs(d) - 864e5).toISOString().slice(0, 10);
+
 // One logged/meal line: name and kcal on top; amount, unit and macros below; a hairline shows its share of the total.
 const lineKcal = x => (+x.kcal || 0) * (x.qty ?? 1);
 function itemChip(x, ns = '', total = 0) {
@@ -986,9 +1006,10 @@ function itemChip(x, ns = '', total = 0) {
   const kc = lineKcal(x), share = total > 0 ? Math.min(100, kc / total * 100) : 0;
   const r1 = v => num(Math.round((+v || 0) * q * 10) / 10);
   return `<div class="it">
-    <div class="l1"><span class="nm">${x.mealId || getFood(x.foodId)?.meal ? '🍱 ' : ''}${esc(x.name)}</span><span class="kc">${fmt(kc)} <small>kcal</small></span></div>
+    <div class="l1">${ns ? '<span class="nm">' : `<button class="nm" data-move="${x.id}" title="ย้ายมื้อ">`}${x.mealId || getFood(x.foodId)?.meal ? '🍱 ' : ''}${esc(x.name)}${ns ? '</span>' : '</button>'}<span class="kc">${fmt(kc)} <small>kcal</small></span></div>
     <div class="l2"><input class="amt" type="number" inputmode="decimal" step="any" min="0" data-${ns}amt="${x.id}" value="${+(+amt).toFixed(2)}">${unit}
       <span class="mac">P ${r1(x.p)} · C ${r1(x.c)} · F ${r1(x.f)}</span><button class="x" data-${ns || 'un'}${ns ? 'del' : 'eat'}="${x.id}" title="ลบ">✕</button></div>
+    ${!ns && movingItem === x.id ? `<div class="mv">ย้ายไป ${MEALS.map(([k, n]) => `<button class="${x.meal === k ? 'on' : ''}" data-tomeal="${k}" data-item="${x.id}">${n}</button>`).join('')}</div>` : ''}
     ${share ? `<i class="share" style="width:${share.toFixed(1)}%"></i>` : ''}
   </div>`;
 }
@@ -1020,9 +1041,25 @@ function eatenBlock(id) {
       ${isToday ? '' : '<button class="ghost sm" data-day="0">กลับวันนี้</button>'}
     </div>
     ${sharedError ? rulesAlert() : ''}
+    <div class="seg mealpick">${MEALS.map(([k, n, ic]) => `<button data-addmeal="${k}" class="${curMeal() === k ? 'on' : ''}">${ic} ${n}</button>`).join('')}</div>
     ${foodSearch('eat-' + id, 'eat')}
-    ${!items.length && oldTotal ? `<div class="eaten muted" style="font-size:13px">บันทึกไว้ ${fmt(oldTotal)} kcal (ไม่มีรายการ)</div>` : ''}
-    ${items.length ? `<div class="eaten">${items.map(x => itemChip(x, '', items.reduce((t, y) => t + lineKcal(y), 0))).join('')}</div>` : ''}`;
+    ${!items.length && oldTotal ? `<div class="eaten muted" style="font-size:13px;padding-top:12px">บันทึกไว้ ${fmt(oldTotal)} kcal (ไม่มีรายการ)</div>` : ''}
+    ${mealGroups(p, d, items)}`;
+}
+
+function mealGroups(p, d, items) {
+  const total = items.reduce((t, y) => t + lineKcal(y), 0), yItems = dayItems(p, prevDay(d));
+  const groups = [...MEALS, ['', 'ไม่ระบุมื้อ', '•']].map(([k, n, ic]) => {
+    const its = items.filter(x => k ? x.meal === k : !MEALS.some(m => m[0] === x.meal));
+    if (!k && !its.length) return '';
+    const kc = its.reduce((t, y) => t + lineKcal(y), 0), ycount = k ? yItems.filter(x => x.meal === k).length : 0;
+    return `<div class="mgroup">
+      <div class="mhead"><span>${ic} ${n}</span>${its.length ? `<b>${fmt(kc)} <small>kcal</small></b>`
+        : ycount ? `<button class="link" data-copymeal="${k}">คัดลอกจากเมื่อวาน (${ycount})</button>` : '<span class="muted">–</span>'}</div>
+      ${its.map(x => itemChip(x, '', total)).join('')}
+    </div>`;
+  }).join('');
+  return `<div class="eaten">${groups}</div>`;
 }
 
 function foodsPage() {
@@ -1434,8 +1471,24 @@ function bind() {
   const eat = item => {
     // A day that only had a total (from before per-day lists) keeps it as a line item, so adding food doesn't wipe it.
     if (!dayItems(p, day).length && p.days?.[day]?.kcal) list().push({ id: uid(), name: 'ยอดที่บันทึกไว้ก่อนหน้า', p: 0, c: 0, f: 0, kcal: p.days[day].kcal, qty: 1, amount: 1, unit: 's' });
-    list().push({ id: uid(), qty: 1, ...item }); changed();
+    list().push({ id: uid(), qty: 1, meal: curMeal(), ...item }); changed();
   };
+  document.querySelectorAll('[data-addmeal]').forEach(b => b.onclick = () => { addMeal = b.dataset.addmeal; render(); });
+  document.querySelectorAll('[data-move]').forEach(b => b.onclick = () => { movingItem = movingItem === b.dataset.move ? null : b.dataset.move; render(); });
+  document.querySelectorAll('[data-tomeal]').forEach(b => b.onclick = () => {
+    const it = list().find(x => x.id === b.dataset.item);
+    if (it) it.meal = b.dataset.tomeal;
+    movingItem = null; changed();
+  });
+  // Copies yesterday's items in that meal as new lines (fresh ids), leaving yesterday untouched.
+  document.querySelectorAll('[data-copymeal]').forEach(b => b.onclick = () => {
+    const k = b.dataset.copymeal, src = dayItems(p, prevDay(day)).filter(x => x.meal === k);
+    for (const x of src) {
+      list().push({ ...structuredClone(x), id: uid(), meal: k });
+      if (x.foodId) sharedWrite({ [`uses.${x.foodId}`]: increment(1) });
+    }
+    changed();
+  });
   const eatFood = (fid, f) => {
     eat({ foodId: fid, name: f.name, p: +f.p || 0, c: +f.c || 0, f: +f.f || 0, kcal: foodKcal(f), ...servingOf(f) });
     sharedWrite({ [`uses.${fid}`]: increment(1) });
@@ -1536,7 +1589,7 @@ function bindMealEditor() {
   };
 }
 
-function setTab(t) { S.tab = t; sub = 'today'; logDate = null; save(); render(); window.scrollTo(0, 0); }
+function setTab(t) { S.tab = t; sub = 'today'; logDate = null; addMeal = null; movingItem = null; save(); render(); window.scrollTo(0, 0); }
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => setTab(b.dataset.tab));
 
 document.getElementById('exportBtn').onclick = () => {

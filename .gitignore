@@ -5,3 +5,4 @@ export.zip
 export.xml
 export_cda.xml
 *.gpx
+backups/
