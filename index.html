@@ -83,6 +83,17 @@ h3{font-size:15px;margin:0 0 8px}
 .rk{display:inline-flex;align-items:center;gap:6px}
 .rk i{width:8px;height:8px;border-radius:50%}
 .ring-week{font-size:13px;text-align:center;margin-top:10px}
+.msplit{margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
+.msbar{display:flex;height:12px;border-radius:99px;overflow:hidden;gap:2px;background:var(--surface-2)}
+.msbar i{display:block;background:var(--mc)}
+.mslegend{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:6px;margin-top:8px;font-size:12px;color:var(--muted);text-align:center}
+.mslegend span{display:flex;flex-direction:column;align-items:center;gap:1px;white-space:nowrap}
+.mslegend em{font-style:normal;display:inline-flex;align-items:center;gap:4px}
+.mslegend b{font-size:14px}
+.mslegend span i{width:8px;height:8px;border-radius:50%;background:var(--mc)}
+.mslegend b{color:var(--text);font-variant-numeric:tabular-nums}
+.mslegend .zero{opacity:.45}
+[data-mc=""]{--mc:var(--muted)}
 .ring-rows.limits{margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}
 .prog{margin-top:14px;border-top:1px solid var(--border);padding-top:12px}
 details.prog summary{list-style:none;cursor:pointer}
@@ -1021,6 +1032,20 @@ function rings(m, kcal, prot, tol = 50) {
     <text x="${c}" y="${c + 30}" text-anchor="middle" class="rl">kcal</text>`}</svg>`;
 }
 
+// Share of the day's kcal by meal (items without a meal count as "ไม่ระบุ"). Information only, no advice.
+function mealSplit(items) {
+  const total = items.reduce((t, x) => t + lineKcal(x), 0);
+  if (total <= 0) return '';
+  const parts = [...MEALS, ['', 'ไม่ระบุ', '•']].map(([k, n, ic]) => {
+    const kc = items.filter(x => k ? x.meal === k : !MEALS.some(m => m[0] === x.meal)).reduce((t, x) => t + lineKcal(x), 0);
+    return { k, n, ic, pct: kc / total * 100 };
+  }).filter(x => x.pct > 0 || x.k);
+  return `<div class="msplit">
+    <div class="msbar">${parts.filter(x => x.pct > 0).map(x => `<i data-mc="${x.k}" style="width:${x.pct.toFixed(1)}%"></i>`).join('')}</div>
+    <div class="mslegend">${parts.map(x => `<span data-mc="${x.k}" class="${x.pct ? '' : 'zero'}"><em><i></i>${x.n}</em><b>${x.pct > 0 && x.pct < 1 ? '<1' : Math.round(x.pct)}%</b></span>`).join('')}</div>
+  </div>`;
+}
+
 function energyBlock(id, d = todayStr()) {
   const p = S.people[id], r = calc(p), m0 = macros(p);
   if (!r) return `<div class="alert">${!profileReady(p) ? 'กรอก <b>เพศ อายุ ส่วนสูง</b> ในแท็บ “ข้อมูลส่วนตัว” ก่อน' : 'บันทึกน้ำหนักอย่างน้อย 1 ครั้ง'} เพื่อคำนวณ TDEE</div>`;
@@ -1046,6 +1071,7 @@ function energyBlock(id, d = todayStr()) {
       return `<div><span class="rk"><i style="background:var(--${col})"></i>${label}</span><span><b>${fmt(v)}</b> / ${fmt(max)} ก.</span>
         <span class="${left < 0 ? 'bad' : 'muted'}">${left < 0 ? `เกิน ${fmt(-left)} ก.` : left === 0 ? 'พอดี' : `เหลือ ${fmt(left)} ก.`}</span></div>`;
     }).join('')}</div>
+    ${mealSplit(dayItems(p, d))}
     ${r.target < r.floor ? `<div class="alert">เป้าคำนวณได้ ${fmt(r.target)} kcal ต่ำกว่าขั้นต่ำที่แนะนำ (${r.floor}) จึงแสดงเป็น ${r.floor} แทน · ลองลด “ลดวันละ” ลง</div>` : ''}`;
 }
 
