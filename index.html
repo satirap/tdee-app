@@ -160,7 +160,6 @@ button.x:hover{color:var(--danger)}
 .mhead{display:flex;justify-content:space-between;align-items:baseline;padding:12px 2px 2px;font-size:13px;font-weight:600;color:var(--muted)}
 .mhead b{color:var(--text);font-variant-numeric:tabular-nums}
 .mhead b small{font-size:11px;font-weight:500;color:var(--muted)}
-button.link{border:0;background:none;padding:0;font:inherit;font-weight:500;color:var(--c,var(--ton));cursor:pointer}
 .it button.nm{border:0;background:none;padding:0;font:inherit;font-size:14px;font-weight:500;color:var(--text);text-align:left;cursor:pointer}
 .mv{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px;font-size:12px;color:var(--muted)}
 .mv button{font:inherit;font-size:12px;border:1px solid var(--border);background:transparent;color:var(--text);border-radius:99px;padding:3px 10px;cursor:pointer}
@@ -1093,7 +1092,6 @@ const MEALS = [['b', 'เช้า', '🌅'], ['l', 'กลางวัน', '�
 const autoMeal = () => { const h = new Date().getHours(); return h >= 4 && h < 11 ? 'b' : h >= 11 && h < 15 ? 'l' : h >= 17 && h < 22 ? 'd' : 's'; };
 let addMeal = null, openItem = null, dragEnded = 0;
 const curMeal = () => addMeal || autoMeal();
-const prevDay = d => new Date(dayMs(d) - 864e5).toISOString().slice(0, 10);
 
 // One logged/meal line as a card: name, kcal and ✕; tap it to open amount, unit, macros (and meal move).
 const lineKcal = x => (+x.kcal || 0) * (x.qty ?? 1);
@@ -1160,14 +1158,12 @@ function eatenBlock(id) {
 }
 
 function mealGroups(p, d, items) {
-  const yItems = dayItems(p, prevDay(d));
   const groups = [...MEALS, ['', 'ไม่ระบุมื้อ', '•']].map(([k, n, ic]) => {
     const its = items.filter(x => k ? x.meal === k : !MEALS.some(m => m[0] === x.meal));
     if (!k && !its.length) return '';
-    const kc = its.reduce((t, y) => t + lineKcal(y), 0), ycount = k ? yItems.filter(x => x.meal === k).length : 0;
+    const kc = its.reduce((t, y) => t + lineKcal(y), 0);
     return `<div class="mgroup" data-mealslot="${k}">
-      <div class="mhead"><span>${ic} ${n}</span>${its.length ? `<b>${fmt(kc)} <small>kcal</small></b>`
-        : ycount ? `<button class="link" data-copymeal="${k}">คัดลอกจากเมื่อวาน (${ycount})</button>` : '<span class="muted">–</span>'}</div>
+      <div class="mhead"><span>${ic} ${n}</span>${its.length ? `<b>${fmt(kc)} <small>kcal</small></b>` : '<span class="muted">–</span>'}</div>
       ${its.map(x => itemChip(x)).join('')}
     </div>`;
   }).join('');
@@ -1701,15 +1697,6 @@ function bind() {
     };
     row.addEventListener('pointermove', move); row.addEventListener('pointerup', end); row.addEventListener('pointercancel', end);
   };
-  // Copies yesterday's items in that meal as new lines (fresh ids), leaving yesterday untouched.
-  document.querySelectorAll('[data-copymeal]').forEach(b => b.onclick = () => {
-    const k = b.dataset.copymeal, src = dayItems(p, prevDay(day)).filter(x => x.meal === k);
-    for (const x of src) {
-      list().push({ ...structuredClone(x), id: uid(), meal: k });
-      if (x.foodId) sharedWrite({ [`uses.${x.foodId}`]: increment(1) });
-    }
-    changed();
-  });
   const eatFood = (fid, f, o) => {
     eat(lineFor(fid, f, o));
     sharedWrite({ [`uses.${fid}`]: increment(1) });
