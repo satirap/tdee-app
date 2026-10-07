@@ -176,6 +176,16 @@ button.x:hover{color:var(--danger)}
 .it em{font-style:normal;font-size:13px}
 .it .mac{margin-left:auto;font-variant-numeric:tabular-nums;white-space:nowrap}
 .it .x{padding:2px 0 2px 10px}
+.pbadge{display:inline-block;margin-left:6px;padding:0 6px;border-radius:6px;font-size:11px;font-weight:600;color:var(--mc,var(--ton));background:color-mix(in srgb, var(--mc,var(--ton)) 14%, transparent);vertical-align:1px}
+.pctrow,.adjrow{display:flex;align-items:center;gap:5px;margin-top:10px;font-size:12px;color:var(--muted)}
+.pctrow .lbl,.adjrow .lbl{flex:none;width:34px}
+.pctrow button{flex:none;font:inherit;font-size:12px;border:1px solid var(--border);background:transparent;color:var(--text);border-radius:99px;padding:3px 8px;cursor:pointer}
+.pctrow button.on{background:var(--mc,var(--ton));border-color:transparent;color:#fff}
+.pin{display:inline-flex;align-items:center;gap:2px}
+.pin input{width:46px;padding:3px 5px;font-size:13px;border-radius:7px;text-align:right}
+.pctrow .pin{margin-left:auto}
+.adjrow{display:grid;grid-template-columns:34px repeat(3,1fr);align-items:end}
+.adjrow label{flex-direction:column;align-items:flex-start;gap:2px;font-size:11px}
 .eaten .it{cursor:pointer}
 .eaten .it.open{box-shadow:0 0 0 1.5px color-mix(in srgb, var(--mc,var(--ton)) 60%, transparent),0 4px 14px rgba(0,0,0,.08)}
 .res.picking{background:var(--surface-2);border-radius:12px}
@@ -365,13 +375,23 @@ function save() {
   }
 }
 
+// What was actually eaten from a logged line: amount × "กินไป %", then per-macro % (e.g. left half the bun → C 50%).
+// Macros left uneaten are taken off the kcal at 4/4/9 kcal per gram.
+function eff(x) {
+  const q = (x.qty ?? 1) * (x.pct ?? 100) / 100, a = x.adj || {};
+  const base = { p: (+x.p || 0) * q, c: (+x.c || 0) * q, f: (+x.f || 0) * q };
+  const keep = k => (a[k] ?? 100) / 100;
+  const cut = base.p * (1 - keep('p')) * 4 + base.c * (1 - keep('c')) * 4 + base.f * (1 - keep('f')) * 9;
+  return { p: base.p * keep('p'), c: base.c * keep('c'), f: base.f * keep('f'), kcal: Math.max(0, (+x.kcal || 0) * q - cut) };
+}
+
 // Daily kcal total plus that day's target, so a week's balance is judged against the target in effect each day.
 // Today follows the live target; a past day keeps the target it had (or today's, if it never had one).
 function recordDay(p, d, edited) {
   const items = dayItems(p, d);
   p.days ||= {};
   if (!items.length) { if (edited) delete p.days[d]; return; }
-  const kcal = Math.round(items.reduce((s, x) => s + (+x.kcal || 0) * (x.qty ?? 1), 0));
+  const kcal = Math.round(items.reduce((s, x) => s + eff(x).kcal, 0));
   const live = Math.round(macros(p)?.kcal ?? 0);
   p.days[d] = { kcal, target: d === todayStr() ? live || p.days[d]?.target || 0 : p.days[d]?.target ?? live };
 }
@@ -1007,7 +1027,7 @@ function statsBlock(id, withExtras = true) {
 
 // Donut of the day's calories: protein slice centred at the top, grams printed inside each slice,
 // total kcal in the middle.
-const daySum = (p, d, k) => dayItems(p, d).reduce((s, x) => s + (+x[k] || 0) * (x.qty ?? 1), 0);
+const daySum = (p, d, k) => dayItems(p, d).reduce((s, x) => s + eff(x)[k], 0);
 
 // Two progress rings: outer = kcal eaten vs target (a second red lap shows the overshoot), inner = protein.
 function rings(m, kcal, prot, tol = 50) {
@@ -1100,17 +1120,21 @@ let addMeal = null, openItem = null, dragEnded = 0;
 const curMeal = () => addMeal || autoMeal();
 
 // One logged/meal line as a card: name, kcal and ✕; tap it to open amount, unit, macros (and meal move).
-const lineKcal = x => (+x.kcal || 0) * (x.qty ?? 1);
+const lineKcal = x => eff(x).kcal;
 function itemChip(x, ns = '') {
   const us = unitsOf(x.foodId ? getFood(x.foodId) : null), cur = x.unit || 's', amt = x.amount ?? x.qty ?? 1, q = x.qty ?? 1;
   const unit = us.some(u => u.k === cur)
     ? (us.length > 1 ? `<select data-${ns}unit="${x.id}">${us.map(u => `<option value="${u.k}" ${u.k === cur ? 'selected' : ''}>${esc(u.n)}</option>`).join('')}</select>` : `<em>${esc(us[0].n)}</em>`)
     : `<em>${esc(x.unitName || 'ที่')}</em>`;
-  const r1 = v => num(Math.round((+v || 0) * q * 10) / 10), open = openItem === x.id;
+  const e = eff(x), r1 = v => num(Math.round(v * 10) / 10), open = openItem === x.id, pct = x.pct ?? 100, adj = x.adj || {};
+  const badge = [pct !== 100 ? `${pct}%` : '', ...[['p', 'P'], ['c', 'C'], ['f', 'F']].filter(([k]) => (adj[k] ?? 100) !== 100).map(([k, l]) => `${l} ${adj[k]}%`)].filter(Boolean).join(' · ');
   return `<div class="it${open ? ' open' : ''}" data-${ns}row="${x.id}">
-    <div class="l1"><span class="nm">${x.mealId || getFood(x.foodId)?.meal ? '🍱 ' : ''}${esc(x.name)}</span><span class="kc">${fmt(lineKcal(x))} <small>kcal</small></span><button class="x" data-${ns || 'un'}${ns ? 'del' : 'eat'}="${x.id}" title="ลบ">✕</button></div>
+    <div class="l1"><span class="nm">${x.mealId || getFood(x.foodId)?.meal ? '🍱 ' : ''}${esc(x.name)}${!ns && badge ? `<span class="pbadge">${badge}</span>` : ''}</span><span class="kc">${fmt(lineKcal(x))} <small>kcal</small></span><button class="x" data-${ns || 'un'}${ns ? 'del' : 'eat'}="${x.id}" title="ลบ">✕</button></div>
     ${open ? `<div class="l2"><input class="amt" type="number" inputmode="decimal" step="any" min="0" data-${ns}amt="${x.id}" value="${+(+amt).toFixed(2)}">${unit}
-      <span class="mac">P ${r1(x.p)} · C ${r1(x.c)} · F ${r1(x.f)}</span></div>
+      <span class="mac">P ${r1(e.p)} · C ${r1(e.c)} · F ${r1(e.f)}</span></div>
+      ${ns ? '' : `<div class="pctrow"><span class="lbl">กินไป</span>${[100, 75, 50, 25].map(v => `<button class="${pct === v ? 'on' : ''}" data-pct="${v}" data-item="${x.id}">${v}</button>`).join('')}
+        <span class="pin"><input type="number" inputmode="numeric" min="1" max="100" value="${pct}" data-pctin="${x.id}">%</span></div>
+      <div class="adjrow"><span class="lbl">ปรับ</span>${[['p', 'โปรตีน'], ['c', 'คาร์บ'], ['f', 'ไขมัน']].map(([k, l]) => `<label>${l}<span class="pin"><input type="number" inputmode="numeric" min="0" max="100" value="${adj[k] ?? 100}" data-adj="${k}" data-item="${x.id}">%</span></label>`).join('')}</div>`}
       ${ns ? '' : `<div class="mv">ย้ายไป ${MEALS.map(([k, n]) => `<button class="${x.meal === k ? 'on' : ''}" data-tomeal="${k}" data-item="${x.id}">${n}</button>`).join('')}</div>`}` : ''}
   </div>`;
 }
@@ -1648,6 +1672,24 @@ function bind() {
     if (e.target.closest('input,select,button') || Date.now() - dragEnded < 500) return;
     openItem = openItem === row.dataset.row ? null : row.dataset.row; render();
   }));
+  const clampPct = (v, lo) => Math.min(100, Math.max(lo, Math.round(+v || 0)));
+  document.querySelectorAll('[data-pct]').forEach(b => b.onclick = () => {
+    const it = list().find(x => x.id === b.dataset.item);
+    if (it) { it.pct = +b.dataset.pct; if (it.pct === 100) delete it.pct; changed(); }
+  });
+  document.querySelectorAll('[data-pctin]').forEach(inp => inp.onchange = () => {
+    const it = list().find(x => x.id === inp.dataset.pctin);
+    if (!it) return;
+    it.pct = clampPct(inp.value, 1); if (it.pct === 100) delete it.pct; changed();
+  });
+  document.querySelectorAll('[data-adj]').forEach(inp => inp.onchange = () => {
+    const it = list().find(x => x.id === inp.dataset.item);
+    if (!it) return;
+    const adj = { ...(it.adj || {}), [inp.dataset.adj]: clampPct(inp.value, 0) };
+    for (const k of Object.keys(adj)) if (adj[k] === 100) delete adj[k];
+    if (Object.keys(adj).length) it.adj = adj; else delete it.adj;
+    changed();
+  });
   document.querySelectorAll('[data-tomeal]').forEach(b => b.onclick = () => {
     const it = list().find(x => x.id === b.dataset.item);
     if (it) it.meal = b.dataset.tomeal;
