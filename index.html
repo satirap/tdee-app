@@ -362,6 +362,12 @@ const sharedDoc = () => doc(db, 'vault', pin, 'shared', 'foods');
 let sharedError = null, editingFood = null, foodsView = 'food', mealDraft = null, allMeals = false;
 const synced = {};
 
+// Last size seen from the server per person. A save that would empty weigh-ins or the food log in one go is
+// almost certainly a bug (e.g. defaults written over real data), so it is refused instead of sent.
+const serverSize = {};
+const sizeOf = p => ({ entries: (p?.entries || []).length, logDays: Object.keys(p?.log || {}).length });
+let writeBlocked = false;
+
 function save() {
   try { localStorage.setItem(PREF_KEY, JSON.stringify({ tab: S.tab, intakeRange: S.intakeRange })); } catch {}
   if (!pin || loaded.size < IDS.length) return;
@@ -370,6 +376,11 @@ function save() {
     pruneLog(S.people[id]);
     const json = JSON.stringify(S.people[id]);
     if (json === synced[id]) continue;
+    const was = serverSize[id], now = sizeOf(S.people[id]);
+    if (was && ((was.entries > 1 && now.entries === 0) || (was.logDays > 1 && now.logDays === 0))) {
+      if (!writeBlocked) { writeBlocked = true; alert('ระบบหยุดการบันทึกไว้ เพราะข้อมูลที่จะบันทึกว่างผิดปกติ (กันข้อมูลหาย)\nกด ↻ รีเฟรช แล้วลองใหม่'); }
+      continue;
+    }
     synced[id] = json;
     setDoc(personDoc(id), JSON.parse(json)).catch(onDbError);
   }
@@ -409,6 +420,18 @@ function moveToday(p) {
   delete p.today;
 }
 
+// Once a day, keep a full copy of everyone's data at vault/{pin}/backups/{date} as a recovery point.
+// Skipped when the data looks empty so a broken state never replaces a good copy.
+const backupDoc = d => doc(db, 'vault', pin, 'backups', d);
+function dailyBackup() {
+  const d = todayStr(), key = 'tdee-backup-' + pin;
+  if (!S.shared || loaded.size < IDS.length) return;
+  try { if (localStorage.getItem(key) === d) return; } catch {}
+  if (!IDS.some(id => sizeOf(S.people[id]).entries || sizeOf(S.people[id]).logDays)) return;
+  const copy = JSON.parse(JSON.stringify({ at: Date.now(), people: S.people, shared: S.shared }));
+  setDoc(backupDoc(d), copy).then(() => { try { localStorage.setItem(key, d); } catch {} }).catch(e => console.warn('backup failed', e));
+}
+
 function onDbError(err) {
   console.error(err);
   if (err.code === 'permission-denied') { lock('รหัสไม่ถูกต้อง'); return; }
@@ -420,10 +443,15 @@ function listen() {
   unsubs.forEach(u => u()); unsubs = []; loaded = new Set(); dbError = null;
   for (const id of IDS) {
     unsubs.push(onSnapshot(personDoc(id), snap => {
-      if (snap.exists()) { S.people[id] = snap.data(); synced[id] = JSON.stringify(S.people[id]); dropMet(S.people[id]); moveToday(S.people[id]); }
-      else { S.people[id] = defaults().people[id]; synced[id] = ''; }
+      // Offline, Firestore reports "no document" from its empty cache. Never treat that as a new user:
+      // writing defaults then would overwrite the real data once the connection comes back.
+      if (!snap.exists() && snap.metadata.fromCache) return;
+      if (snap.exists()) {
+        S.people[id] = snap.data(); synced[id] = JSON.stringify(S.people[id]); dropMet(S.people[id]); moveToday(S.people[id]);
+        if (!snap.metadata.hasPendingWrites) serverSize[id] = sizeOf(S.people[id]);
+      } else { S.people[id] = defaults().people[id]; synced[id] = ''; serverSize[id] = { entries: 0, logDays: 0 }; }
       loaded.add(id);
-      if (loaded.size === IDS.length) { syncLogs(); save(); }
+      if (loaded.size === IDS.length) { syncLogs(); save(); dailyBackup(); }
       scheduleRender();
     }, onDbError));
   }
@@ -432,14 +460,15 @@ function listen() {
   let seeded = false;
   unsubs.push(onSnapshot(sharedDoc(), snap => {
     if (!snap.exists()) {
-      if (!seeded) {
+      // Only create the library when the server itself says it doesn't exist (never from an offline cache).
+      if (!seeded && !snap.metadata.fromCache) {
         seeded = true;
-        setDoc(sharedDoc(), { foods: {}, uses: {} }, { merge: true }).catch(onSharedError);
+        setDoc(sharedDoc(), { foods: {}, uses: {} }).catch(onSharedError);
       }
       return;
     }
     S.shared = snap.data(); sharedError = null;
-    if (loaded.size === IDS.length) { syncLogs(); save(); }
+    if (loaded.size === IDS.length) { syncLogs(); save(); dailyBackup(); }
     scheduleRender();
   }, onSharedError));
 }
