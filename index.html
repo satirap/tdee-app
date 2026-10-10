@@ -986,6 +986,7 @@ function render() {
     drawFat(S.tab);
   }
   bind();
+  rememberPage();
   restoreDraft();
 }
 
@@ -2044,7 +2045,14 @@ document.getElementById('aiKeyBtn').onclick = () => { const had = aiKey(), k = a
 
 // A half-filled food form survives switching apps: iOS may re-render or even reload the page meanwhile.
 // The draft lives only on this device and is cleared on save/cancel.
-const DRAFT_KEY = 'tdee-draft', DRAFT_TTL = 3 * 3600e3;
+const DRAFT_KEY = 'tdee-draft', DRAFT_TTL = 3 * 3600e3, PAGE_KEY = 'tdee-page';
+// The page on screen (tab + sub-tab) is remembered on this device so a refresh or reload comes back to it.
+const pageKey = () => S.tab === 'foods' ? 'foods/' + foodsView : S.tab === 'overview' ? 'overview' : S.tab + '/' + sub;
+function rememberPage() {
+  try { localStorage.setItem(PAGE_KEY, JSON.stringify({ tab: S.tab, sub, foodsView })); } catch {}
+  // Leaving the page a draft belongs to drops it, so it can't pull a later reload back to an old form.
+  if (formDraft && formDraft.page !== pageKey()) clearDraft();
+}
 let formDraft = null;
 try { formDraft = JSON.parse(localStorage.getItem(DRAFT_KEY)); } catch {}
 if (!formDraft || Date.now() - (formDraft.at || 0) > DRAFT_TTL) formDraft = null;
@@ -2056,7 +2064,7 @@ function formCtx(form) {
 function saveDraft(form) {
   const ctx = formCtx(form);
   if (!ctx) return;
-  formDraft = { ...ctx, tab: S.tab, sub, logDate, values: Object.fromEntries(new FormData(form)), at: Date.now() };
+  formDraft = { ...ctx, page: pageKey(), logDate, values: Object.fromEntries(new FormData(form)), at: Date.now() };
   try { localStorage.setItem(DRAFT_KEY, JSON.stringify(formDraft)); } catch {}
 }
 function clearDraft() {
@@ -2143,11 +2151,15 @@ addEventListener('orientationchange', refit);
 window.visualViewport?.addEventListener('resize', refit);
 addEventListener('pageshow', e => { if (e.persisted) render(); });
 
-if (formDraft) {
-  S.tab = formDraft.tab; sub = formDraft.sub || sub; logDate = formDraft.logDate || null;
+try {
+  const pg = JSON.parse(localStorage.getItem(PAGE_KEY));
+  if (pg?.tab === S.tab) { sub = pg.sub || sub; foodsView = pg.foodsView || foodsView; }
+} catch {}
+// A half-filled form reopens only on the page it was typed on.
+if (formDraft?.page === pageKey()) {
+  logDate = formDraft.logDate || null;
   if (formDraft.kind === 'edit') editingFood = formDraft.editingFood;
   else { searchQ[formDraft.key] = formDraft.q; if (formDraft.scan) scanDraft[formDraft.key] = formDraft.scan; }
-  if (formDraft.tab === 'foods') foodsView = 'food';
 }
 if (configured && pin) listen();
 render();
