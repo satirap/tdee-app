@@ -76,13 +76,13 @@ h3{font-size:15px;margin:0 0 8px}
 .rings .rl{font-size:13px;fill:var(--muted)}
 .rings .rv{font-size:40px;font-weight:700;fill:var(--text);letter-spacing:-.02em}
 .rings .rv.bad{fill:var(--danger)}
+.rings .rv.warn{fill:var(--warn)}
 .rings .rv.good{fill:var(--good)}
 .ring-rows{margin:14px 0 0;display:grid;gap:8px}
 .ring-rows>div{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;font-size:14px;font-variant-numeric:tabular-nums}
 .ring-rows>div>span:last-child{min-width:92px;text-align:right}
 .rk{display:inline-flex;align-items:center;gap:6px}
 .rk i{width:8px;height:8px;border-radius:50%}
-.ring-week{font-size:13px;text-align:center;margin-top:10px}
 .msplit{margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
 .msbar{display:flex;height:12px;border-radius:99px;overflow:hidden;gap:2px;background:var(--surface-2)}
 .msbar i{display:block;background:var(--mc)}
@@ -94,7 +94,9 @@ h3{font-size:15px;margin:0 0 8px}
 .mslegend b{color:var(--text);font-variant-numeric:tabular-nums}
 .mslegend .zero{opacity:.45}
 [data-mc=""]{--mc:var(--muted)}
-.ring-rows.limits{margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}
+.ring-rows.limits{margin-top:4px}
+.tdee-line{font-size:13px;color:var(--muted);margin:-4px 0 10px}
+.tdee-line b{font-weight:600}
 .prog{margin-top:14px;border-top:1px solid var(--border);padding-top:12px}
 details.prog summary{list-style:none;cursor:pointer}
 details.prog summary::-webkit-details-marker{display:none}
@@ -1104,7 +1106,7 @@ function statsBlock(id, withExtras = true) {
 const daySum = (p, d, k) => dayItems(p, d).reduce((s, x) => s + eff(x)[k], 0);
 
 // Two progress rings: outer = kcal eaten vs target (a second red lap shows the overshoot), inner = protein.
-function rings(m, kcal, prot, tol = 50) {
+function rings(m, kcal, prot, tol = 50, tdee = Infinity) {
   const c = 120, ring = (r, w, frac, color) => {
     const L = 2 * Math.PI * r, f = Math.min(1, Math.max(0, frac));
     return f <= 0 ? '' : `<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="round"
@@ -1120,14 +1122,20 @@ function rings(m, kcal, prot, tol = 50) {
   return `<svg class="rings" viewBox="0 0 240 240" role="img" aria-label="แคลอรี ${fmt(kcal)} จาก ${fmt(m.kcal)} kcal, โปรตีน ${fmt(prot)} จาก ${fmt(m.prot.g)} กรัม">
     <circle cx="${c}" cy="${c}" r="104" fill="none" stroke="var(--surface-2)" stroke-width="18"/>
     <circle cx="${c}" cy="${c}" r="80" fill="none" stroke="var(--surface-2)" stroke-width="18"/>
-    ${ring(104, 18, hit ? 1 : kf, hit ? 'var(--good)' : 'var(--c)')}${over > tol ? ring(104, 18, kf - 1, 'var(--danger)') : ''}
+    ${ring(104, 18, hit ? 1 : kf, hit ? 'var(--good)' : 'var(--c)')}${over > tol ? ring(104, 18, kf - 1, 'var(--warn)') : ''}
     ${ring(80, 18, pf, 'var(--prot)')}
     ${label('rk' + uid2, 104, 'แคลอรี')}${label('rp' + uid2, 80, 'โปรตีน')}
     ${hit ? `<text x="${c}" y="${c - 30}" text-anchor="middle" class="rl">ถึงเป้า</text>
     <text x="${c}" y="${c + 2}" text-anchor="middle" class="rv good">✓</text>
     <text x="${c}" y="${c + 30}" text-anchor="middle" class="rl">${over > 0 ? '+' : over < 0 ? '−' : ''}${fmt(Math.abs(over))} kcal</text>`
-    : `<text x="${c}" y="${c - 30}" text-anchor="middle" class="rl">${over > 0 ? 'เกิน' : 'เหลือ'}</text>
-    <text x="${c}" y="${c + 2}" text-anchor="middle" class="rv ${over > 0 ? 'bad' : ''}">${fmt(Math.abs(over))}</text>
+    : over > 0 && kcal <= tdee ? `<text x="${c}" y="${c - 30}" text-anchor="middle" class="rl">ยังลดอยู่</text>
+    <text x="${c}" y="${c + 2}" text-anchor="middle" class="rv warn">${fmt(tdee - kcal)}</text>
+    <text x="${c}" y="${c + 30}" text-anchor="middle" class="rl">ต่ำกว่า TDEE</text>`
+    : over > 0 ? `<text x="${c}" y="${c - 30}" text-anchor="middle" class="rl">วันนี้พักลด</text>
+    <text x="${c}" y="${c + 2}" text-anchor="middle" class="rv warn">+${fmt(kcal - tdee)}</text>
+    <text x="${c}" y="${c + 30}" text-anchor="middle" class="rl">เหนือ TDEE</text>`
+    : `<text x="${c}" y="${c - 30}" text-anchor="middle" class="rl">เหลือ</text>
+    <text x="${c}" y="${c + 2}" text-anchor="middle" class="rv">${fmt(-over)}</text>
     <text x="${c}" y="${c + 30}" text-anchor="middle" class="rl">kcal</text>`}</svg>`;
 }
 
@@ -1145,30 +1153,29 @@ function mealSplit(items) {
   </div>`;
 }
 
+// How far the kcal target sits below TDEE (the planned deficit, after the minimum-intake floor).
+// Eating above the target but below TDEE is still a deficit, so it is shown as "ยังลดอยู่", never as a failure.
+const tdeeGap = p => { const r = calc(p), m = macros(p); return r && m ? Math.max(0, r.tdee - m.kcal) : 0; };
+
 function energyBlock(id, d = todayStr()) {
   const p = S.people[id], r = calc(p), m0 = macros(p);
   if (!r) return `<div class="alert">${!profileReady(p) ? 'กรอก <b>เพศ อายุ ส่วนสูง</b> ในแท็บ “ข้อมูลส่วนตัว” ก่อน' : 'บันทึกน้ำหนักอย่างน้อย 1 ครั้ง'} เพื่อคำนวณ TDEE</div>`;
   const m = d === todayStr() ? m0 : { ...m0, kcal: p.days?.[d]?.target || m0.kcal };
   const kcal = dayItems(p, d).length ? daySum(p, d, 'kcal') : p.days?.[d]?.kcal || 0, prot = daySum(p, d, 'p'), over = Math.round(kcal - m.kcal), protLeft = m.prot.g - prot;
-  const tol = +p.tol || 50, hit = Math.abs(over) <= tol;
-  let week = '';
-  if (over > tol) {
-    const logged = lastDays(p, 7).filter(x => x.kcal != null), bal = logged.reduce((s, x) => s + x.kcal - x.target, 0);
-    if (logged.length > 1) week = `<div class="ring-week ${bal > 0 ? 'bad' : 'good'}">รวม ${logged.length} วันล่าสุด${bal > 0 ? ` เกิน ${fmt(bal)} kcal` : ` ยังขาด ${fmt(-bal)} kcal ✓`}</div>`;
-  }
-  return `${rings(m, kcal, prot, tol)}
+  const tol = +p.tol || 50, hit = Math.abs(over) <= tol, tdee = m.kcal + tdeeGap(p);
+  const kStatus = hit ? 'ถึงเป้า ✓' : over < 0 ? `เหลือ ${fmt(-over)}` : kcal <= tdee ? `+${fmt(over)} · ยังลดอยู่` : `+${fmt(over)} · พักลด`;
+  return `${rings(m, kcal, prot, tol, tdee)}
     <div class="ring-rows">
       <div><span class="rk"><i style="background:var(--c)"></i>🔥 แคลอรี</span><span><b>${fmt(kcal)}</b> / ${fmt(m.kcal)}</span>
-        <span class="${hit ? 'good' : over > 0 ? 'bad' : 'muted'}">${hit ? 'ถึงเป้า ✓' : over > 0 ? `เกิน ${fmt(over)}` : `เหลือ ${fmt(-over)}`}</span></div>
+        <span class="${hit ? 'good' : over > 0 ? 'warn' : 'muted'}">${kStatus}</span></div>
       <div><span class="rk"><i style="background:var(--prot)"></i>🥩 โปรตีน</span><span><b>${fmt(prot)}</b> / ${fmt(m.prot.g)} ก.</span>
         <span class="${protLeft <= 0 ? 'good' : 'muted'}">${protLeft <= 0 ? 'ครบแล้ว ✓' : `เหลือ ${fmt(protLeft)} ก.`}</span></div>
     </div>
-    ${week}
     <div class="ring-rows limits">${[['c', '🍚 คาร์บ', m.carb.g, 'carb'], ['f', '🧈 ไขมัน', m.fat.g, 'fat']].map(([k, label, max, col]) => {
       // Carbs and fat are limits: anything over the target is flagged straight away (no tolerance band).
       const v = Math.round(daySum(p, d, k)), left = Math.round(max) - v;
       return `<div><span class="rk"><i style="background:var(--${col})"></i>${label}</span><span><b>${fmt(v)}</b> / ${fmt(max)} ก.</span>
-        <span class="${left < 0 ? 'bad' : 'muted'}">${left < 0 ? `เกิน ${fmt(-left)} ก.` : left === 0 ? 'พอดี' : `เหลือ ${fmt(left)} ก.`}</span></div>`;
+        <span class="${left < 0 ? 'warn' : 'muted'}">${left < 0 ? `+${fmt(-left)} ก.` : left === 0 ? 'พอดี' : `เหลือ ${fmt(left)} ก.`}</span></div>`;
     }).join('')}</div>
     ${mealSplit(dayItems(p, d))}
     ${r.target < r.floor ? `<div class="alert">เป้าคำนวณได้ ${fmt(r.target)} kcal ต่ำกว่าขั้นต่ำที่แนะนำ (${r.floor}) จึงแสดงเป็น ${r.floor} แทน · ลองลด “ลดวันละ” ลง</div>` : ''}`;
@@ -1500,15 +1507,20 @@ function intakeCard(id) {
   const n = S.intakeRange, logged = lastDays(S.people[id], n).filter(x => x.kcal != null);
   const bal = logged.reduce((s, x) => s + x.kcal - x.target, 0);
   const avg = logged.length ? logged.reduce((s, x) => s + x.kcal, 0) / logged.length : null;
+  // Same days measured against TDEE (target + planned deficit): what actually happened to the energy balance.
+  const net = logged.length ? Math.round(bal - tdeeGap(S.people[id]) * logged.length) : null;
   const seg = `<div class="seg">${[[7, '7 วัน'], [30, '30 วัน']].map(([k, l]) => `<button data-range="${k}" class="${n === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
   return `<div class="card" style="margin-top:14px">
     <div class="person-head"><h2 style="margin:0">📊 แคลอรีรายวัน</h2>${seg}</div>
     <div class="intake-sum">
       <div><span class="l">รวม ${logged.length}/${n} วัน</span>${logged.length
-        ? `<b class="${bal > 0 ? 'bad' : 'good'}">${bal > 0 ? 'เกิน' : 'ขาด'} ${fmt(Math.abs(bal))}</b><small>kcal</small>` : '<b class="muted">–</b>'}</div>
+        ? `<b class="${bal > 0 ? 'warn' : 'good'}">${bal > 0 ? '+' : 'ขาด '}${fmt(Math.abs(bal))}</b><small>${bal > 0 ? 'จากเป้า' : 'kcal'}</small>` : '<b class="muted">–</b>'}</div>
       <div><span class="l">เฉลี่ยต่อวัน</span>${avg == null ? '<b class="muted">–</b>' : `<b>${fmt(avg)}</b><small>kcal</small>`}</div>
       <div><span class="l">┄ เป้าต่อวัน</span><b class="lim">${fmt(Math.round(macros(S.people[id])?.kcal || 0))}</b><small>kcal</small></div>
     </div>
+    ${net == null ? '' : net < 0
+      ? `<div class="tdee-line">สุทธิต่ำกว่า TDEE <b class="good">${fmt(-net)} kcal</b> · ≈ ไขมัน ${num(Math.round(-net / KCAL_PER_KG * 100) / 100)} กก.</div>`
+      : `<div class="tdee-line">สุทธิเหนือ TDEE ${fmt(net)} kcal</div>`}
     <div class="chart-box short"><canvas id="intakeChart"></canvas></div>
   </div>`;
 }
@@ -1547,7 +1559,7 @@ function drawIntake(id) {
   const el = document.getElementById('intakeChart');
   if (!el || !window.Chart) return;
   const p = S.people[id], n = S.intakeRange, days = lastDays(p, n), sel = viewDay();
-  const muted = css('--muted'), strong = css('--text'), track = css('--surface-2'), good = css('--good'), bad = css('--danger'), surface = css('--surface'), border = css('--border');
+  const muted = css('--muted'), strong = css('--text'), track = css('--surface-2'), good = css('--good'), bad = css('--warn'), surface = css('--surface'), border = css('--border');
   const nowTarget = Math.round(macros(p)?.kcal || 0);
   const tgt = x => x.target || nowTarget || 0;
   const WD = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
@@ -1626,7 +1638,7 @@ function drawIntake(id) {
           filter: it => !it.dataset.track && it.raw != null,
           callbacks: {
             title: it => new Date(dayMs(days[it[0].dataIndex].d)).toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'UTC' }),
-            label: it => { const x = days[it.dataIndex], d = x.kcal - tgt(x); return [`${fmt(x.kcal)} kcal`, `${d > 0 ? 'เกิน' : 'ขาด'} ${fmt(Math.abs(d))} · เป้า ${fmt(tgt(x))}`]; }
+            label: it => { const x = days[it.dataIndex], d = x.kcal - tgt(x); return [`${fmt(x.kcal)} kcal`, `${d > 0 ? '+' : 'ขาด '}${fmt(Math.abs(d))} จากเป้า ${fmt(tgt(x))}`]; }
           }
         }
       },
