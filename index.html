@@ -205,6 +205,8 @@ button.x:hover{color:var(--danger)}
 .formbtns{display:flex;gap:8px}
 .formbtns .btn{flex:1}
 .bcrow{display:flex;gap:8px}
+.airow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.airow .ainote{font-size:12px;color:var(--muted)}
 .bcrow .scanbtn{height:38px;width:42px;border-radius:9px}
 .search{margin-top:16px}
 .card h2+.search,.daynav+.search{margin-top:0}
@@ -296,6 +298,7 @@ footer{margin-top:24px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;fo
   <main id="app"></main>
   <footer id="footer" class="hidden">
     <button class="ghost" id="logoutBtn">🔒 ล็อก</button>
+    <button class="ghost" id="aiKeyBtn">✨ AI key</button>
     <button class="ghost" id="exportBtn">⬇︎ Export ข้อมูล (JSON)</button>
     <label class="ghost" style="flex-direction:row;cursor:pointer;border:1px solid var(--border);border-radius:9px;padding:6px 12px;color:var(--text);font-size:15px">⬆︎ Import<input type="file" id="importFile" accept=".json" hidden></label>
     <span>ข้อมูลซิงก์ผ่าน Firebase · Export ไว้สำรองเป็นระยะ</span>
@@ -657,6 +660,7 @@ function servingParts(v) {
 const nutritionFields = (v = {}) => {
   const { amt, unit } = servingParts(v), counted = !MEAS_BY[unit];
   return `
+      <div class="wide airow"><button type="button" class="ghost sm" data-ai>✨ ถาม AI</button><button type="button" class="ghost sm" data-aiphoto>📷 รูปอาหาร/ฉลาก</button><span class="ainote"></span></div>
       <label>ปริมาณ<input name="amt" type="number" step="any" min="0" value="${esc(v.name || v.amt != null ? amt : '')}" placeholder="1"></label>
       <label>หน่วย<select name="unit">
         <optgroup label="แปลงหน่วยได้">${MEAS.map(u => `<option value="${u.k}" ${unit === u.k ? 'selected' : ''}>${u.n}</option>`).join('')}</optgroup>
@@ -1863,6 +1867,119 @@ document.addEventListener('change', ev => {
   if (ev.target.name !== 'unit' || !ev.target.closest('.foodform')) return;
   ev.target.closest('.foodform').querySelector('.cw').hidden = !!MEAS_BY[ev.target.value];
 });
+
+// ---------- AI nutrition lookup ----------
+// Claude estimates one serving from the typed name and/or a photo (dish or nutrition label) and fills the form for review.
+// The API key is typed once per device and kept only in this browser's localStorage.
+const AI_KEY = 'tdee-ai-key';
+let aiClientP;
+const aiKey = () => { try { return localStorage.getItem(AI_KEY) || ''; } catch { return ''; } };
+function askAiKey() {
+  const k = prompt('Claude API key (เก็บไว้ในเครื่องนี้เท่านั้น · เว้นว่างเพื่อลบ)', aiKey());
+  if (k === null) return aiKey();
+  try { k.trim() ? localStorage.setItem(AI_KEY, k.trim()) : localStorage.removeItem(AI_KEY); } catch {}
+  aiClientP = null;
+  return k.trim();
+}
+const getAi = () => aiClientP ||= import('https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.128.0/+esm')
+  .then(m => new m.default({ apiKey: aiKey(), dangerouslyAllowBrowser: true }))
+  .catch(e => { aiClientP = null; throw e; });
+
+const AI_UNITS = [...MEAS.map(u => u.k), ...COUNT];
+const AI_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['name', 'amount', 'unit', 'grams', 'p', 'c', 'f', 'kcal', 'note'],
+  properties: {
+    name: { type: 'string' }, amount: { type: 'number' }, unit: { type: 'string', enum: AI_UNITS }, grams: { type: 'number' },
+    p: { type: 'number' }, c: { type: 'number' }, f: { type: 'number' }, kcal: { type: 'number' }, note: { type: 'string' },
+  },
+};
+const AI_SYSTEM = `You estimate nutrition for a calorie-tracking app used by two people in Bangkok. The user describes what they ate (Thai or English), and may attach a photo of the dish or of a nutrition label.
+
+Return ONE serving exactly as described (e.g. "1 ลูก", "ชามพิเศษ", "2 ช้อนชา"); if no amount is given, use the usual single serving in Thailand.
+- Nutrition label photo: use the label's own numbers and its kcal as printed (do not recompute kcal from macros). Scale if the user names a different amount. Carbohydrate = total carbohydrate as printed.
+- Dish photo or description: estimate realistic Thai street-food / restaurant portions, including cooking oil, sauces and sugar, and whether soup/broth is eaten as described. Base values on Thai FDA, INMUCAL (Mahidol) or USDA data.
+- kcal is the real energy of the food; fiber and sugar alcohols add little, so kcal may be below 4/4/9 of the macros.
+- unit: g or ml when the serving is naturally weighed or is a drink of known volume; otherwise a Thai count unit from the list (ที่, จาน, ชาม, แก้ว, ลูก, ชิ้น, ขวด, ...). Codes: g=grams, ml=millilitres, tsp=teaspoon 5 ml, tbsp=tablespoon 15 ml, cup=240 ml, ladle=Thai rice ladle 60 g, oz=fluid ounce.
+- amount: the number of those units in the serving. grams: weight of the whole serving in g (ml for drinks), your best estimate; 0 only if impossible to tell.
+- name: short Thai name people would search for, with brand and key modifiers (e.g. ไม่เติมน้ำตาล, ไม่กินน้ำซุป).
+- note: one short Thai sentence (under 80 characters) with the main assumption, e.g. portion size or data source.
+- Protein/carbs/fat in grams to 1 decimal; kcal as an integer.`;
+
+// Opens the photo picker (camera or library) and returns a downscaled JPEG as base64, or null if cancelled.
+function pickPhoto() {
+  const input = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/*' });
+  const picked = new Promise(resolve => {
+    input.onchange = () => resolve(input.files[0] || null);
+    input.addEventListener('cancel', () => resolve(null));
+  });
+  input.click();
+  return picked.then(async file => {
+    if (!file) return null;
+    const bmp = await createImageBitmap(file), k = Math.min(1, 1568 / Math.max(bmp.width, bmp.height));
+    const c = Object.assign(document.createElement('canvas'), { width: Math.round(bmp.width * k), height: Math.round(bmp.height * k) });
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    return { type: 'image/jpeg', data: c.toDataURL('image/jpeg', 0.85).split(',')[1] };
+  });
+}
+
+async function aiNutrition(desc, img) {
+  const client = await getAi();
+  const content = [];
+  if (img) content.push({ type: 'image', source: { type: 'base64', media_type: img.type, data: img.data } });
+  content.push({ type: 'text', text: desc || 'ประเมินจากรูปนี้' });
+  const res = await client.beta.messages.create({
+    model: 'claude-opus-5-5', max_tokens: 8000,
+    betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
+    output_config: { effort: 'low', format: { type: 'json_schema', schema: AI_SCHEMA } },
+    system: AI_SYSTEM, messages: [{ role: 'user', content }],
+  });
+  if (res.stop_reason === 'refusal') throw new Error('AI ไม่ตอบคำขอนี้');
+  if (res.stop_reason === 'max_tokens') throw new Error('AI ตอบไม่จบ ลองใหม่อีกครั้ง');
+  return JSON.parse(res.content.find(b => b.type === 'text').text);
+}
+
+const aiError = e => e.status === 401 ? 'API key ไม่ถูกต้อง · แก้ที่ปุ่ม ✨ AI key ด้านล่าง'
+  : e.status === 429 ? 'ใช้งานถี่เกินไป ลองใหม่อีกสักครู่'
+  : e.status === 400 && /credit/i.test(e.message) ? 'เครดิต API หมด · เติมที่ console.anthropic.com'
+  : e.status ? `AI ผิดพลาด (${e.status})` : e.message?.startsWith('AI') ? e.message : 'เชื่อมต่อ AI ไม่ได้ ลองใหม่อีกครั้ง';
+
+function fillFromAi(form, r) {
+  const set = (n, v) => { const el = form.elements[n]; if (!el) return; el.value = v; el.dispatchEvent(new Event(el.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true })); };
+  const r1 = v => Math.round((+v || 0) * 10) / 10;
+  set('name', r.name);
+  set('amt', r1(r.amount) || 1);
+  set('unit', AI_UNITS.includes(r.unit) ? r.unit : 'ที่');
+  set('g', !MEAS_BY[r.unit] && r.grams > 0 ? Math.round(r.grams) : '');
+  set('p', r1(r.p)); set('c', r1(r.c)); set('f', r1(r.f)); set('kcal', Math.round(+r.kcal || 0));
+}
+
+document.addEventListener('click', async ev => {
+  const b = ev.target.closest('[data-ai],[data-aiphoto]');
+  if (!b) return;
+  ev.preventDefault();
+  const form = b.closest('form.foodform'), note = form.querySelector('.ainote');
+  if (!aiKey() && !askAiKey()) return;
+  // The picker must open inside the tap itself (iOS), so start it before anything is awaited.
+  const photoP = b.hasAttribute('data-aiphoto') ? pickPhoto() : null;
+  const img = photoP && await photoP;
+  if (photoP && !img) return;
+  const desc = form.elements.name.value.trim();
+  if (!desc && !img) { note.textContent = 'พิมพ์ชื่ออาหาร หรือเลือกรูปก่อน'; return; }
+  const btns = form.querySelectorAll('[data-ai],[data-aiphoto]');
+  btns.forEach(x => x.disabled = true);
+  note.textContent = 'กำลังถาม AI…';
+  try {
+    const r = await aiNutrition(desc, img);
+    if (!form.isConnected) return;
+    fillFromAi(form, r);
+    note.textContent = r.note;
+  } catch (e) {
+    console.warn(e);
+    note.textContent = aiError(e);
+  } finally { btns.forEach(x => x.disabled = false); }
+});
+document.getElementById('aiKeyBtn').onclick = () => { const had = aiKey(), k = askAiKey(); if (k !== had) alert(k ? 'บันทึก API key แล้ว' : 'ลบ API key แล้ว'); };
 
 // A half-filled food form survives switching apps: iOS may re-render or even reload the page meanwhile.
 // The draft lives only on this device and is cleared on save/cancel.
