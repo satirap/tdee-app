@@ -208,6 +208,10 @@ button.x:hover{color:var(--danger)}
 .aibtn{flex:none;border:0;border-radius:12px;background:var(--surface-2);color:var(--text);padding:0 12px;font:inherit;font-size:14px;cursor:pointer;white-space:nowrap}
 .airow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .airow .ainote{font-size:12px;color:var(--muted)}
+.aiparts{display:grid;gap:2px;font-size:12px;color:var(--muted)}
+.aiparts div{display:flex;justify-content:space-between;gap:8px}
+.aifixrow{display:flex;gap:8px}
+.aifixrow input{flex:1;height:38px}
 .bcrow .scanbtn{height:38px;width:42px;border-radius:9px}
 .search{margin-top:16px}
 .card h2+.search,.daynav+.search{margin-top:0}
@@ -662,6 +666,8 @@ const nutritionFields = (v = {}) => {
   const { amt, unit } = servingParts(v), counted = !MEAS_BY[unit];
   return `
       <div class="wide airow"><button type="button" class="ghost sm" data-ai>✨ ถาม AI</button><button type="button" class="ghost sm" data-aiphoto>📷 รูปอาหาร/ฉลาก</button><span class="ainote"></span></div>
+      <div class="wide aiparts" hidden></div>
+      <div class="wide aifixrow" hidden><input class="aifix" autocomplete="off" placeholder="บอก AI เพิ่ม เช่น น้ำจิ้มกินแค่ 1 ช้อนโต๊ะ"><button type="button" class="ghost sm" data-aifix>ส่ง</button></div>
       <label>ปริมาณ<input name="amt" type="number" step="any" min="0" value="${esc(v.name || v.amt != null ? amt : '')}" placeholder="1"></label>
       <label>หน่วย<select name="unit">
         <optgroup label="แปลงหน่วยได้">${MEAS.map(u => `<option value="${u.k}" ${unit === u.k ? 'selected' : ''}>${u.n}</option>`).join('')}</optgroup>
@@ -1894,8 +1900,11 @@ const AI_SCHEMA = {
   properties: {
     name: { type: 'string' }, amount: { type: 'number' }, unit: { type: 'string', enum: AI_UNITS }, grams: { type: 'number' },
     p: { type: 'number' }, c: { type: 'number' }, f: { type: 'number' }, kcal: { type: 'number' }, note: { type: 'string' },
+    parts: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['name', 'amount', 'kcal'],
+      properties: { name: { type: 'string' }, amount: { type: 'string' }, kcal: { type: 'number' } } } },
   },
 };
+AI_SCHEMA.required.push('parts');
 const AI_SYSTEM = `You estimate nutrition for a calorie-tracking app used by two people in Bangkok. The user describes what they ate (Thai or English), and may attach a photo of the dish or of a nutrition label.
 
 Return ONE serving exactly as described (e.g. "1 ลูก", "ชามพิเศษ", "2 ช้อนชา"); if no amount is given, use the usual single serving in Thailand.
@@ -1906,7 +1915,11 @@ Return ONE serving exactly as described (e.g. "1 ลูก", "ชามพิเ
 - amount: the number of those units in the serving. grams: weight of the whole serving in g (ml for drinks), your best estimate; 0 only if impossible to tell.
 - name: short Thai name people would search for, with brand and key modifiers (e.g. ไม่เติมน้ำตาล, ไม่กินน้ำซุป).
 - note: one short Thai sentence (under 80 characters) with the main assumption, e.g. portion size or data source.
-- Protein/carbs/fat in grams to 1 decimal; kcal as an integer.`;
+- Protein/carbs/fat in grams to 1 decimal; kcal as an integer.
+- Dipping sauces, dressings, soups, drinks and side dishes served separately are often not finished. Unless the user says otherwise, count only a typical eaten amount (e.g. dipping sauce 1-2 tbsp, not the whole cup) - never assume a side container was emptied.
+- Amounts the user states override what the photo suggests.
+- parts: every component you counted, each with the amount counted (Thai, e.g. "~150 ก.", "1 ช้อนโต๊ะ") and its kcal; the parts must add up to kcal.
+- A message may include your previous estimate and a correction from the user: apply the correction and keep the rest of the estimate unless it must change.`;
 
 // Opens the photo picker (camera or library) and returns a downscaled JPEG as base64, or null if cancelled.
 function pickPhoto() {
@@ -1925,11 +1938,13 @@ function pickPhoto() {
   });
 }
 
-async function aiNutrition(desc, img) {
+async function aiNutrition(desc, img, prev, fix) {
   const client = await getAi();
   const content = [];
   if (img) content.push({ type: 'image', source: { type: 'base64', media_type: img.type, data: img.data } });
-  content.push({ type: 'text', text: desc || 'ประเมินจากรูปนี้' });
+  let text = desc || 'ประเมินจากรูปนี้';
+  if (prev) text += `\n\nPrevious estimate: ${JSON.stringify(prev)}\nCorrection from the user: ${fix}`;
+  content.push({ type: 'text', text });
   const res = await client.beta.messages.create({
     model: 'claude-opus-5-5', max_tokens: 8000,
     betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
@@ -1971,15 +1986,41 @@ document.addEventListener('click', async ev => {
   runAi(form, desc, img);
 });
 
-async function runAi(form, desc, img) {
-  const note = form.querySelector('.ainote'), btns = form.querySelectorAll('[data-ai],[data-aiphoto]');
+// "บอก AI เพิ่ม": re-ask with the same photo and description, the current values and the user's correction.
+function sendAiFix(form) {
+  const input = form.querySelector('.aifix'), fix = input.value.trim();
+  if (!fix) return;
+  const el = form.elements, last = form.aiLast;
+  const prev = last?.result || { name: el.name.value, amount: +el.amt.value, unit: el.unit.value, grams: +el.g.value || 0, p: +el.p.value, c: +el.c.value, f: +el.f.value, kcal: +el.kcal.value };
+  runAi(form, last?.desc ?? el.name.value.trim(), last?.img || null, { prev, fix });
+}
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('[data-aifix]');
+  if (b) { ev.preventDefault(); sendAiFix(b.closest('form.foodform')); }
+});
+document.addEventListener('keydown', ev => {
+  if (ev.key === 'Enter' && ev.target.matches?.('.aifix')) { ev.preventDefault(); sendAiFix(ev.target.closest('form.foodform')); }
+});
+
+function showAi(form, r) {
+  form.querySelector('.ainote').textContent = r.note;
+  const parts = form.querySelector('.aiparts');
+  parts.innerHTML = (r.parts || []).map(x => `<div><span>${esc(x.name)} · ${esc(x.amount)}</span><span>${fmt(x.kcal)}</span></div>`).join('');
+  parts.hidden = !r.parts?.length;
+  form.querySelector('.aifixrow').hidden = false;
+  form.querySelector('.aifix').value = '';
+}
+
+async function runAi(form, desc, img, fix) {
+  const note = form.querySelector('.ainote'), btns = form.querySelectorAll('[data-ai],[data-aiphoto],[data-aifix]');
   btns.forEach(x => x.disabled = true);
-  note.textContent = img ? 'AI กำลังดูรูป…' : 'กำลังถาม AI…';
+  note.textContent = fix ? 'AI กำลังแก้…' : img ? 'AI กำลังดูรูป…' : 'กำลังถาม AI…';
   try {
-    const r = await aiNutrition(desc, img);
+    const r = await aiNutrition(desc, img, fix?.prev, fix?.fix);
     if (!form.isConnected) return;
+    form.aiLast = { desc, img, result: r };
     fillFromAi(form, r);
-    note.textContent = r.note;
+    showAi(form, r);
   } catch (e) {
     console.warn(e);
     note.textContent = aiError(e);
