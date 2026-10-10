@@ -207,8 +207,8 @@ button.x:hover{color:var(--danger)}
 .bcrow{display:flex;gap:8px}
 .addin{display:block;width:100%;margin-top:8px;border:1.5px dashed color-mix(in srgb, var(--mc) 55%, transparent);background:transparent;color:var(--mc);border-radius:12px;padding:8px;font:inherit;font-size:14px;font-weight:600;cursor:pointer}
 body.noscroll{overflow:hidden}
-.sheet-bg{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center}
-.sheet{background:var(--surface);width:100%;max-width:560px;max-height:92vh;max-height:92dvh;overflow-y:auto;overscroll-behavior:contain;border-radius:18px 18px 0 0;padding:14px 16px calc(18px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:10px;box-sizing:border-box}
+.sheet-bg{position:fixed;left:0;right:0;top:0;height:100%;z-index:50;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--surface);width:100%;max-width:560px;max-height:calc(100% - 12px);overflow-y:auto;overscroll-behavior:contain;border-radius:18px 18px 0 0;padding:14px 16px calc(18px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:10px;box-sizing:border-box}
 @media (min-width:760px){.sheet-bg{align-items:center}.sheet{border-radius:18px}}
 .sh-head{display:flex;justify-content:space-between;align-items:center;font-size:16px}
 .sh-head b{color:var(--mc)}
@@ -216,6 +216,9 @@ body.noscroll{overflow:hidden}
 .acts2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .acts2 .bigact{padding:11px;font-size:14px;border-width:1px;border-color:var(--border);background:var(--surface-2)}
 .sheet .scanbtn{display:none}
+.sheet.typing > .bigact,.sheet.typing > .acts2{display:none}
+.nf{display:flex;flex-direction:column;gap:8px}
+.nf .empty{padding:4px 2px}
 .ai-wait{display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;padding:18px 0}
 .ai-wait img,.ai-res img{width:160px;height:160px;object-fit:cover;border-radius:14px}
 .ai-q{font-size:15px;padding:12px 16px;background:var(--surface-2);border-radius:12px;max-width:100%}
@@ -719,6 +722,8 @@ function newFoodForm(root, v, note) {
 function drawResults(root) {
   const q = root.querySelector('input').value.trim(), out = root.querySelector('.results');
   const manage = root.dataset.mode === 'manage', draft = scanDraft[root.dataset.search];
+  // In the add sheet, the big AI/barcode buttons step aside while searching or filling a form, so results sit under the search box.
+  root.closest('.sheet')?.classList.toggle('typing', !!(q || draft));
   if (!q && draft) { newFoodForm(root, draft.v, draft.note); restoreDraft(); return; }
   if (!q && !manage) { out.innerHTML = sheet ? sheetLists() : ''; return; }
   // Empty search on the My Food tab: the 10 newest My Food items, or the 10 foods both people eat most.
@@ -727,6 +732,12 @@ function drawResults(root) {
     : [...foodList(), ...stdFoods()].filter(f => usesOf(f.id) || !f.std)
       .sort((a, b) => usesOf(b.id) - usesOf(a.id) || (b.created || 0) - (a.created || 0)).slice(0, 10);
   if (!q) { out.innerHTML = listBar() + (hits.map(f => resultRow(f, true)).join('') || '<div class="empty">ยังไม่มีเมนู</div>'); return; }
+  if (!hits.length && sheet && !manage) {
+    out.innerHTML = `<div class="nf"><div class="empty">ไม่พบ “${esc(q)}” ใน My Food</div>
+      <button type="button" class="bigact" data-aiq>✨ ให้ AI ประเมิน “${esc(q)}”</button>
+      <button type="button" class="ghost wide2" data-manualnew>+ กรอกเองเป็นเมนูใหม่</button></div>`;
+    return;
+  }
   if (!hits.length) { newFoodForm(root, { name: q }, `ไม่พบ “${esc(q)}” · เพิ่มเป็นเมนูใหม่`); restoreDraft(); return; }
   out.innerHTML = hits.map(f => resultRow(f, manage)).join('');
 }
@@ -781,6 +792,12 @@ function bindSearch(key, { pick, add }) {
     if (!t) return;
     if (t.hasAttribute('data-scan')) scanInto(root, key, pick);
     else if (t.dataset.listview) { listView = t.dataset.listview; drawResults(root); }
+    else if (t.hasAttribute('data-aiq')) { if (aiKey() || askAiKey()) sheetAi((searchQ[key] || '').trim(), null); }
+    else if (t.hasAttribute('data-manualnew')) {
+      scanDraft[key] = { v: { name: (searchQ[key] || '').trim() }, note: 'เมนูใหม่ · ใส่ค่าที่รู้ แล้วกดเพิ่มและกิน' };
+      searchQ[key] = ''; input.value = ''; drawResults(root);
+      root.querySelector('form.foodform')?.scrollIntoView({ block: 'start' });
+    }
     else if (t.dataset.eatview) { eatView = t.dataset.eatview; pickOpen = null; drawResults(root); }
     else if (t.hasAttribute('data-newitem') && root.dataset.mode === 'eat') { scanDraft[key] = { v: {}, note: 'เพิ่มเมนูใหม่' }; drawResults(root); }
     else if (t.hasAttribute('data-cancelnew')) { clearDraft(); searchQ[key] = ''; delete scanDraft[key]; pickOpen = null; input.value = ''; drawResults(root); }
@@ -2198,7 +2215,15 @@ function rememberPage() {
   if (formDraft && formDraft.page !== pageKey()) clearDraft();
   if (sheet && (S.tab !== sheet.id || sub !== 'today')) { sheet.ctrl?.abort(); sheet = null; saveSheet(); }
   document.body.classList.toggle('noscroll', !!document.querySelector('.sheet'));
+  fitSheet();
 }
+function fitSheet() {
+  const bg = document.querySelector('.sheet-bg'), vv = window.visualViewport;
+  if (!bg || !vv) return;
+  bg.style.top = vv.offsetTop + 'px'; bg.style.height = vv.height + 'px';
+}
+window.visualViewport?.addEventListener('resize', fitSheet);
+window.visualViewport?.addEventListener('scroll', fitSheet);
 let formDraft = null;
 try { formDraft = JSON.parse(localStorage.getItem(DRAFT_KEY)); } catch {}
 if (!formDraft || Date.now() - (formDraft.at || 0) > DRAFT_TTL) formDraft = null;
