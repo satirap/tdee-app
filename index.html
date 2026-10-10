@@ -682,7 +682,7 @@ function newFoodForm(root, v, note) {
 function drawResults(root) {
   const q = root.querySelector('input').value.trim(), out = root.querySelector('.results');
   const manage = root.dataset.mode === 'manage', draft = scanDraft[root.dataset.search];
-  if (!q && draft) { newFoodForm(root, draft.v, draft.note); return; }
+  if (!q && draft) { newFoodForm(root, draft.v, draft.note); restoreDraft(); return; }
   if (!q && !manage) { out.innerHTML = ''; return; }
   // Empty search on the My Food tab: the 10 newest My Food items, or the 10 foods both people eat most.
   const hits = q ? searchFoods(q, root.dataset.mode === 'eat')
@@ -690,7 +690,7 @@ function drawResults(root) {
     : [...foodList(), ...stdFoods()].filter(f => usesOf(f.id) || !f.std)
       .sort((a, b) => usesOf(b.id) - usesOf(a.id) || (b.created || 0) - (a.created || 0)).slice(0, 10);
   if (!q) { out.innerHTML = listBar() + (hits.map(f => resultRow(f, true)).join('') || '<div class="empty">ยังไม่มีเมนู</div>'); return; }
-  if (!hits.length) { newFoodForm(root, { name: q }, `ไม่พบ “${esc(q)}” · เพิ่มเป็นเมนูใหม่`); return; }
+  if (!hits.length) { newFoodForm(root, { name: q }, `ไม่พบ “${esc(q)}” · เพิ่มเป็นเมนูใหม่`); restoreDraft(); return; }
   out.innerHTML = hits.map(f => resultRow(f, manage)).join('');
 }
 
@@ -734,7 +734,7 @@ function bindSearch(key, { pick, add }) {
     if (!t) return;
     if (t.hasAttribute('data-scan')) scanInto(root, key, pick);
     else if (t.dataset.listview) { listView = t.dataset.listview; drawResults(root); }
-    else if (t.hasAttribute('data-cancelnew')) { searchQ[key] = ''; delete scanDraft[key]; pickOpen = null; input.value = ''; drawResults(root); }
+    else if (t.hasAttribute('data-cancelnew')) { clearDraft(); searchQ[key] = ''; delete scanDraft[key]; pickOpen = null; input.value = ''; drawResults(root); }
     else if (t.hasAttribute('data-newitem')) { editingFood = 'new'; render(); window.scrollTo(0, 0); }
     else if (t.dataset.pick) {
       pickOpen = pickOpen === t.dataset.pick ? null : t.dataset.pick; drawResults(root);
@@ -777,7 +777,7 @@ function bindSearch(key, { pick, add }) {
     ev.preventDefault();
     const food = readFood(new FormData(ev.target));
     if (!food) return;
-    searchQ[key] = ''; delete scanDraft[key];
+    clearDraft(); searchQ[key] = ''; delete scanDraft[key];
     add(food);
   };
   drawResults(root);
@@ -974,6 +974,7 @@ function render() {
     drawFat(S.tab);
   }
   bind();
+  restoreDraft();
 }
 
 
@@ -1843,10 +1844,10 @@ function bindFoods() {
     if (!food) return;
     if (editingFood === 'new') addFood(food);
     else sharedWrite({ [`foods.${editingFood}`]: { ...S.shared.foods[editingFood], ...food } });
-    editingFood = null; render();
+    clearDraft(); editingFood = null; render();
   };
   const ce = document.getElementById('cancelEdit');
-  if (ce) ce.onclick = () => { editingFood = null; render(); };
+  if (ce) ce.onclick = () => { clearDraft(); editingFood = null; render(); };
 }
 
 document.addEventListener('click', async ev => {
@@ -1862,6 +1863,42 @@ document.addEventListener('change', ev => {
   if (ev.target.name !== 'unit' || !ev.target.closest('.foodform')) return;
   ev.target.closest('.foodform').querySelector('.cw').hidden = !!MEAS_BY[ev.target.value];
 });
+
+// A half-filled food form survives switching apps: iOS may re-render or even reload the page meanwhile.
+// The draft lives only on this device and is cleared on save/cancel.
+const DRAFT_KEY = 'tdee-draft', DRAFT_TTL = 3 * 3600e3;
+let formDraft = null;
+try { formDraft = JSON.parse(localStorage.getItem(DRAFT_KEY)); } catch {}
+if (!formDraft || Date.now() - (formDraft.at || 0) > DRAFT_TTL) formDraft = null;
+function formCtx(form) {
+  if (form.id === 'editFood') return { kind: 'edit', editingFood };
+  const key = form.closest('[data-search]')?.dataset.search;
+  return key && key !== 'meal' ? { kind: 'new', key, q: searchQ[key] || '', scan: scanDraft[key] || null } : null;
+}
+function saveDraft(form) {
+  const ctx = formCtx(form);
+  if (!ctx) return;
+  formDraft = { ...ctx, tab: S.tab, sub, logDate, values: Object.fromEntries(new FormData(form)), at: Date.now() };
+  try { localStorage.setItem(DRAFT_KEY, JSON.stringify(formDraft)); } catch {}
+}
+function clearDraft() {
+  formDraft = null;
+  try { localStorage.removeItem(DRAFT_KEY); } catch {}
+}
+function restoreDraft() {
+  if (!formDraft) return;
+  for (const form of document.querySelectorAll('#app form.foodform')) {
+    const c = formCtx(form);
+    if (!c || c.kind !== formDraft.kind) continue;
+    if (c.kind === 'edit' ? c.editingFood !== formDraft.editingFood : c.key !== formDraft.key || c.q !== formDraft.q) continue;
+    for (const [k, v] of Object.entries(formDraft.values)) if (form.elements[k]) form.elements[k].value = v;
+    form.querySelector('.cw').hidden = !!MEAS_BY[form.elements.unit.value];
+  }
+}
+['input', 'change'].forEach(t => document.addEventListener(t, ev => {
+  const form = ev.target.closest?.('#app form.foodform');
+  if (form) saveDraft(form);
+}));
 
 function bindMealEditor() {
   const nameEl = document.getElementById('mealName');
@@ -1928,6 +1965,12 @@ addEventListener('orientationchange', refit);
 window.visualViewport?.addEventListener('resize', refit);
 addEventListener('pageshow', e => { if (e.persisted) render(); });
 
+if (formDraft) {
+  S.tab = formDraft.tab; sub = formDraft.sub || sub; logDate = formDraft.logDate || null;
+  if (formDraft.kind === 'edit') editingFood = formDraft.editingFood;
+  else { searchQ[formDraft.key] = formDraft.q; if (formDraft.scan) scanDraft[formDraft.key] = formDraft.scan; }
+  if (formDraft.tab === 'foods') foodsView = 'food';
+}
 if (configured && pin) listen();
 render();
 </script>
