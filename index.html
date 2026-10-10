@@ -190,11 +190,18 @@ button.x:hover{color:var(--danger)}
 .eaten .it.open{box-shadow:0 0 0 1.5px color-mix(in srgb, var(--mc,var(--ton)) 60%, transparent),0 4px 14px rgba(0,0,0,.08)}
 .res.picking{background:var(--surface-2);border-radius:12px}
 .res.picking .res-main:hover{background:transparent}
-.pickpanel{flex:1 0 100%;display:flex;align-items:center;gap:8px;padding:0 6px 10px}
+.pickpanel{flex:1 0 100%;display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:0 6px 10px}
+.pchips{display:flex;flex-wrap:wrap;gap:6px;align-items:center;flex:1 0 100%}
+.pchip{min-width:46px;height:42px;border-radius:12px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font:inherit;font-size:16px;font-weight:600;cursor:pointer;padding:0 10px}
+.pchip.on{background:var(--mc,var(--ton));border-color:transparent;color:#fff}
+.pchip.sm{font-size:13px;font-weight:500}
+.pchips .pu{color:var(--muted);font-size:14px;margin-left:2px}
+.pother{display:flex;gap:8px;align-items:center;flex:1 0 100%}
+.pother[hidden]{display:none}
 .pickpanel .amt{width:80px;text-align:right;height:38px}
 .pickpanel select{width:auto;height:38px}
 .pickpanel em{font-style:normal;font-size:14px;color:var(--muted)}
-.pickpanel .btn{margin-left:auto;padding:8px 18px}
+.pickpanel .btn{flex:1 0 100%;margin-left:0;padding:11px}
 
 
 .foodform{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;align-items:end}
@@ -759,11 +766,26 @@ const timesEaten = id => usesOf(id) ? ` · กิน ${fmt(usesOf(id))} คร�
 const COPY_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>';
 // Tapping a search result opens an amount + unit row (prefilled with the food's own serving) before adding it.
 let pickOpen = null;
+// Amount picker: quick chips (½, 1, 1½, 2 servings) so no keyboard is needed; "อื่น ๆ" opens the typed amount + unit.
+const PICK_X = [0.5, 1, 1.5, 2];
+const fracLabel = v => v % 1 === 0.5 ? `${v > 1 ? Math.floor(v) : ''}½` : num(v);
+function pickKcal(f, amount, unitKey) {
+  const u = unitsOf(f).find(x => x.k === unitKey);
+  return u ? fmt(foodKcal(f) * amount * u.r) : '–';
+}
 function pickPanel(f) {
-  const us = unitsOf(f), sv = servingOf(f), k = us.some(u => u.k === sv.unit) ? sv.unit : us[0].k;
-  return `<div class="pickpanel"><input class="amt" type="number" inputmode="decimal" step="any" min="0" value="${+(+sv.amount).toFixed(2)}" data-pamt>
-    ${us.length > 1 ? `<select data-punit data-prev="${k}">${us.map(u => `<option value="${u.k}" ${u.k === k ? 'selected' : ''}>${esc(u.n)}</option>`).join('')}</select>` : `<em data-punit-fixed="${k}">${esc(us[0].n)}</em>`}
-    <button class="btn" data-addpick="${f.id}">เพิ่ม</button></div>`;
+  const us = unitsOf(f), sv = servingOf(f), k = us.some(u => u.k === sv.unit) ? sv.unit : us[0].k, u = us.find(x => x.k === k);
+  const base = +sv.amount || 1, meas = !!MEAS_BY[k], amt = m => meas ? Math.round(base * m) : Math.round(base * m * 100) / 100;
+  return `<div class="pickpanel">
+    <div class="pchips">${PICK_X.map(m => `<button type="button" class="pchip${m === 1 ? ' on' : ''}" data-pchip="${amt(m)}">${meas ? fmt(amt(m)) : fracLabel(amt(m))}</button>`).join('')}<button type="button" class="pchip sm" data-pother>อื่น ๆ</button><span class="pu">${esc(u.n)}</span></div>
+    <div class="pother" hidden><input class="amt" type="number" inputmode="decimal" step="any" min="0" value="${+(+base).toFixed(2)}" data-pamt>
+    ${us.length > 1 ? `<select data-punit data-prev="${k}">${us.map(x => `<option value="${x.k}" ${x.k === k ? 'selected' : ''}>${esc(x.n)}</option>`).join('')}</select>` : `<em data-punit-fixed="${k}">${esc(us[0].n)}</em>`}</div>
+    <button class="btn" data-addpick="${f.id}">เพิ่ม · <span data-pkcal>${pickKcal(f, base, k)}</span> kcal</button></div>`;
+}
+function refreshPickKcal(panel) {
+  const f = getFood(pickOpen), a = +panel.querySelector('[data-pamt]').value;
+  const k = panel.querySelector('[data-punit]')?.value || panel.querySelector('[data-punit-fixed]')?.dataset.punitFixed;
+  if (f) panel.querySelector('[data-pkcal]').textContent = a > 0 ? pickKcal(f, a, k) : '–';
 }
 function resultRow(f, manage) {
   const body = `<span class="n">${f.meal ? '🍱 ' : ''}${esc(f.name)}${f.serving ? `<span class="s">${esc(f.serving)}${f.g && !MEAS_BY[f.unit] && !/^\d+\s*ก\.?$/.test(f.serving) ? ` · ${num(f.g)} ก.` : ''}</span>` : ''}${f.std ? '' : `<span class="tag">${f.meal ? 'Meal' : 'My'}</span>`}</span><span class="m">${macroLine(f)}${manage ? timesEaten(f.id) : ''}</span>`;
@@ -804,8 +826,15 @@ function bindSearch(key, { pick, add }) {
     else if (t.hasAttribute('data-newitem')) { editingFood = 'new'; render(); window.scrollTo(0, 0); }
     else if (t.dataset.pick) {
       pickOpen = pickOpen === t.dataset.pick ? null : t.dataset.pick; drawResults(root);
-      const a = root.querySelector('[data-pamt]');
-      if (a) { a.focus(); a.select(); }
+    } else if (t.dataset.pchip) {
+      const panel = t.closest('.pickpanel');
+      panel.querySelectorAll('[data-pchip]').forEach(c => c.classList.toggle('on', c === t));
+      panel.querySelector('[data-pamt]').value = t.dataset.pchip;
+      refreshPickKcal(panel);
+    } else if (t.hasAttribute('data-pother')) {
+      const panel = t.closest('.pickpanel'), a = panel.querySelector('[data-pamt]');
+      panel.querySelector('.pchips').hidden = true; panel.querySelector('.pother').hidden = false;
+      a.focus(); a.select();
     } else if (t.dataset.addpick) {
       const panel = t.closest('.pickpanel'), amount = +panel.querySelector('[data-pamt]').value;
       const unit = panel.querySelector('[data-punit]')?.value || panel.querySelector('[data-punit-fixed]')?.dataset.punitFixed;
@@ -837,7 +866,9 @@ function bindSearch(key, { pick, add }) {
     const a = root.querySelector('[data-pamt]');
     if (from && to && a) { const raw = +a.value * from.r / to.r; a.value = to.k === 'g' || to.k === 'ml' ? Math.round(raw) : Math.round(raw * 10) / 10; }
     sel.dataset.prev = sel.value;
+    refreshPickKcal(sel.closest('.pickpanel'));
   };
+  root.oninput = ev => { if (ev.target.matches('[data-pamt]')) refreshPickKcal(ev.target.closest('.pickpanel')); };
   root.onkeydown = ev => { if (ev.key === 'Enter' && ev.target.matches('[data-pamt]')) { ev.preventDefault(); root.querySelector('[data-addpick]')?.click(); } };
   root.onsubmit = ev => {
     ev.preventDefault();
@@ -2223,6 +2254,9 @@ function fitSheet() {
   bg.style.top = vv.offsetTop + 'px'; bg.style.height = vv.height + 'px';
 }
 window.visualViewport?.addEventListener('resize', fitSheet);
+document.addEventListener('focusin', ev => {
+  if (ev.target.closest?.('.sheet') && /INPUT|TEXTAREA|SELECT/.test(ev.target.tagName)) setTimeout(() => { fitSheet(); ev.target.scrollIntoView({ block: 'center' }); }, 350);
+});
 window.visualViewport?.addEventListener('scroll', fitSheet);
 let formDraft = null;
 try { formDraft = JSON.parse(localStorage.getItem(DRAFT_KEY)); } catch {}
