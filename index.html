@@ -214,8 +214,9 @@ button.x:hover{color:var(--danger)}
 .bcrow{display:flex;gap:8px}
 .addin{display:block;width:100%;margin-top:8px;border:1.5px dashed color-mix(in srgb, var(--mc) 55%, transparent);background:transparent;color:var(--mc);border-radius:12px;padding:8px;font:inherit;font-size:14px;font-weight:600;cursor:pointer}
 body.noscroll{overflow:hidden}
-.sheet-bg{position:fixed;left:0;right:0;top:0;height:100%;z-index:50;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center}
-.sheet{background:var(--surface);width:100%;max-width:560px;max-height:calc(100% - 12px);overflow-y:auto;overscroll-behavior:contain;border-radius:18px 18px 0 0;padding:14px 16px calc(18px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:10px;box-sizing:border-box}
+.sheet-bg{position:fixed;left:0;right:0;top:0;height:100%;z-index:50;background:rgba(0,0,0,.62);-webkit-backdrop-filter:blur(5px) saturate(.7);backdrop-filter:blur(5px) saturate(.7);display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--surface);width:100%;max-width:560px;max-height:calc(100% - 12px);overflow-y:auto;overscroll-behavior:contain;border-radius:20px 20px 0 0;padding:8px 16px calc(18px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:10px;box-sizing:border-box;box-shadow:0 -8px 32px rgba(0,0,0,.35);border-top:3px solid var(--mc)}
+.sheet::before{content:"";align-self:center;width:40px;height:5px;border-radius:3px;background:var(--border);flex:none}
 @media (min-width:760px){.sheet-bg{align-items:center}.sheet{border-radius:18px}}
 .sh-head{display:flex;justify-content:space-between;align-items:center;font-size:16px}
 .sh-head b{color:var(--mc)}
@@ -237,6 +238,12 @@ body.noscroll{overflow:hidden}
 .ai-kcal{font-size:30px;font-weight:700;line-height:1.1}
 .ai-kcal small{font-size:14px;font-weight:500;color:var(--muted)}
 .ai-res .aiparts{background:var(--surface-2);border-radius:12px;padding:8px 12px;font-size:13px}
+.adjbox{display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:14px;border:1.5px solid var(--mc);background:color-mix(in srgb, var(--mc) 8%, var(--surface))}
+.adjbox textarea{font:inherit;font-size:16px;padding:10px 12px;border-radius:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);resize:vertical}
+.qfix{display:flex;flex-wrap:wrap;gap:6px}
+.qfix button{font:inherit;font-size:13px;padding:6px 10px;border-radius:99px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer}
+.linkbtn{border:0;background:none;color:var(--muted);font:inherit;font-size:13px;text-decoration:underline;cursor:pointer;padding:2px}
+.ai-res > .btn{margin-top:6px}
 .ai-ask{display:flex;flex-direction:column;gap:6px;font-size:14px}
 .ai-ask textarea{font:inherit;font-size:16px;padding:10px 12px;border-radius:12px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);resize:vertical}
 .sheet .btn,.sheet .ghost.wide2{width:100%;padding:12px;font-size:15px}
@@ -1354,9 +1361,14 @@ function sheetHtml(id) {
       <div class="muted">${num(r.amount)} ${esc(un)}${r.grams > 0 && !MEAS_BY[r.unit] ? ` · ~${fmt(r.grams)} ก.` : ''} · P ${num(r.p)} · C ${num(r.c)} · F ${num(r.f)}</div>
       ${r.parts?.length ? `<div class="aiparts">${r.parts.map(x => `<div><span>${esc(x.name)} · ${esc(x.amount)}</span><span>${fmt(x.kcal)}</span></div>`).join('')}</div>` : ''}
       ${r.note ? `<div class="muted" style="font-size:13px">${esc(r.note)}</div>` : ''}
-      <div class="aifixrow"><input id="aiFix" autocomplete="off" enterkeyhint="send" placeholder="ไม่ถูก? บอก AI เช่น กินครึ่งเดียว"><button class="ghost sm" data-aifixsend>ส่ง</button></div>
-      <button class="btn" data-aisave>บันทึกลง${mn}</button>
-      <button class="ghost wide2" data-aiedit>แก้ตัวเลขเอง</button></div>`;
+      ${sheet.adjust ? `<div class="adjbox">
+        <b>บอก AI ว่าต่างจากที่กินจริงตรงไหน</b>
+        <div class="qfix">${AI_QUICK_FIX.map(t => `<button type="button" data-qfix="${esc(t)}">${esc(t)}</button>`).join('')}</div>
+        <textarea id="aiFix" rows="2" placeholder="เช่น หมูกินไปครึ่งเดียว น้ำจิ้มแค่ 1 ช้อน"></textarea>
+        <button class="bigact" data-aifixsend>✨ ให้ AI ปรับตามนี้</button>
+        <button class="linkbtn" data-aiedit>หรือแก้ตัวเลขเอง</button></div>`
+      : `<button class="bigact" data-aiadjust>✏️ ปรับให้ตรงกับที่กิน</button>`}
+      <button class="btn" data-aisave>✓ บันทึกลง${mn} · ${fmt(r.kcal)} kcal</button></div>`;
   } else if (sheet.mode === 'aitext') body = `<label class="ai-ask">บอก AI ว่ากินอะไร<textarea id="aiAsk" rows="3" placeholder="ข้าวมันไก่ต้ม พิเศษ ไม่กินน้ำซุป">${esc(sheet.desc || '')}</textarea></label>
       <button class="btn" data-aiasksend>✨ ให้ AI ประเมิน</button>
       <button class="ghost wide2" data-aiback>กลับ</button>`;
@@ -1365,6 +1377,7 @@ function sheetHtml(id) {
       ${foodSearch('eat-' + id, 'eat')}`;
   return `<div class="sheet-bg" data-sheetbg data-mc="${sheet.meal}"><div class="sheet" role="dialog" aria-modal="true" aria-label="เพิ่มอาหาร">${head}${err}${body}</div></div>`;
 }
+const AI_QUICK_FIX = ['กินครึ่งเดียว', 'กินไป 3/4', 'ไม่กินน้ำซุป', 'น้ำจิ้ม/ซอสแค่ 1 ช้อน', 'ไม่ได้กินข้าว/เส้น'];
 const aiWaitText = () => { const s = sheet?.t0 ? Math.floor((Date.now() - sheet.t0) / 1000) : 0; return `${s} วินาที · ปกติใช้ 10–30 วินาที`; };
 setInterval(() => { const el = document.querySelector('[data-aisec]'); if (el) el.textContent = aiWaitText(); }, 1000);
 
@@ -1896,13 +1909,17 @@ function bind() {
     sheetAi(desc, null);
   });
   on('[data-aicancel]', () => { sheet.ctrl?.abort(); sheet.ctrl = null; sheet.mode = sheet.result ? 'result' : 'search'; render(); });
-  const sendFix = () => {
+  on('[data-aiadjust]', () => { sheet.adjust = true; render(); document.querySelector('.adjbox')?.scrollIntoView({ block: 'center' }); });
+  document.querySelectorAll('[data-qfix]').forEach(b => b.onclick = () => {
+    const ta = document.getElementById('aiFix');
+    ta.value = ta.value.trim() ? `${ta.value.trim()} ${b.dataset.qfix}` : b.dataset.qfix;
+  });
+  on('[data-aifixsend]', () => {
     const fix = document.getElementById('aiFix').value.trim();
-    if (fix) sheetAi(sheet.desc, sheet.img, { prev: sheet.result, fix });
-  };
-  on('[data-aifixsend]', sendFix);
-  const fixIn = document.getElementById('aiFix');
-  if (fixIn) fixIn.onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); sendFix(); } };
+    if (!fix) { document.getElementById('aiFix').focus(); return; }
+    sheet.adjust = false;
+    sheetAi(sheet.desc, sheet.img, { prev: sheet.result, fix });
+  });
   on('[data-aisave]', () => {
     const food = aiFood(sheet.result);
     if (S.shared && !sharedError) eatFood(addFood(food), food); else eat(food);
