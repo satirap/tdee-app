@@ -2,7 +2,7 @@
 <html lang="th">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>TDEE ต้น & พัช</title>
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
@@ -55,7 +55,8 @@ h3{font-size:15px;margin:0 0 8px}
 .tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;background:var(--surface-2);padding:3px;border-radius:12px;flex:0 1 480px}
 .tabs button{display:flex;align-items:center;justify-content:center;gap:6px;border:0;background:transparent;color:var(--muted);padding:8px 6px;border-radius:9px;font:inherit;font-size:14.5px;font-weight:500;cursor:pointer;white-space:nowrap;transition:background .15s,color .15s}
 .tabs button.on{background:var(--surface);color:var(--text);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.06),0 2px 8px rgba(0,0,0,.06)}
-.tdot{width:7px;height:7px;border-radius:50%;flex:none;opacity:.55}
+.tdot{width:7px;height:7px;border-radius:50%;flex:none;opacity:.55;background:var(--pc)}
+.tico{display:none;width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .tabs button.on .tdot{opacity:1}
 .grid{display:grid;gap:14px}
 /* Today page: a one-screen dashboard on wide screens (targets + chart on the left, the day's food on the right). */
@@ -112,8 +113,8 @@ details.prog .stats{margin-bottom:0;grid-template-columns:repeat(3,1fr)}
 details.prog .stat .v{font-size:17px}
 .chart-box.tall{height:380px}
 .chart-box.short{height:220px}
-.subtabs{display:grid;grid-auto-flow:column;grid-auto-columns:auto;justify-content:space-between;gap:8px;border-bottom:1px solid var(--border);margin:0 0 16px;max-width:560px}
-.subtabs button{border:0;background:none;font:inherit;font-size:14.5px;color:var(--muted);padding:6px 4px 11px;cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent;margin-bottom:-1px;text-align:center}
+.subtabs{display:flex;gap:30px;border-bottom:1px solid var(--border);margin:0 0 18px}
+.subtabs button{border:0;background:none;font:inherit;font-size:15px;color:var(--muted);padding:6px 0 11px;cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent;margin-bottom:-1px;text-align:center}
 .subtabs button.on{color:var(--text);font-weight:600;border-bottom-color:var(--c)}
 .weighform{display:grid;grid-template-columns:1.3fr 1fr 1fr auto;gap:8px;align-items:end}
 @media (max-width:560px){.weighform{grid-template-columns:1fr 1fr auto}.weighform .wd{grid-column:1/-1}}
@@ -323,8 +324,46 @@ footer{margin-top:24px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;fo
   .intake-sum small{font-size:11px;margin-left:3px}
   header .refresh{order:2}
   header .tabs{order:3;flex:1 1 100%}
-  .subtabs{max-width:none}
-  .subtabs button{font-size:14px}
+}
+button:focus:not(:focus-visible){outline:none}
+.tabs button:focus-visible,.subtabs button:focus-visible{outline:2px solid var(--ton);outline-offset:2px}
+.subtabs button:hover{color:var(--text)}
+
+/* ---------- Phone: feel like a native app ---------- */
+@media (max-width:560px){
+  html{-webkit-tap-highlight-color:transparent}
+  body{-webkit-text-size-adjust:100%}
+  button{touch-action:manipulation;-webkit-user-select:none;user-select:none}
+  input,select,textarea{font-size:16px!important}
+  .wrap{padding:0 14px calc(92px + env(safe-area-inset-bottom))}
+  /* Top app bar: sticky, translucent */
+  /* The blur sits on a pseudo-layer: a backdrop-filter on the header itself would trap the fixed bottom bar inside it. */
+  header{position:sticky;top:0;z-index:30;margin:0 -14px 0;padding:calc(10px + env(safe-area-inset-top)) 14px 10px}
+  header::before{content:"";position:absolute;inset:0;z-index:-1;background:color-mix(in srgb, var(--bg) 82%, transparent);-webkit-backdrop-filter:saturate(1.6) blur(18px);backdrop-filter:saturate(1.6) blur(18px)}
+  .logo{width:34px;height:34px;border-radius:9px}
+  h1{font-size:17px}
+  h1 small{font-size:12px}
+  .refresh{width:36px;height:36px;border-radius:50%}
+  /* Bottom tab bar */
+  header .tabs{position:fixed;left:0;right:0;bottom:0;z-index:40;display:grid;grid-template-columns:repeat(4,1fr);gap:0;max-width:none;border-radius:0;
+    padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:color-mix(in srgb, var(--surface) 88%, transparent);
+    -webkit-backdrop-filter:saturate(1.6) blur(20px);backdrop-filter:saturate(1.6) blur(20px);border-top:.5px solid var(--border)}
+  .tabs button{flex-direction:column;gap:2px;padding:4px 0 2px;font-size:11px;font-weight:500;border-radius:10px;color:var(--muted)}
+  .tabs button.on{background:none;box-shadow:none;color:var(--pc, var(--text));font-weight:600}
+  .tabs button .tdot{display:none}
+  .tico{display:block}
+  .tabs button:active .tico{transform:scale(.9)}
+  /* Sub-tabs: sticky pill row under the app bar, scrolls sideways */
+  .subtabs{position:sticky;top:calc(56px + env(safe-area-inset-top));z-index:20;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;border:0;
+    margin:0 -14px 12px;padding:6px 14px 10px;background:color-mix(in srgb, var(--bg) 82%, transparent);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px)}
+  .subtabs::-webkit-scrollbar{display:none}
+  .subtabs button{flex:none;padding:7px 14px;border-radius:99px;border:0;margin:0;font-size:14px;background:var(--surface-2);color:var(--muted)}
+  .subtabs button.on{background:var(--c);color:#fff;font-weight:600}
+  /* Cards read like grouped app sections */
+  .card{border-color:transparent;border-radius:18px;padding:16px;box-shadow:0 1px 2px rgba(0,0,0,.04),0 4px 14px rgba(0,0,0,.04)}
+  button.btn:active,button.ghost:active,.bigact:active,.addin:active,.res-main:active{transform:scale(.98)}
+  footer{justify-content:center;margin-top:28px}
+  footer span{flex:1 1 100%;text-align:center}
 }
 </style>
 </head>
@@ -336,10 +375,10 @@ footer{margin-top:24px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;fo
       <h1>TDEE Tracker<small>ต้น & พัช · ลดไขมัน</small></h1>
     </div>
     <nav class="tabs hidden" id="tabs">
-      <button data-tab="overview">ภาพรวม</button>
-      <button data-tab="ton"><i class="tdot" style="background:var(--ton)"></i>ต้น</button>
-      <button data-tab="patt"><i class="tdot" style="background:var(--patt)"></i>พัช</button>
-      <button data-tab="foods">My Food</button>
+      <button data-tab="overview"><svg class="tico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5h-5v5H5a1 1 0 0 1-1-1z"/></svg><span>ภาพรวม</span></button>
+      <button data-tab="ton" style="--pc:var(--ton)"><i class="tdot"></i><svg class="tico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 19.5c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5"/></svg><span>ต้น</span></button>
+      <button data-tab="patt" style="--pc:var(--patt)"><i class="tdot"></i><svg class="tico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 19.5c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5"/></svg><span>พัช</span></button>
+      <button data-tab="foods"><svg class="tico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11h16a8 8 0 0 1-16 0z"/><path d="M8 7.5c0-1.2 1-1.5 1-2.7M12 7.5c0-1.2 1-1.5 1-2.7M16 7.5c0-1.2 1-1.5 1-2.7"/></svg><span>My Food</span></button>
     </nav>
     <button id="refreshBtn" class="refresh" aria-label="รีเฟรช" title="โหลดเวอร์ชันล่าสุด"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg></button>
   </header>
