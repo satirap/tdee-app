@@ -241,6 +241,16 @@ body.noscroll{overflow:hidden}
 .ai-res .aiparts{background:var(--surface-2);border-radius:12px;padding:8px 12px;font-size:13px}
 .adjbox{display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:14px;border:1.5px solid var(--mc);background:color-mix(in srgb, var(--mc) 8%, var(--surface))}
 .adjbox textarea{font:inherit;font-size:16px;padding:10px 12px;border-radius:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);resize:vertical}
+.edetail{margin-top:6px}
+.edetail > summary{list-style:none;display:flex;justify-content:center;cursor:pointer;-webkit-user-select:none;user-select:none}
+.edetail > summary::-webkit-details-marker{display:none}
+.edetail > summary span{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);padding:6px 14px;border-radius:99px;background:var(--surface-2)}
+.edetail > summary span::after{content:"";width:7px;height:7px;border:solid currentColor;border-width:0 1.6px 1.6px 0;transform:rotate(45deg) translate(-2px,-2px);transition:transform .2s}
+.edetail[open] > summary span::after{transform:rotate(-135deg) translate(-2px,-2px)}
+.edetail[open] > summary{margin-bottom:10px}
+.edetail summary i{font-style:normal}
+.edetail summary .c,.edetail[open] summary .o{display:none}
+.edetail[open] summary .c{display:inline}
 .rescale{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
 .rescale button{font:inherit;font-size:13px;padding:5px 10px;border-radius:99px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);cursor:pointer}
 .cfrow{display:flex;gap:8px;align-items:center}
@@ -1230,7 +1240,11 @@ function energyBlock(id, d = todayStr()) {
   const kcal = dayItems(p, d).length ? daySum(p, d, 'kcal') : p.days?.[d]?.kcal || 0, prot = daySum(p, d, 'p'), over = Math.round(kcal - m.kcal), protLeft = m.prot.g - prot;
   const tol = +p.tol || 50, hit = Math.abs(over) <= tol, tdee = m.kcal + tdeeGap(p);
   const kStatus = hit ? 'ถึงเป้า ✓' : over < 0 ? `เหลือ ${fmt(-over)}` : kcal <= tdee ? `+${fmt(over)} · ยังลดอยู่` : `+${fmt(over)} · พักลด`;
+  // The rings carry the day at a glance; the numbers and meal split fold away (state remembered on this device).
+  let open = false;
+  try { open = localStorage.getItem('tdee-edetail') === '1'; } catch {}
   return `${rings(m, kcal, prot, tol, tdee)}
+    <details class="edetail" ${open ? 'open' : ''}><summary><span><i class="o">ดูรายละเอียด</i><i class="c">ซ่อนรายละเอียด</i></span></summary>
     <div class="ring-rows">
       <div><span class="rk"><i style="background:var(--c)"></i>🔥 แคลอรี</span><span><b>${fmt(kcal)}</b> / ${fmt(m.kcal)}</span>
         <span class="${hit ? 'good' : over > 0 ? 'warn' : 'muted'}">${kStatus}</span></div>
@@ -1244,6 +1258,7 @@ function energyBlock(id, d = todayStr()) {
         <span class="${left < 0 ? 'warn' : 'muted'}">${left < 0 ? `+${fmt(-left)} ก.` : left === 0 ? 'พอดี' : `เหลือ ${fmt(left)} ก.`}</span></div>`;
     }).join('')}</div>
     ${mealSplit(dayItems(p, d))}
+    </details>
     ${r.target < r.floor ? `<div class="alert">เป้าคำนวณได้ ${fmt(r.target)} kcal ต่ำกว่าขั้นต่ำที่แนะนำ (${r.floor}) จึงแสดงเป็น ${r.floor} แทน · ลองลด “ลดวันละ” ลง</div>` : ''}`;
 }
 
@@ -2363,6 +2378,9 @@ function fitSheet() {
   bg.style.top = vv.offsetTop + 'px'; bg.style.height = vv.height + 'px';
 }
 window.visualViewport?.addEventListener('resize', fitSheet);
+document.addEventListener('toggle', ev => {
+  if (ev.target.matches?.('.edetail')) try { localStorage.setItem('tdee-edetail', ev.target.open ? '1' : '0'); } catch {}
+}, true);
 document.addEventListener('focusin', ev => {
   if (ev.target.closest?.('.sheet') && /INPUT|TEXTAREA|SELECT/.test(ev.target.tagName)) setTimeout(() => { fitSheet(); ev.target.scrollIntoView({ block: 'center' }); }, 350);
 });
