@@ -205,8 +205,34 @@ button.x:hover{color:var(--danger)}
 .formbtns{display:flex;gap:8px}
 .formbtns .btn{flex:1}
 .bcrow{display:flex;gap:8px}
-.aibtn{flex:none;border:0;border-radius:12px;background:var(--surface-2);color:var(--text);padding:0 12px;font:inherit;font-size:14px;cursor:pointer;white-space:nowrap}
+.addin{display:block;width:100%;margin-top:8px;border:1.5px dashed color-mix(in srgb, var(--mc) 55%, transparent);background:transparent;color:var(--mc);border-radius:12px;padding:8px;font:inherit;font-size:14px;font-weight:600;cursor:pointer}
+body.noscroll{overflow:hidden}
+.sheet-bg{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--surface);width:100%;max-width:560px;max-height:92vh;max-height:92dvh;overflow-y:auto;overscroll-behavior:contain;border-radius:18px 18px 0 0;padding:14px 16px calc(18px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:10px;box-sizing:border-box}
+@media (min-width:760px){.sheet-bg{align-items:center}.sheet{border-radius:18px}}
+.sh-head{display:flex;justify-content:space-between;align-items:center;font-size:16px}
+.sh-head b{color:var(--mc)}
+.bigact{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:15px;border-radius:14px;border:1.5px solid var(--mc);background:color-mix(in srgb, var(--mc) 12%, var(--surface));color:var(--text);font:inherit;font-size:16px;font-weight:600;cursor:pointer}
+.acts2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.acts2 .bigact{padding:11px;font-size:14px;border-width:1px;border-color:var(--border);background:var(--surface-2)}
+.sheet .scanbtn{display:none}
+.ai-wait{display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;padding:18px 0}
+.ai-wait img,.ai-res img{width:160px;height:160px;object-fit:cover;border-radius:14px}
+.ai-q{font-size:15px;padding:12px 16px;background:var(--surface-2);border-radius:12px;max-width:100%}
+.spin{width:36px;height:36px;border-radius:50%;border:3.5px solid var(--surface-2);border-top-color:var(--mc);animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.ai-res{display:flex;flex-direction:column;gap:8px}
+.ai-res img{width:96px;height:96px;align-self:center}
+.ai-name{font-size:17px;font-weight:600}
+.ai-kcal{font-size:30px;font-weight:700;line-height:1.1}
+.ai-kcal small{font-size:14px;font-weight:500;color:var(--muted)}
+.ai-res .aiparts{background:var(--surface-2);border-radius:12px;padding:8px 12px;font-size:13px}
+.ai-ask{display:flex;flex-direction:column;gap:6px;font-size:14px}
+.ai-ask textarea{font:inherit;font-size:16px;padding:10px 12px;border-radius:12px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);resize:vertical}
+.sheet .btn,.sheet .ghost.wide2{width:100%;padding:12px;font-size:15px}
+.sheet .btn{background:var(--mc)}
 .airow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sheet .listbar .seg button{padding:5px 9px}
 .airow .ainote{font-size:12px;color:var(--muted)}
 .aiparts{display:grid;gap:2px;font-size:12px;color:var(--muted)}
 .aiparts div{display:flex;justify-content:space-between;gap:8px}
@@ -627,7 +653,7 @@ const SCAN_ICON = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" s
 // A scanned barcode that wasn't in My Food waits here as a draft form until saved or a new search starts.
 const scanDraft = {};
 const foodSearch = (key, mode) => `<div class="search" data-search="${key}" data-mode="${mode}">
-    <div class="searchrow"><input type="search" placeholder="ค้นหาอาหาร" value="${esc(searchQ[key] || '')}" autocomplete="off">${mode === 'eat' ? '<button type="button" class="aibtn" data-aisnap aria-label="ถ่ายรูปหรือเลือกรูปให้ AI ประเมิน">📷 AI</button>' : ''}<button type="button" class="scanbtn" data-scan aria-label="สแกนบาร์โค้ด">${SCAN_ICON}</button></div>
+    <div class="searchrow"><input type="search" placeholder="ค้นหาอาหาร" value="${esc(searchQ[key] || '')}" autocomplete="off"><button type="button" class="scanbtn" data-scan aria-label="สแกนบาร์โค้ด">${SCAN_ICON}</button></div>
     <div class="results"></div>
   </div>`;
 
@@ -694,7 +720,7 @@ function drawResults(root) {
   const q = root.querySelector('input').value.trim(), out = root.querySelector('.results');
   const manage = root.dataset.mode === 'manage', draft = scanDraft[root.dataset.search];
   if (!q && draft) { newFoodForm(root, draft.v, draft.note); restoreDraft(); return; }
-  if (!q && !manage) { out.innerHTML = ''; return; }
+  if (!q && !manage) { out.innerHTML = sheet ? sheetLists() : ''; return; }
   // Empty search on the My Food tab: the 10 newest My Food items, or the 10 foods both people eat most.
   const hits = q ? searchFoods(q, root.dataset.mode === 'eat')
     : listView === 'new' ? foodList().sort((a, b) => (b.created || 0) - (a.created || 0)).slice(0, 10)
@@ -707,6 +733,16 @@ function drawResults(root) {
 
 // Empty-search lists on the My Food tab: newest first by default, or most eaten; plus a create button.
 let listView = 'new';
+// The add sheet's own lists: newest My Food, most eaten (foods and meals), or My Meal.
+let eatView = 'new';
+function sheetLists() {
+  const bar = `<div class="listbar"><div class="seg">${[['new', '🆕 ล่าสุด'], ['top', '⭐ ยอดนิยม'], ['meal', '🍱 My Meal']].map(([k, l]) => `<button type="button" data-eatview="${k}" class="${eatView === k ? 'on' : ''}">${l}</button>`).join('')}</div><button type="button" class="ghost sm" data-newitem>+ เพิ่มใหม่</button></div>`;
+  const byUse = (a, b) => usesOf(b.id) - usesOf(a.id) || (b.created || 0) - (a.created || 0);
+  const hits = eatView === 'meal' ? mealList().sort(byUse)
+    : eatView === 'new' ? foodList().sort((a, b) => (b.created || 0) - (a.created || 0)).slice(0, 15)
+    : allFoods(true).filter(f => usesOf(f.id)).sort(byUse).slice(0, 15);
+  return bar + (hits.map(f => resultRow(f, false)).join('') || `<div class="empty">${eatView === 'meal' ? 'ยังไม่มี Meal · สร้างได้ที่แท็บ My Food' : 'ยังไม่มีเมนู'}</div>`);
+}
 const listBar = () => `<div class="listbar"><div class="seg">${[['new', '🆕 เพิ่มล่าสุด'], ['top', '⭐ ยอดนิยม']].map(([k, l]) => `<button data-listview="${k}" class="${listView === k ? 'on' : ''}">${l}</button>`).join('')}</div><button class="ghost sm" data-newitem>+ เพิ่มใหม่</button></div>`;
 const timesEaten = id => usesOf(id) ? ` · กิน ${fmt(usesOf(id))} ครั้ง` : '';
 const COPY_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>';
@@ -744,8 +780,9 @@ function bindSearch(key, { pick, add }) {
     const t = ev.target.closest('button');
     if (!t) return;
     if (t.hasAttribute('data-scan')) scanInto(root, key, pick);
-    else if (t.hasAttribute('data-aisnap')) aiSnap(root, key);
     else if (t.dataset.listview) { listView = t.dataset.listview; drawResults(root); }
+    else if (t.dataset.eatview) { eatView = t.dataset.eatview; pickOpen = null; drawResults(root); }
+    else if (t.hasAttribute('data-newitem') && root.dataset.mode === 'eat') { scanDraft[key] = { v: {}, note: 'เพิ่มเมนูใหม่' }; drawResults(root); }
     else if (t.hasAttribute('data-cancelnew')) { clearDraft(); searchQ[key] = ''; delete scanDraft[key]; pickOpen = null; input.value = ''; drawResults(root); }
     else if (t.hasAttribute('data-newitem')) { editingFood = 'new'; render(); window.scrollTo(0, 0); }
     else if (t.dataset.pick) {
@@ -1224,10 +1261,89 @@ function eatenBlock(id) {
       ${isToday ? '' : '<button class="ghost sm" data-day="0">กลับวันนี้</button>'}
     </div>
     ${sharedError ? rulesAlert() : ''}
-    <div class="seg mealpick">${MEALS.map(([k, n, ic]) => `<button data-addmeal="${k}" data-mc="${k}" class="${curMeal() === k ? 'on' : ''}">${ic} ${n}</button>`).join('')}</div>
-    ${foodSearch('eat-' + id, 'eat')}
     ${!items.length && oldTotal ? `<div class="eaten muted" style="font-size:13px;padding-top:12px">บันทึกไว้ ${fmt(oldTotal)} kcal (ไม่มีรายการ)</div>` : ''}
-    ${mealGroups(p, d, items)}`;
+    ${mealGroups(p, d, items)}
+    ${sheetHtml(id)}`;
+}
+
+// The add sheet opens from a meal's "+ เพิ่ม": AI photo, AI text, barcode, search and lists, all logging into that meal.
+// mode: search | aitext | loading | result. The AI result (without the photo) is kept on the device across reloads.
+let sheet = null;
+const SHEET_KEY = 'tdee-sheet';
+function saveSheet() {
+  try {
+    if (sheet?.mode === 'result') localStorage.setItem(SHEET_KEY, JSON.stringify({ id: sheet.id, meal: sheet.meal, mode: 'result', desc: sheet.desc, result: sheet.result, page: pageKey(), at: Date.now() }));
+    else localStorage.removeItem(SHEET_KEY);
+  } catch {}
+}
+function openSheet(id, meal) { sheet = { id, meal, mode: 'search' }; addMeal = meal; eatView = 'new'; render(); }
+function closeSheet() {
+  if (!sheet) return;
+  const key = 'eat-' + sheet.id;
+  sheet.ctrl?.abort();
+  searchQ[key] = ''; delete scanDraft[key]; pickOpen = null;
+  sheet = null; clearDraft(); saveSheet(); render();
+}
+const imgSrc = img => `data:${img.type};base64,${img.data}`;
+function sheetHtml(id) {
+  if (!sheet || sheet.id !== id) return '';
+  const [mk, mn0, ic] = MEALS.find(m => m[0] === sheet.meal) || MEALS[0], r = sheet.result, mn = mk === 's' ? mn0 : 'มื้อ' + mn0;
+  const head = `<div class="sh-head"><b>${ic} เพิ่ม · ${mn}</b><button class="x" data-sheetclose aria-label="ปิด">✕</button></div>`;
+  const err = sheet.err ? `<div class="alert">${esc(sheet.err)}</div>` : '';
+  let body;
+  if (sheet.mode === 'loading') body = `<div class="ai-wait">
+      ${sheet.img ? `<img src="${imgSrc(sheet.img)}" alt="">` : `<div class="ai-q">“${esc(sheet.desc)}”</div>`}
+      <div class="spin" aria-hidden="true"></div>
+      <b>${sheet.fixing ? 'AI กำลังแก้ตามที่บอก…' : sheet.img ? 'AI กำลังดูอาหาร…' : 'AI กำลังประเมิน…'}</b>
+      <span class="muted" data-aisec>${aiWaitText()}</span>
+      <button class="ghost" data-aicancel>ยกเลิก</button></div>`;
+  else if (sheet.mode === 'result') {
+    const un = MEAS_BY[r.unit]?.n || r.unit;
+    body = `<div class="ai-res">
+      ${sheet.img ? `<img src="${imgSrc(sheet.img)}" alt="">` : ''}
+      <div class="ai-name">${esc(r.name)}</div>
+      <div class="ai-kcal">${fmt(r.kcal)} <small>kcal</small></div>
+      <div class="muted">${num(r.amount)} ${esc(un)}${r.grams > 0 && !MEAS_BY[r.unit] ? ` · ~${fmt(r.grams)} ก.` : ''} · P ${num(r.p)} · C ${num(r.c)} · F ${num(r.f)}</div>
+      ${r.parts?.length ? `<div class="aiparts">${r.parts.map(x => `<div><span>${esc(x.name)} · ${esc(x.amount)}</span><span>${fmt(x.kcal)}</span></div>`).join('')}</div>` : ''}
+      ${r.note ? `<div class="muted" style="font-size:13px">${esc(r.note)}</div>` : ''}
+      <div class="aifixrow"><input id="aiFix" autocomplete="off" enterkeyhint="send" placeholder="ไม่ถูก? บอก AI เช่น กินครึ่งเดียว"><button class="ghost sm" data-aifixsend>ส่ง</button></div>
+      <button class="btn" data-aisave>บันทึกลง${mn}</button>
+      <button class="ghost wide2" data-aiedit>แก้ตัวเลขเอง</button></div>`;
+  } else if (sheet.mode === 'aitext') body = `<label class="ai-ask">บอก AI ว่ากินอะไร<textarea id="aiAsk" rows="3" placeholder="ข้าวมันไก่ต้ม พิเศษ ไม่กินน้ำซุป">${esc(sheet.desc || '')}</textarea></label>
+      <button class="btn" data-aiasksend>✨ ให้ AI ประเมิน</button>
+      <button class="ghost wide2" data-aiback>กลับ</button>`;
+  else body = `<button class="bigact" data-aiphotobig>📷 ถ่าย / เลือกรูป ให้ AI</button>
+      <div class="acts2"><button class="bigact" data-aitext>✨ พิมพ์บอก AI</button><button class="bigact" data-sheetscan>▥ บาร์โค้ด</button></div>
+      ${foodSearch('eat-' + id, 'eat')}`;
+  return `<div class="sheet-bg" data-sheetbg data-mc="${sheet.meal}"><div class="sheet" role="dialog" aria-modal="true" aria-label="เพิ่มอาหาร">${head}${err}${body}</div></div>`;
+}
+const aiWaitText = () => { const s = sheet?.t0 ? Math.floor((Date.now() - sheet.t0) / 1000) : 0; return `${s} วินาที · ปกติใช้ 10–30 วินาที`; };
+setInterval(() => { const el = document.querySelector('[data-aisec]'); if (el) el.textContent = aiWaitText(); }, 1000);
+
+async function sheetAi(desc, img, fix) {
+  const s = sheet;
+  if (!s) return;
+  const ctrl = new AbortController();
+  Object.assign(s, { mode: 'loading', desc, img, err: null, t0: Date.now(), ctrl, fixing: !!fix });
+  render();
+  try {
+    const r = await aiNutrition(desc, img, fix?.prev, fix?.fix, ctrl.signal);
+    if (sheet !== s || ctrl.signal.aborted) return;
+    Object.assign(s, { mode: 'result', result: r });
+  } catch (e) {
+    if (sheet !== s || ctrl.signal.aborted) return;
+    console.warn(e);
+    Object.assign(s, { mode: s.result ? 'result' : 'search', err: aiError(e) });
+  }
+  s.ctrl = null;
+  saveSheet(); render();
+}
+// AI result → a My Food entry (same shape the food form saves).
+function aiFood(r) {
+  const unit = AI_UNITS.includes(r.unit) ? r.unit : 'ที่', meas = MEAS_BY[unit], amt = +r.amount > 0 ? Math.round(r.amount * 10) / 10 : 1;
+  const r1 = v => Math.round((+v || 0) * 10) / 10;
+  return { name: r.name, p: r1(r.p), c: r1(r.c), f: r1(r.f), kcal: Math.round(+r.kcal || 0), amt, unit, barcode: null,
+    serving: `${num(amt)} ${meas ? meas.n : unit}`, g: meas ? amt * meas.ml : r.grams > 0 ? Math.round(r.grams) : null, units: [] };
 }
 
 function mealGroups(p, d, items) {
@@ -1238,6 +1354,7 @@ function mealGroups(p, d, items) {
     return `<div class="mgroup" data-mealslot="${k}">
       <div class="mhead"><span>${ic} ${n}</span>${its.length ? `<b>${fmt(kc)} <small>kcal</small></b>` : '<span class="muted">–</span>'}</div>
       ${its.map(x => itemChip(x)).join('')}
+      ${k ? `<button class="addin" data-addto="${k}">+ เพิ่ม</button>` : ''}
     </div>`;
   }).join('');
   return `<div class="eaten">${groups}</div>`;
@@ -1708,8 +1825,45 @@ function bind() {
   const eat = item => {
     // A day that only had a total (from before per-day lists) keeps it as a line item, so adding food doesn't wipe it.
     if (!dayItems(p, day).length && p.days?.[day]?.kcal) list().push({ id: uid(), name: 'ยอดที่บันทึกไว้ก่อนหน้า', p: 0, c: 0, f: 0, kcal: p.days[day].kcal, qty: 1, amount: 1, unit: 's' });
-    list().push({ id: uid(), qty: 1, meal: curMeal(), ...item }); changed();
+    list().push({ id: uid(), qty: 1, meal: curMeal(), ...item });
+    if (sheet) { const key = 'eat-' + sheet.id; searchQ[key] = ''; delete scanDraft[key]; sheet = null; saveSheet(); }
+    changed();
   };
+  document.querySelectorAll('[data-addto]').forEach(b => b.onclick = () => openSheet(id, b.dataset.addto));
+  const on = (sel, fn) => { const el = document.querySelector(sel); if (el) el.onclick = fn; };
+  on('[data-sheetclose]', closeSheet);
+  const bg = document.querySelector('[data-sheetbg]');
+  if (bg) bg.onclick = ev => { if (ev.target === bg && sheet?.mode !== 'loading') closeSheet(); };
+  on('[data-aiphotobig]', () => {
+    if (!aiKey() && !askAiKey()) return;
+    const desc = (searchQ['eat-' + id] || '').trim();
+    pickPhoto().then(img => { if (img && sheet) sheetAi(desc, img); });
+  });
+  on('[data-aitext]', () => { sheet.mode = 'aitext'; sheet.err = null; sheet.desc = (searchQ['eat-' + id] || '').trim() || sheet.desc; render(); document.getElementById('aiAsk')?.focus(); });
+  on('[data-aiback]', () => { sheet.mode = 'search'; sheet.err = null; render(); });
+  on('[data-aiasksend]', () => {
+    const desc = document.getElementById('aiAsk').value.trim();
+    if (!desc) { sheet.err = 'พิมพ์ว่ากินอะไรก่อน'; sheet.desc = ''; render(); return; }
+    if (!aiKey() && !askAiKey()) return;
+    sheetAi(desc, null);
+  });
+  on('[data-aicancel]', () => { sheet.ctrl?.abort(); sheet.ctrl = null; sheet.mode = sheet.result ? 'result' : 'search'; render(); });
+  const sendFix = () => {
+    const fix = document.getElementById('aiFix').value.trim();
+    if (fix) sheetAi(sheet.desc, sheet.img, { prev: sheet.result, fix });
+  };
+  on('[data-aifixsend]', sendFix);
+  const fixIn = document.getElementById('aiFix');
+  if (fixIn) fixIn.onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); sendFix(); } };
+  on('[data-aisave]', () => {
+    const food = aiFood(sheet.result);
+    if (S.shared && !sharedError) eatFood(addFood(food), food); else eat(food);
+  });
+  on('[data-aiedit]', () => {
+    const food = aiFood(sheet.result), key = 'eat-' + id;
+    scanDraft[key] = { v: food, note: 'ค่าจาก AI · แก้ได้ก่อนบันทึก' };
+    searchQ[key] = ''; sheet.mode = 'search'; sheet.result = null; saveSheet(); render();
+  });
   document.querySelectorAll('[data-addmeal]').forEach(b => b.onclick = () => { addMeal = b.dataset.addmeal; render(); });
   document.querySelectorAll('.eaten .it[data-row]').forEach(row => row.addEventListener('click', e => {
     if (e.target.closest('input,select,button') || Date.now() - dragEnded < 500) return;
@@ -1788,10 +1942,12 @@ function bind() {
     };
     row.addEventListener('pointermove', move); row.addEventListener('pointerup', end); row.addEventListener('pointercancel', end);
   };
+  on('[data-sheetscan]', () => { const root = document.querySelector(`[data-search="eat-${id}"]`); if (root) scanInto(root, 'eat-' + id, eatPick); });
   const eatFood = (fid, f, o) => {
     eat(lineFor(fid, f, o));
     sharedWrite({ [`uses.${fid}`]: increment(1) });
   };
+  function eatPick(fid, o) { const f = getFood(fid); if (f) eatFood(fid, f, o); }
   document.querySelectorAll('[data-uneat]').forEach(b => b.onclick = () => { p.log[day] = list().filter(x => x.id !== b.dataset.uneat); changed(); });
   const item = el => list().find(x => x.id === (el.dataset.amt || el.dataset.unit));
   document.querySelectorAll('[data-day]').forEach(b => b.onclick = () => {
@@ -1807,7 +1963,7 @@ function bind() {
   });
   document.querySelectorAll('[data-unit]').forEach(sel => sel.onchange = () => { const it = item(sel); if (it && setUnit(it, sel.value)) changed(); });
   bindSearch('eat-' + id, {
-    pick: (fid, o) => { const f = getFood(fid); if (f) eatFood(fid, f, o); },
+    pick: eatPick,
     add: food => { if (S.shared && !sharedError) eatFood(addFood(food), food); else eat(food); }
   });
   document.querySelectorAll('[data-act]').forEach(row => {
@@ -1939,7 +2095,7 @@ function pickPhoto() {
   });
 }
 
-async function aiNutrition(desc, img, prev, fix) {
+async function aiNutrition(desc, img, prev, fix, signal) {
   const client = await getAi();
   const content = [];
   if (img) content.push({ type: 'image', source: { type: 'base64', media_type: img.type, data: img.data } });
@@ -1951,7 +2107,7 @@ async function aiNutrition(desc, img, prev, fix) {
     betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
     output_config: { effort: 'low', format: { type: 'json_schema', schema: AI_SCHEMA } },
     system: AI_SYSTEM, messages: [{ role: 'user', content }],
-  });
+  }, { signal });
   if (res.stop_reason === 'refusal') throw new Error('AI ไม่ตอบคำขอนี้');
   if (res.stop_reason === 'max_tokens') throw new Error('AI ตอบไม่จบ ลองใหม่อีกครั้ง');
   return JSON.parse(res.content.find(b => b.type === 'text').text);
@@ -2028,19 +2184,7 @@ async function runAi(form, desc, img, fix) {
   } finally { btns.forEach(x => x.disabled = false); }
 }
 
-// 📷 AI on the day's search row: take or pick a photo, open the new-food form and let AI fill it.
-// Whatever is typed in the search box goes along as context (e.g. "กินครึ่งจาน").
-async function aiSnap(root, key) {
-  if (!aiKey() && !askAiKey()) return;
-  const img = await pickPhoto();
-  if (!img || !root.isConnected) return;
-  const desc = (searchQ[key] || '').trim();
-  scanDraft[key] = { v: { name: desc }, note: '📷 ประเมินจากรูปด้วย AI · ตรวจค่าก่อนบันทึก' };
-  searchQ[key] = ''; pickOpen = null; root.querySelector('input').value = '';
-  drawResults(root);
-  const form = root.querySelector('form.foodform');
-  if (form) runAi(form, desc, img);
-}
+
 document.getElementById('aiKeyBtn').onclick = () => { const had = aiKey(), k = askAiKey(); if (k !== had) alert(k ? 'บันทึก API key แล้ว' : 'ลบ API key แล้ว'); };
 
 // A half-filled food form survives switching apps: iOS may re-render or even reload the page meanwhile.
@@ -2052,6 +2196,8 @@ function rememberPage() {
   try { localStorage.setItem(PAGE_KEY, JSON.stringify({ tab: S.tab, sub, foodsView })); } catch {}
   // Leaving the page a draft belongs to drops it, so it can't pull a later reload back to an old form.
   if (formDraft && formDraft.page !== pageKey()) clearDraft();
+  if (sheet && (S.tab !== sheet.id || sub !== 'today')) { sheet.ctrl?.abort(); sheet = null; saveSheet(); }
+  document.body.classList.toggle('noscroll', !!document.querySelector('.sheet'));
 }
 let formDraft = null;
 try { formDraft = JSON.parse(localStorage.getItem(DRAFT_KEY)); } catch {}
@@ -2059,7 +2205,7 @@ if (!formDraft || Date.now() - (formDraft.at || 0) > DRAFT_TTL) formDraft = null
 function formCtx(form) {
   if (form.id === 'editFood') return { kind: 'edit', editingFood };
   const key = form.closest('[data-search]')?.dataset.search;
-  return key && key !== 'meal' ? { kind: 'new', key, q: searchQ[key] || '', scan: scanDraft[key] || null } : null;
+  return key && key !== 'meal' ? { kind: 'new', key, q: searchQ[key] || '', scan: scanDraft[key] || null, meal: sheet?.meal || null } : null;
 }
 function saveDraft(form) {
   const ctx = formCtx(form);
@@ -2160,7 +2306,13 @@ if (formDraft?.page === pageKey()) {
   logDate = formDraft.logDate || null;
   if (formDraft.kind === 'edit') editingFood = formDraft.editingFood;
   else { searchQ[formDraft.key] = formDraft.q; if (formDraft.scan) scanDraft[formDraft.key] = formDraft.scan; }
+  // A form typed in the add sheet reopens the sheet for the same meal.
+  if (formDraft.key?.startsWith('eat-')) { sheet = { id: formDraft.key.slice(4), meal: formDraft.meal || autoMeal(), mode: 'search' }; addMeal = sheet.meal; }
 }
+try {
+  const sv = JSON.parse(localStorage.getItem(SHEET_KEY));
+  if (sv && !sheet && sv.page === pageKey() && Date.now() - sv.at < DRAFT_TTL) { sheet = { id: sv.id, meal: sv.meal, mode: 'result', desc: sv.desc, result: sv.result }; addMeal = sv.meal; }
+} catch {}
 if (configured && pin) listen();
 render();
 </script>
