@@ -59,9 +59,8 @@ h3{font-size:15px;margin:0 0 8px}
 .tabs button.on .tdot{opacity:1}
 .grid{display:grid;gap:14px}
 /* Today page: a one-screen dashboard on wide screens (targets + chart on the left, the day's food on the right). */
-.today-grid{display:grid;gap:14px;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:auto 1fr;grid-template-areas:"rings eaten" "intake eaten";align-items:start}
-.ta-rings{grid-area:rings}.ta-eaten{grid-area:eaten}.ta-intake{grid-area:intake}
-@media (max-width:680px){.today-grid{grid-template-columns:minmax(0,1fr);grid-template-rows:none;grid-template-areas:"rings" "eaten" "intake"}}
+.today-grid{display:grid;gap:14px;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
+@media (max-width:680px){.today-grid{grid-template-columns:minmax(0,1fr)}}
 .g2{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
 .person-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
@@ -113,8 +112,8 @@ details.prog .stats{margin-bottom:0;grid-template-columns:repeat(3,1fr)}
 details.prog .stat .v{font-size:17px}
 .chart-box.tall{height:380px}
 .chart-box.short{height:220px}
-.subtabs{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--border);margin:0 0 16px;max-width:520px}
-.subtabs button{border:0;background:none;font:inherit;font-size:14.5px;color:var(--muted);padding:6px 2px 11px;cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent;margin-bottom:-1px;text-align:center}
+.subtabs{display:grid;grid-auto-flow:column;grid-auto-columns:auto;justify-content:space-between;gap:8px;border-bottom:1px solid var(--border);margin:0 0 16px;max-width:560px}
+.subtabs button{border:0;background:none;font:inherit;font-size:14.5px;color:var(--muted);padding:6px 4px 11px;cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent;margin-bottom:-1px;text-align:center}
 .subtabs button.on{color:var(--text);font-weight:600;border-bottom-color:var(--c)}
 .weighform{display:grid;grid-template-columns:1.3fr 1fr 1fr auto;gap:8px;align-items:end}
 @media (max-width:560px){.weighform{grid-template-columns:1fr 1fr auto}.weighform .wd{grid-column:1/-1}}
@@ -1520,7 +1519,7 @@ function intakeCard(id) {
   // Same days measured against TDEE (target + planned deficit): what actually happened to the energy balance.
   const net = logged.length ? Math.round(bal - tdeeGap(S.people[id]) * logged.length) : null;
   const seg = `<div class="seg">${[[7, '7 วัน'], [30, '30 วัน']].map(([k, l]) => `<button data-range="${k}" class="${n === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
-  return `<div class="card ta-intake">
+  return `<div class="card">
     <div class="person-head"><h2 style="margin:0">📊 แคลอรี ${n} วันล่าสุด</h2>${seg}</div>
     <div class="intake-sum">
       <div><span class="l">รวม ${logged.length}/${n} วัน</span>${logged.length
@@ -1636,7 +1635,7 @@ function drawIntake(id) {
         if (!els.length) return;
         const d = days[els[0].index].d;
         // Re-render after Chart.js finishes this event; destroying the chart inside its own handler throws and can stall later charts.
-        setTimeout(() => { goDay(d); render(); document.querySelector('.daynav')?.scrollIntoView({ block: 'center', behavior: 'smooth' }); });
+        setTimeout(() => { goDay(d); sub = 'today'; render(); window.scrollTo(0, 0); });
       },
       onHover: (ev, els) => { ev.native.target.style.cursor = els.length ? 'pointer' : 'default'; },
       plugins: {
@@ -1663,7 +1662,7 @@ function drawIntake(id) {
   }));
 }
 
-const SUBS = [['today', 'วันนี้'], ['weight', 'น้ำหนัก'], ['goals', 'เป้าหมาย'], ['profile', 'ข้อมูลส่วนตัว']];
+const SUBS = [['today', 'วันนี้'], ['stats', 'สถิติ'], ['weight', 'น้ำหนัก'], ['goals', 'เป้าหมาย'], ['profile', 'ข้อมูลส่วนตัว']];
 let sub = 'today';
 
 function personPage(id) {
@@ -1674,8 +1673,8 @@ function personPage(id) {
     <div class="today-grid">
       <div class="card ta-rings"><h2>🍽️ ควรกินต่อวัน${viewDay() === todayStr() ? '' : ` <span class="muted" style="font-weight:400">· ${dayLabel(viewDay())}</span>`}</h2>${energyBlock(id, viewDay())}</div>
       <div class="card ta-eaten"><h2>🥗 ${viewDay() === todayStr() ? 'วันนี้กินไปแล้ว' : 'กินไปแล้ว'}</h2>${eatenBlock(id)}</div>
-      ${intakeCard(id)}
     </div>`;
+  else if (sub === 'stats') body = intakeCard(id);
   else if (sub === 'weight') {
     const rows = e.map((x, i) => {
       const prev = e[i + 1], d = prev ? x.weight - prev.weight : null;
