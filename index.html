@@ -241,6 +241,11 @@ body.noscroll{overflow:hidden}
 .ai-res .aiparts{background:var(--surface-2);border-radius:12px;padding:8px 12px;font-size:13px}
 .adjbox{display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:14px;border:1.5px solid var(--mc);background:color-mix(in srgb, var(--mc) 8%, var(--surface))}
 .adjbox textarea{font:inherit;font-size:16px;padding:10px 12px;border-radius:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);resize:vertical}
+.rescale{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+.rescale button{font:inherit;font-size:13px;padding:5px 10px;border-radius:99px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);cursor:pointer}
+.cfrow{display:flex;gap:8px;align-items:center}
+.cfrow .amt{flex:1;font-size:20px;font-weight:600;height:48px;text-align:center}
+.cfrow select{flex:1;height:48px}
 .qfix{display:flex;flex-wrap:wrap;gap:6px}
 .qfix button{font:inherit;font-size:13px;padding:6px 10px;border-radius:99px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer}
 .linkbtn{border:0;background:none;color:var(--muted);font:inherit;font-size:13px;text-decoration:underline;cursor:pointer;padding:2px}
@@ -761,6 +766,7 @@ const nutritionFields = (v = {}) => {
         <optgroup label="แปลงหน่วยได้">${MEAS.map(u => `<option value="${u.k}" ${unit === u.k ? 'selected' : ''}>${u.n}</option>`).join('')}</optgroup>
         <optgroup label="หน่วยนับ">${COUNT.map(n => `<option value="${n}" ${unit === n ? 'selected' : ''}>${n}</option>`).join('')}</optgroup>
       </select></label>
+      <div class="wide rescale" ${counted ? 'hidden' : ''}><span>แปลงค่าเป็นต่อ</span>${[['tsp', '1 ช้อนชา'], ['tbsp', '1 ช้อนโต๊ะ'], ['cup', '1 ถ้วยตวง'], ['100', '100 ก./มล.']].map(([k, l]) => `<button type="button" data-rescale="${k}">${l}</button>`).join('')}</div>
       <label class="cw" ${counted ? '' : 'hidden'}>≈ กรัม<input name="g" type="number" step="any" min="0" value="${esc(counted && v.g ? v.g : '')}" placeholder="ไม่บังคับ"></label>
       <label>โปรตีน ก.<input name="p" type="number" step="0.1" min="0" value="${esc(v.p ?? '')}"></label>
       <label>คาร์บ ก.<input name="c" type="number" step="0.1" min="0" value="${esc(v.c ?? '')}"></label>
@@ -982,6 +988,7 @@ async function scanInto(root, key, pick) {
   const mine = foodList().find(f => f.barcode === code);
   if (mine) {
     if (root.dataset.mode === 'manage') { editingFood = mine.id; render(); window.scrollTo(0, 0); }
+    else if (sheet && root.dataset.mode === 'eat') { searchQ[key] = ''; openConfirm(mine.id); }
     else { searchQ[key] = ''; pick(mine.id); }
     return;
   }
@@ -1374,6 +1381,17 @@ function sheetHtml(id) {
         <button class="linkbtn" data-aiedit>หรือแก้ตัวเลขเอง</button></div>`
       : `<button class="bigact" data-aiadjust>✏️ ปรับให้ตรงกับที่กิน</button>`}
       <button class="btn" data-aisave>✓ บันทึกลง${mn} · ${fmt(r.kcal)} kcal</button></div>`;
+  } else if (sheet.mode === 'confirm' && getFood(sheet.foodId)) {
+    const f = getFood(sheet.foodId), us = unitsOf(f), n = confirmNumbers(f, sheet.pick);
+    body = `<div class="ai-res">
+      <div class="muted" style="font-size:13px">▥ พบใน My Food${f.barcode ? ` · ${esc(f.barcode)}` : ''}</div>
+      <div class="ai-name">${esc(f.name)}</div>
+      <div class="cfrow"><input class="amt" id="cfAmt" type="number" inputmode="decimal" step="any" min="0" value="${num(sheet.pick.amount)}">
+        <select id="cfUnit" data-prev="${sheet.pick.unit}">${us.map(u => `<option value="${u.k}" ${u.k === sheet.pick.unit ? 'selected' : ''}>${esc(u.n)}</option>`).join('')}</select></div>
+      <div class="ai-kcal"><span id="cfKcal">${n.kcal}</span> <small>kcal</small></div>
+      <div class="muted" id="cfMac">${n.mac}</div>
+      <button class="btn" data-cfsave>✓ บันทึกลง${mn}</button>
+      <button class="ghost wide2" data-cfback>กลับไปค้นหา</button></div>`;
   } else if (sheet.mode === 'aitext') body = `<label class="ai-ask">บอก AI ว่ากินอะไร<textarea id="aiAsk" rows="3" placeholder="ข้าวมันไก่ต้ม พิเศษ ไม่กินน้ำซุป">${esc(sheet.desc || '')}</textarea></label>
       <button class="btn" data-aiasksend>✨ ให้ AI ประเมิน</button>
       <button class="ghost wide2" data-aiback>กลับ</button>`;
@@ -1383,6 +1401,23 @@ function sheetHtml(id) {
   return `<div class="sheet-bg" data-sheetbg data-mc="${sheet.meal}"><div class="sheet" role="dialog" aria-modal="true" aria-label="เพิ่มอาหาร">${head}${err}${body}</div></div>`;
 }
 const AI_QUICK_FIX = ['กินครึ่งเดียว', 'กินไป 3/4', 'ไม่กินน้ำซุป', 'น้ำจิ้ม/ซอสแค่ 1 ช้อน', 'ไม่ได้กินข้าว/เส้น'];
+// Usual portion for a food: the amount last logged for it (remembered per My Food item), else its own serving.
+function usualPick(f) {
+  const us = unitsOf(f);
+  if (f.last && us.some(u => u.k === f.last.unit) && f.last.amount > 0) return { ...f.last };
+  const sv = servingOf(f);
+  return { amount: +sv.amount || 1, unit: us.some(u => u.k === sv.unit) ? sv.unit : us[0].k };
+}
+function openConfirm(fid) {
+  const f = getFood(fid);
+  if (!f || !sheet) return;
+  Object.assign(sheet, { mode: 'confirm', foodId: fid, pick: usualPick(f), err: null });
+  render();
+}
+function confirmNumbers(f, pick) {
+  const u = unitsOf(f).find(x => x.k === pick.unit), q = u ? pick.amount * u.r : 0, r1 = v => num(Math.round((+v || 0) * q * 10) / 10);
+  return { kcal: fmt(foodKcal(f) * q), mac: `P ${r1(f.p)} · C ${r1(f.c)} · F ${r1(f.f)}` };
+}
 const aiWaitText = () => { const s = sheet?.t0 ? Math.floor((Date.now() - sheet.t0) / 1000) : 0; return `${s} วินาที · ปกติใช้ 10–30 วินาที`; };
 setInterval(() => { const el = document.querySelector('[data-aisec]'); if (el) el.textContent = aiWaitText(); }, 1000);
 
@@ -2025,7 +2060,27 @@ function bind() {
     eat(lineFor(fid, f, o));
     sharedWrite({ [`uses.${fid}`]: increment(1) });
   };
-  function eatPick(fid, o) { const f = getFood(fid); if (f) eatFood(fid, f, o); }
+  // + เพิ่ม logs the usual portion (last amount used for that food, else its serving).
+  function eatPick(fid, o) { const f = getFood(fid); if (f) eatFood(fid, f, o || usualPick(f)); }
+  const cfAmt = document.getElementById('cfAmt'), cfUnit = document.getElementById('cfUnit');
+  if (cfAmt) {
+    const f = getFood(sheet.foodId);
+    const refresh = () => { const n = confirmNumbers(f, sheet.pick); document.getElementById('cfKcal').textContent = n.kcal; document.getElementById('cfMac').textContent = n.mac; };
+    cfAmt.oninput = () => { sheet.pick.amount = +cfAmt.value || 0; refresh(); };
+    // Switching unit keeps the same portion (e.g. 1 ทัพพี → 60 กรัม).
+    cfUnit.onchange = () => {
+      const us = unitsOf(f), from = us.find(u => u.k === cfUnit.dataset.prev), to = us.find(u => u.k === cfUnit.value);
+      if (from && to && +cfAmt.value > 0) { const raw = +cfAmt.value * from.r / to.r; cfAmt.value = MEAS_BY[to.k] && to.k !== 'tsp' && to.k !== 'tbsp' ? Math.round(raw) : Math.round(raw * 10) / 10; }
+      cfUnit.dataset.prev = cfUnit.value; sheet.pick = { amount: +cfAmt.value || 0, unit: cfUnit.value }; refresh();
+    };
+    on('[data-cfsave]', () => {
+      if (!(sheet.pick.amount > 0)) { cfAmt.focus(); return; }
+      const fid = sheet.foodId, pk = { ...sheet.pick };
+      if (S.shared?.foods?.[fid] && !sharedError) sharedWrite({ [`foods.${fid}.last`]: pk });
+      eatFood(fid, f, pk);
+    });
+    on('[data-cfback]', () => { sheet.mode = 'search'; render(); });
+  }
   document.querySelectorAll('[data-uneat]').forEach(b => b.onclick = () => { p.log[day] = list().filter(x => x.id !== b.dataset.uneat); changed(); });
   const item = el => list().find(x => x.id === (el.dataset.amt || el.dataset.unit));
   document.querySelectorAll('[data-day]').forEach(b => b.onclick = () => {
@@ -2108,7 +2163,31 @@ document.addEventListener('click', async ev => {
 // The "≈ กรัม" field only matters for count units (จาน, ฟอง…); measurable units convert on their own.
 document.addEventListener('change', ev => {
   if (ev.target.name !== 'unit' || !ev.target.closest('.foodform')) return;
-  ev.target.closest('.foodform').querySelector('.cw').hidden = !!MEAS_BY[ev.target.value];
+  const form = ev.target.closest('.foodform'), meas = !!MEAS_BY[ev.target.value];
+  form.querySelector('.cw').hidden = meas;
+  form.querySelector('.rescale').hidden = !meas;
+});
+
+// Label values often come per 100 ml/g; these chips restate the whole food per a usual portion
+// (e.g. soy sauce per 1 tsp), scaling protein, carbs, fat and kcal by the volume ratio.
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('[data-rescale]');
+  if (!b) return;
+  const form = b.closest('form.foodform'), el = form.elements, from = MEAS_BY[el.unit.value], amt = +el.amt.value || 0;
+  if (!from || !(amt > 0)) return;
+  const k = b.dataset.rescale, liquid = !['g', 'ladle'].includes(from.k);
+  const to = k === '100' ? MEAS_BY[liquid ? 'ml' : 'g'] : MEAS_BY[k], toAmt = k === '100' ? 100 : 1;
+  // Scale from unrounded per-ml values kept since the last rescale, so repeated taps don't drift; any manual edit resets them.
+  const N = ['p', 'c', 'f', 'kcal'], sig = () => ['amt', 'unit', ...N].map(n => el[n].value).join('|');
+  if (!form.rescaleBase || form.rescaleBase.sig !== sig()) {
+    const ml = amt * from.ml;
+    form.rescaleBase = { per: Object.fromEntries(N.filter(n => el[n].value !== '').map(n => [n, +el[n].value / ml])) };
+  }
+  const ml = toAmt * to.ml, r1 = v => Math.round(v * 10) / 10;
+  const set = (n, v) => { el[n].value = v; el[n].dispatchEvent(new Event(el[n].tagName === 'SELECT' ? 'change' : 'input', { bubbles: true })); };
+  for (const [n, v] of Object.entries(form.rescaleBase.per)) set(n, n === 'kcal' ? Math.round(v * ml) : r1(v * ml));
+  set('amt', toAmt); set('unit', to.k);
+  form.rescaleBase.sig = sig();
 });
 
 // ---------- AI nutrition lookup ----------
@@ -2314,6 +2393,7 @@ function restoreDraft() {
     if (c.kind === 'edit' ? c.editingFood !== formDraft.editingFood : c.key !== formDraft.key || c.q !== formDraft.q) continue;
     for (const [k, v] of Object.entries(formDraft.values)) if (form.elements[k]) form.elements[k].value = v;
     form.querySelector('.cw').hidden = !!MEAS_BY[form.elements.unit.value];
+    form.querySelector('.rescale').hidden = !MEAS_BY[form.elements.unit.value];
   }
 }
 ['input', 'change'].forEach(t => document.addEventListener(t, ev => {
