@@ -205,6 +205,7 @@ button.x:hover{color:var(--danger)}
 .formbtns{display:flex;gap:8px}
 .formbtns .btn{flex:1}
 .bcrow{display:flex;gap:8px}
+.aibtn{flex:none;border:0;border-radius:12px;background:var(--surface-2);color:var(--text);padding:0 12px;font:inherit;font-size:14px;cursor:pointer;white-space:nowrap}
 .airow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .airow .ainote{font-size:12px;color:var(--muted)}
 .bcrow .scanbtn{height:38px;width:42px;border-radius:9px}
@@ -622,7 +623,7 @@ const SCAN_ICON = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" s
 // A scanned barcode that wasn't in My Food waits here as a draft form until saved or a new search starts.
 const scanDraft = {};
 const foodSearch = (key, mode) => `<div class="search" data-search="${key}" data-mode="${mode}">
-    <div class="searchrow"><input type="search" placeholder="ค้นหาอาหาร" value="${esc(searchQ[key] || '')}" autocomplete="off"><button type="button" class="scanbtn" data-scan aria-label="สแกนบาร์โค้ด">${SCAN_ICON}</button></div>
+    <div class="searchrow"><input type="search" placeholder="ค้นหาอาหาร" value="${esc(searchQ[key] || '')}" autocomplete="off">${mode === 'eat' ? '<button type="button" class="aibtn" data-aisnap aria-label="ถ่ายรูปหรือเลือกรูปให้ AI ประเมิน">📷 AI</button>' : ''}<button type="button" class="scanbtn" data-scan aria-label="สแกนบาร์โค้ด">${SCAN_ICON}</button></div>
     <div class="results"></div>
   </div>`;
 
@@ -737,6 +738,7 @@ function bindSearch(key, { pick, add }) {
     const t = ev.target.closest('button');
     if (!t) return;
     if (t.hasAttribute('data-scan')) scanInto(root, key, pick);
+    else if (t.hasAttribute('data-aisnap')) aiSnap(root, key);
     else if (t.dataset.listview) { listView = t.dataset.listview; drawResults(root); }
     else if (t.hasAttribute('data-cancelnew')) { clearDraft(); searchQ[key] = ''; delete scanDraft[key]; pickOpen = null; input.value = ''; drawResults(root); }
     else if (t.hasAttribute('data-newitem')) { editingFood = 'new'; render(); window.scrollTo(0, 0); }
@@ -1966,9 +1968,13 @@ document.addEventListener('click', async ev => {
   if (photoP && !img) return;
   const desc = form.elements.name.value.trim();
   if (!desc && !img) { note.textContent = 'พิมพ์ชื่ออาหาร หรือเลือกรูปก่อน'; return; }
-  const btns = form.querySelectorAll('[data-ai],[data-aiphoto]');
+  runAi(form, desc, img);
+});
+
+async function runAi(form, desc, img) {
+  const note = form.querySelector('.ainote'), btns = form.querySelectorAll('[data-ai],[data-aiphoto]');
   btns.forEach(x => x.disabled = true);
-  note.textContent = 'กำลังถาม AI…';
+  note.textContent = img ? 'AI กำลังดูรูป…' : 'กำลังถาม AI…';
   try {
     const r = await aiNutrition(desc, img);
     if (!form.isConnected) return;
@@ -1978,7 +1984,21 @@ document.addEventListener('click', async ev => {
     console.warn(e);
     note.textContent = aiError(e);
   } finally { btns.forEach(x => x.disabled = false); }
-});
+}
+
+// 📷 AI on the day's search row: take or pick a photo, open the new-food form and let AI fill it.
+// Whatever is typed in the search box goes along as context (e.g. "กินครึ่งจาน").
+async function aiSnap(root, key) {
+  if (!aiKey() && !askAiKey()) return;
+  const img = await pickPhoto();
+  if (!img || !root.isConnected) return;
+  const desc = (searchQ[key] || '').trim();
+  scanDraft[key] = { v: { name: desc }, note: '📷 ประเมินจากรูปด้วย AI · ตรวจค่าก่อนบันทึก' };
+  searchQ[key] = ''; pickOpen = null; root.querySelector('input').value = '';
+  drawResults(root);
+  const form = root.querySelector('form.foodform');
+  if (form) runAi(form, desc, img);
+}
 document.getElementById('aiKeyBtn').onclick = () => { const had = aiKey(), k = askAiKey(); if (k !== had) alert(k ? 'บันทึก API key แล้ว' : 'ลบ API key แล้ว'); };
 
 // A half-filled food form survives switching apps: iOS may re-render or even reload the page meanwhile.
