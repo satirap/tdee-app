@@ -194,6 +194,9 @@ button.x:hover{color:var(--danger)}
 .toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:60;background:var(--text);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:14px;box-shadow:0 6px 20px rgba(0,0,0,.2);transition:opacity .4s;max-width:90vw}
 .toast.out{opacity:0}
 .ta-rings h2{display:flex;align-items:center;gap:6px}
+.ringtog{display:none!important}
+@media (max-width:560px){.ringtog{display:grid!important}}
+@media (min-width:561px){.edetail > summary{display:none!important}}
 .ringtog{margin-left:auto;display:grid;place-items:center;width:32px;height:32px;border:0;border-radius:50%;background:var(--surface-2);color:var(--muted);cursor:pointer;padding:0}
 .ringtog i{width:8px;height:8px;border:solid currentColor;border-width:0 1.8px 1.8px 0;transform:rotate(-135deg);margin-top:4px;transition:transform .2s}
 .ringtog.min i{transform:rotate(45deg);margin:0 0 4px}
@@ -1274,7 +1277,7 @@ function energyBlock(id, d = todayStr()) {
   const kcal = dayItems(p, d).length ? daySum(p, d, 'kcal') : p.days?.[d]?.kcal || 0, prot = daySum(p, d, 'p'), over = Math.round(kcal - m.kcal), protLeft = m.prot.g - prot;
   const tol = +p.tol || 50, hit = Math.abs(over) <= tol, tdee = m.kcal + tdeeGap(p);
   const kStatus = hit ? 'ถึงเป้า ✓' : over < 0 ? `เหลือ ${fmt(-over)}` : kcal <= tdee ? `+${fmt(over)} · ยังลดอยู่` : `+${fmt(over)} · พักลด`;
-  if (ringMin) {
+  if (ringMin && isPhone()) {
     // Folded: one kcal bar (eaten vs target; anything past the target in amber), tap to bring the rings back.
     const over = kcal > m.kcal, base = over ? m.kcal / kcal * 100 : kcal / m.kcal * 100;
     return `<button class="kbar" data-ringtoggle aria-label="แสดงวงแหวน">
@@ -1284,7 +1287,8 @@ function energyBlock(id, d = todayStr()) {
   }
   // The rings carry the day at a glance; the numbers and meal split fold away (state remembered on this device).
   let open = false;
-  try { open = localStorage.getItem('tdee-edetail') === '1'; } catch {}
+  try { const v = localStorage.getItem('tdee-edetail'); open = v === null ? !isPhone() : v === '1'; } catch {}
+  if (!isPhone()) open = true;
   return `${rings(m, kcal, prot, tol, tdee)}
     <details class="edetail" ${open ? 'open' : ''}><summary><span><i class="o">ดูรายละเอียด</i><i class="c">ซ่อนรายละเอียด</i></span></summary>
     <div class="ring-rows">
@@ -1511,6 +1515,8 @@ function aiFood(r) {
 }
 
 // Per-device folding: each meal group, and the rings card (folded = a single kcal bar).
+// Wide screens have room: the daily card stays fully open there; folding is a phone thing.
+const isPhone = () => matchMedia('(max-width:560px)').matches;
 const lsGet = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 let mealFold = lsGet('tdee-mealfold', {}), ringMin = lsGet('tdee-ringfold', true);
@@ -1537,16 +1543,19 @@ function mealGroups(p, d, items) {
     const its = items.filter(x => k ? x.meal === k : !MEALS.some(m => m[0] === x.meal));
     if (!k && !its.length) return '';
     const kc = its.reduce((t, y) => t + lineKcal(y), 0), sel = mealSel?.meal === k && k ? mealSel : null, fold = !sel && !!(k && its.length && mealFold[k]);
+    const oname = IDS.find(x => x !== S.tab) === 'ton' ? 'ต้น' : 'พัช';
     if (sel) return `<div class="mgroup selecting" data-mc="${k}">
-      <div class="mhead"><span class="mname">${ic} เลือกรายการที่จะรวมเป็นชุด</span></div>
+      <div class="mhead"><span class="mname">${ic} ${sel.mode === 'copy' ? `เลือกรายการที่จะคัดลอกไปให้${oname}` : 'เลือกรายการที่จะรวมเป็นชุด'}</span></div>
       ${its.map(x => `<button class="it selrow${sel.ids.has(x.id) ? ' on' : ''}" data-selitem="${x.id}"><i class="ck" aria-hidden="true"></i><span class="nm">${esc(x.name)}</span><span class="kc">${fmt(lineKcal(x))} <small>kcal</small></span></button>`).join('')}
-      <div class="selbar"><input id="selName" value="${esc(sel.name)}" placeholder="ชื่อชุด" autocomplete="off">
-        <button class="btn" data-selsave ${sel.ids.size < 2 ? 'disabled' : ''}>🍽 รวมเป็นชุด${sel.ids.size ? ` (${sel.ids.size})` : ''}</button>
+      <div class="selbar">${sel.mode === 'copy'
+        ? `<button class="btn" data-selcopy ${sel.ids.size ? '' : 'disabled'} style="background:${C(IDS.find(x => x !== S.tab))}">→ คัดลอกไปให้${oname}${sel.ids.size ? ` (${sel.ids.size})` : ''}</button>`
+        : `<input id="selName" value="${esc(sel.name)}" placeholder="ชื่อชุด" autocomplete="off">
+        <button class="btn" data-selsave ${sel.ids.size < 2 ? 'disabled' : ''}>🍽 รวมเป็นชุด${sel.ids.size ? ` (${sel.ids.size})` : ''}</button>`}
         <button class="ghost" data-selcancel>ยกเลิก</button></div>
     </div>`;
     return `<div class="mgroup${fold ? ' fold' : ''}" data-mealslot="${k}">
       <div class="mhead"${k && its.length ? ` data-mfold="${k}"` : ''}><span class="mleft"><span class="mname">${ic} ${n}${fold ? `<em> · ${its.length} รายการ</em>` : ''}</span>
-        ${k && its.length && !fold ? (o => `<button class="micon" data-copymeal="${k}" style="color:${C(o)};background:color-mix(in srgb, ${C(o)} 14%, transparent)" title="คัดลอกมื้อนี้ไปให้${o === 'ton' ? 'ต้น' : 'พัช'}" aria-label="คัดลอกมื้อนี้ไปให้${o === 'ton' ? 'ต้น' : 'พัช'}">${TO_PERSON_ICON}</button>`)(IDS.find(x => x !== S.tab)) : ''}
+        ${k && its.length && !fold ? (o => `<button class="micon" data-copymeal="${k}" style="color:${C(o)};background:color-mix(in srgb, ${C(o)} 14%, transparent)" title="เลือกรายการคัดลอกไปให้${o === 'ton' ? 'ต้น' : 'พัช'}" aria-label="เลือกรายการคัดลอกไปให้${o === 'ton' ? 'ต้น' : 'พัช'}">${TO_PERSON_ICON}</button>`)(IDS.find(x => x !== S.tab)) : ''}
         ${k && its.length >= 2 && !fold ? `<button class="micon" data-savemeal="${k}" title="เลือกรายการรวมเป็นชุด" aria-label="เลือกรายการรวมเป็นชุด">${PLATE_ICON}</button>` : ''}</span>
         <span class="mright">${its.length ? `<b>${fmt(kc)} <small>kcal</small></b>` : '<span class="muted">–</span>'}
         ${fold ? `<button class="micon plus" data-addto="${k}" aria-label="เพิ่มอาหาร">+</button>` : ''}
@@ -2048,7 +2057,7 @@ function bind() {
     if (sharedError || !S.shared) { alert('ใช้ My Meal ไม่ได้ตอนนี้'); return; }
     const k = b.dataset.savemeal, mn = MEALS.find(x => x[0] === k)[1];
     const date = new Date(dayMs(day)).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', timeZone: 'UTC' });
-    mealSel = { meal: k, ids: new Set(), name: `${k === 's' ? mn : 'อาหาร' + mn} ${date}` }; openItem = null; render();
+    mealSel = { mode: 'combine', meal: k, ids: new Set(), name: `${k === 's' ? mn : 'อาหาร' + mn} ${date}` }; openItem = null; render();
   });
   const selName = document.getElementById('selName');
   if (selName) selName.oninput = () => { mealSel.name = selName.value; };
@@ -2070,20 +2079,26 @@ function bind() {
     changed();
     toast(`รวมเป็น “${name}” แล้ว · อยู่ใน My Meal ด้วย`);
   });
-  // Both eat the same thing: copy this meal's lines (fresh ids, same amounts and % eaten) into the other person's same meal and day.
+  // Both eat the same thing: pick lines (all ticked to start) and append copies to the other person's same meal and day.
+  // Fresh ids, same amounts and % eaten; their existing lines are never touched (deleting is manual).
   document.querySelectorAll('[data-copymeal]').forEach(b => b.onclick = () => {
-    const k = b.dataset.copymeal, other = IDS.find(x => x !== id), op = S.people[other];
+    const k = b.dataset.copymeal;
+    mealSel = { mode: 'copy', meal: k, ids: new Set(list().filter(x => x.meal === k).map(x => x.id)) }; openItem = null; render();
+  });
+  on('[data-selcopy]', () => {
+    const other = IDS.find(x => x !== id), op = S.people[other];
     if (!op || !loaded.has(other)) { alert('ยังโหลดข้อมูลอีกคนไม่เสร็จ ลองใหม่อีกครั้ง'); return; }
-    const its = list().filter(x => x.meal === k), mn = MEALS.find(x => x[0] === k)[1], oname = other === 'ton' ? 'ต้น' : 'พัช';
-    const olist = ((op.log ||= {})[day] ||= []), has = olist.filter(x => x.meal === k).length;
-    if (!confirm(`คัดลอก${mn} ${its.length} รายการ ไปให้${oname}?${has ? `\n(${mn}ของ${oname}มีอยู่แล้ว ${has} รายการ · จะเพิ่มต่อท้าย ไม่ลบของเดิม)` : ''}`)) return;
+    const its = list().filter(x => mealSel.ids.has(x.id)), mn = MEALS.find(x => x[0] === mealSel.meal)[1], oname = other === 'ton' ? 'ต้น' : 'พัช';
+    if (!its.length) return;
+    const olist = ((op.log ||= {})[day] ||= []);
     if (!olist.length && op.days?.[day]?.kcal) olist.push({ id: uid(), name: 'ยอดที่บันทึกไว้ก่อนหน้า', p: 0, c: 0, f: 0, kcal: op.days[day].kcal, qty: 1, amount: 1, unit: 's' });
     const copy = x => ({ ...structuredClone(x), id: uid(), ...(x.parts ? { parts: x.parts.map(y => ({ ...structuredClone(y), id: uid() })) } : {}) });
     olist.push(...its.map(copy));
     recordDay(op, day, true);
     for (const x of its) if (x.foodId) sharedWrite({ [`uses.${x.foodId}`]: increment(1) });
+    mealSel = null;
     save(); render();
-    toast(`คัดลอก${mn}ไปให้${oname}แล้ว`);
+    toast(`คัดลอก ${its.length} รายการ ไป${mn}ของ${oname}แล้ว`);
   });
   document.querySelectorAll('[data-ungroup]').forEach(b => b.onclick = () => {
     const all = list(), i = all.findIndex(x => x.id === b.dataset.ungroup);
