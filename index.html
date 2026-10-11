@@ -1316,8 +1316,11 @@ function macroSettings(id) {
 
 // One logged/meal line: name, free amount, and a unit picker that converts between the food's units.
 // Logged items carry a meal slot; older items without one show under "ไม่ระบุมื้อ" until moved.
-const MEALS = [['b', 'เช้า', '🌅'], ['l', 'กลางวัน', '☀️'], ['d', 'เย็น', '🌙'], ['s', 'ของว่าง', '🍪']];
-const autoMeal = () => { const h = new Date().getHours(); return h >= 4 && h < 11 ? 'b' : h >= 11 && h < 15 ? 'l' : h >= 17 && h < 22 ? 'd' : 's'; };
+// Three meals only: every bite belongs to breakfast, lunch or dinner. Older lines saved as ของว่าง ('s')
+// still count and show under "ไม่ระบุมื้อ", where they can be moved.
+const MEALS = [['b', 'เช้า', '🌅'], ['l', 'กลางวัน', '☀️'], ['d', 'เย็น', '🌙']];
+const knownMeal = k => MEALS.some(m => m[0] === k) ? k : autoMeal();
+const autoMeal = () => { const h = new Date().getHours(); return h >= 4 && h < 11 ? 'b' : h >= 11 && h < 16 ? 'l' : 'd'; };
 let addMeal = null, openItem = null, dragEnded = 0, flashId = null;
 const curMeal = () => addMeal || autoMeal();
 
@@ -2626,11 +2629,11 @@ if (formDraft?.page === pageKey()) {
   if (formDraft.kind === 'edit') editingFood = formDraft.editingFood;
   else { searchQ[formDraft.key] = formDraft.q; if (formDraft.scan) scanDraft[formDraft.key] = formDraft.scan; }
   // A form typed in the add sheet reopens the sheet for the same meal.
-  if (formDraft.key?.startsWith('eat-')) { sheet = { id: formDraft.key.slice(4), meal: formDraft.meal || autoMeal(), mode: 'search' }; addMeal = sheet.meal; }
+  if (formDraft.key?.startsWith('eat-')) { sheet = { id: formDraft.key.slice(4), meal: knownMeal(formDraft.meal), mode: 'search' }; addMeal = sheet.meal; }
 }
 try {
   const sv = JSON.parse(localStorage.getItem(SHEET_KEY));
-  if (sv && !sheet && sv.page === pageKey() && Date.now() - sv.at < DRAFT_TTL) { sheet = { id: sv.id, meal: sv.meal, mode: 'result', desc: sv.desc, result: sv.result }; addMeal = sv.meal; }
+  if (sv && !sheet && sv.page === pageKey() && Date.now() - sv.at < DRAFT_TTL) { sheet = { id: sv.id, meal: knownMeal(sv.meal), mode: 'result', desc: sv.desc, result: sv.result }; addMeal = sv.meal; }
 } catch {}
 if (configured && pin) listen();
 render();
