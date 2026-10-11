@@ -1139,7 +1139,7 @@ function render() {
   } else {
     app.innerHTML = personPage(S.tab);
     drawChart('chartOne', [S.tab]);
-    drawIntake(S.tab, 7); drawIntake(S.tab, 30);
+    drawIntake(S.tab, 7); drawIntake(S.tab, 30); drawProtein(S.tab, 7); drawProtein(S.tab, 30);
     drawFat(S.tab);
   }
   bind();
@@ -1766,6 +1766,103 @@ function drawFat(id) {
 
 // Bars fill toward a soft "track" at each day's target, so under-target days read as a gauge and over-target days
 // break through it. Gradient fills, kcal labels on top (7-day view), and the selected day's label emphasised.
+// Protein tracking: grams eaten per logged day against today's protein goal (days with no food list are left out).
+const proteinDays = (p, n) => lastDays(p, n).map(x => ({ d: x.d, g: dayItems(p, x.d).length ? Math.round(daySum(p, x.d, 'p')) : null }));
+function proteinCard(id, n) {
+  const p = S.people[id], goal = Math.round(macros(p)?.prot.g || 0), days = proteinDays(p, n).filter(x => x.g != null);
+  const hit = days.filter(x => x.g >= goal).length, avg = days.length ? days.reduce((t, x) => t + x.g, 0) / days.length : null;
+  return `<div class="card">
+    <h2>🥩 โปรตีน ${n === 7 ? '7 วันล่าสุด' : 'ย้อนหลัง 30 วัน'}</h2>
+    <div class="intake-sum">
+      <div><span class="l">ถึงเป้า</span>${days.length ? `<b class="${hit === days.length ? 'good' : ''}">${hit}/${days.length}</b><small>วัน</small>` : '<b class="muted">–</b>'}</div>
+      <div><span class="l">เฉลี่ยต่อวัน</span>${avg == null ? '<b class="muted">–</b>' : `<b>${fmt(avg)}</b><small>ก.</small>`}</div>
+      <div><span class="l">┄ เป้าต่อวัน</span><b class="lim">${fmt(goal)}</b><small>ก.</small></div>
+    </div>
+    <div class="chart-box short"><canvas id="protChart${n}"></canvas></div>
+  </div>`;
+}
+function drawProtein(id, n) {
+  const el = document.getElementById('protChart' + n);
+  if (!el || !window.Chart) return;
+  const p = S.people[id], goal = Math.round(macros(p)?.prot.g || 0), days = proteinDays(p, n), sel = viewDay();
+  const prot = css('--prot'), muted = css('--muted'), strong = css('--text'), track = css('--surface-2'), surface = css('--surface'), border = css('--border');
+  const WD = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+  const label = d => { const t = new Date(dayMs(d)); return n === 7 ? [WD[t.getUTCDay()], String(t.getUTCDate())] : String(t.getUTCDate()); };
+  const top = Math.max(1, goal, ...days.map(x => x.g || 0));
+  // Days that reach the goal are solid; days short of it are a lighter shade of the same green.
+  const shade = x => x.g >= goal ? prot : prot + '73';
+  const fill = (ctx, base) => {
+    const a = ctx.chart.chartArea;
+    if (!a) return base;
+    const g = ctx.chart.ctx.createLinearGradient(0, a.top, 0, a.bottom);
+    g.addColorStop(0, base); g.addColorStop(1, base.length > 7 ? base : base + '59');
+    return g;
+  };
+  const plugins = [{
+    id: 'protGoal',
+    afterDatasetsDraw(chart) {
+      const { ctx, chartArea: a, scales: { y } } = chart, py = y.getPixelForValue(goal);
+      ctx.save(); ctx.strokeStyle = strong; ctx.globalAlpha = .55; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
+      ctx.beginPath(); ctx.moveTo(a.left, py); ctx.lineTo(a.right, py); ctx.stroke(); ctx.restore();
+    }
+  }, {
+    id: 'protLabels',
+    afterDatasetsDraw(chart) {
+      if (n !== 7) return;
+      const { ctx } = chart, bars = chart.getDatasetMeta(1).data, tracks = chart.getDatasetMeta(0).data;
+      ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+      days.forEach((x, i) => {
+        if (x.g == null || !bars[i]) return;
+        ctx.font = `${x.d === sel ? 700 : 600} 11px "IBM Plex Sans Thai", sans-serif`;
+        ctx.fillStyle = x.g >= goal ? prot : x.d === sel ? strong : muted;
+        ctx.fillText(fmt(x.g), bars[i].x, Math.min(bars[i].y, tracks[i]?.y ?? bars[i].y) - 5);
+      });
+      ctx.restore();
+    }
+  }];
+  const common = { grouped: false, borderSkipped: false, borderRadius: n === 7 ? 10 : 5, barPercentage: n === 7 ? .62 : .78, categoryPercentage: .92, maxBarThickness: 36 };
+  charts.push(new Chart(el, {
+    type: 'bar', plugins,
+    data: {
+      labels: days.map(x => label(x.d)),
+      datasets: [
+        { ...common, track: true, order: 2, data: days.map(() => goal), backgroundColor: track, hoverBackgroundColor: track },
+        { ...common, order: 1, data: days.map(x => x.g), backgroundColor: ctx => fill(ctx, shade(days[ctx.dataIndex])), hoverBackgroundColor: ctx => shade(days[ctx.dataIndex]) }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      layout: { padding: { top: n === 7 ? 20 : 6 } },
+      onClick: (_, els) => {
+        if (!els.length) return;
+        const d = days[els[0].index].d;
+        setTimeout(() => { goDay(d); sub = 'today'; render(); window.scrollTo(0, 0); });
+      },
+      onHover: (ev, els) => { ev.native.target.style.cursor = els.length ? 'pointer' : 'default'; },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: surface, titleColor: strong, bodyColor: strong, borderColor: border, borderWidth: 1,
+          padding: 10, cornerRadius: 10, displayColors: false, caretSize: 5,
+          titleFont: { family: 'IBM Plex Sans Thai', weight: '600' }, bodyFont: { family: 'IBM Plex Sans Thai' },
+          filter: it => !it.dataset.track && it.raw != null,
+          callbacks: {
+            title: it => new Date(dayMs(days[it[0].dataIndex].d)).toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'UTC' }),
+            label: it => { const g = days[it.dataIndex].g; return [`โปรตีน ${fmt(g)} ก.`, g >= goal ? 'ถึงเป้า ✓' : `ขาด ${fmt(goal - g)} ก. · เป้า ${fmt(goal)}`]; }
+          }
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, border: { display: false },
+          ticks: { autoSkip: true, maxRotation: 0, maxTicksLimit: n === 7 ? 7 : 10,
+            color: ctx => days[ctx.index]?.d === sel ? strong : muted,
+            font: ctx => ({ family: 'IBM Plex Sans Thai', size: 11, weight: days[ctx.index]?.d === sel ? '700' : '400' }) } },
+        y: { display: false, beginAtZero: true, suggestedMax: top * 1.08 }
+      }
+    }
+  }));
+}
+
 function drawIntake(id, n) {
   const el = document.getElementById('intakeChart' + n);
   if (!el || !window.Chart) return;
@@ -1876,7 +1973,7 @@ function personPage(id) {
       <div class="card ta-rings"><h2>🍽️ ควรกินต่อวัน${viewDay() === todayStr() ? '' : ` <span class="muted" style="font-weight:400">· ${dayLabel(viewDay())}</span>`}<button class="ringtog${ringMin ? ' min' : ''}" data-ringtoggle aria-label="${ringMin ? 'แสดงวงแหวน' : 'ย่อเป็นแถบ'}"><i></i></button></h2>${energyBlock(id, viewDay())}</div>
       <div class="card ta-eaten"><h2>🥗 ${viewDay() === todayStr() ? 'วันนี้กินไปแล้ว' : 'กินไปแล้ว'}</h2>${eatenBlock(id)}</div>
     </div>`;
-  else if (sub === 'stats') body = `<div class="grid">${intakeCard(id, 7)}${intakeCard(id, 30)}</div>`;
+  else if (sub === 'stats') body = `<div class="grid">${intakeCard(id, 7)}${intakeCard(id, 30)}${proteinCard(id, 7)}${proteinCard(id, 30)}</div>`;
   else if (sub === 'weight') {
     const rows = e.map((x, i) => {
       const prev = e[i + 1], d = prev ? x.weight - prev.weight : null;
