@@ -1139,7 +1139,7 @@ function render() {
   } else {
     app.innerHTML = personPage(S.tab);
     drawChart('chartOne', [S.tab]);
-    drawIntake(S.tab);
+    drawIntake(S.tab, 7); drawIntake(S.tab, 30);
     drawFat(S.tab);
   }
   bind();
@@ -1714,15 +1714,15 @@ function lastDays(p, n) {
   });
 }
 
-function intakeCard(id) {
-  const n = S.intakeRange, logged = lastDays(S.people[id], n).filter(x => x.kcal != null);
+// สถิติ TDEE: the last 7 days on top, the last 30 below (each with its own totals).
+function intakeCard(id, n) {
+  const logged = lastDays(S.people[id], n).filter(x => x.kcal != null);
   const bal = logged.reduce((s, x) => s + x.kcal - x.target, 0);
   const avg = logged.length ? logged.reduce((s, x) => s + x.kcal, 0) / logged.length : null;
   // Same days measured against TDEE (target + planned deficit): what actually happened to the energy balance.
   const net = logged.length ? Math.round(bal - tdeeGap(S.people[id]) * logged.length) : null;
-  const seg = `<div class="seg">${[[7, '7 วัน'], [30, '30 วัน']].map(([k, l]) => `<button data-range="${k}" class="${n === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
   return `<div class="card">
-    <div class="person-head"><h2 style="margin:0">📊 แคลอรี ${n} วันล่าสุด</h2>${seg}</div>
+    <h2>${n === 7 ? '📊 TDEE รายสัปดาห์ · 7 วันล่าสุด' : '📈 TDEE ย้อนหลัง 30 วัน'}</h2>
     <div class="intake-sum">
       <div><span class="l">รวม ${logged.length}/${n} วัน</span>${logged.length
         ? `<b class="${bal > 0 ? 'warn' : 'good'}">${bal > 0 ? '+' : 'ขาด '}${fmt(Math.abs(bal))}</b><small>${bal > 0 ? 'จากเป้า' : 'kcal'}</small>` : '<b class="muted">–</b>'}</div>
@@ -1732,7 +1732,7 @@ function intakeCard(id) {
     ${net == null ? '' : net < 0
       ? `<div class="tdee-line">สุทธิต่ำกว่า TDEE <b class="good">${fmt(-net)} kcal</b> · ≈ ไขมัน ${num(Math.round(-net / KCAL_PER_KG * 100) / 100)} กก.</div>`
       : `<div class="tdee-line">สุทธิเหนือ TDEE ${fmt(net)} kcal</div>`}
-    <div class="chart-box short"><canvas id="intakeChart"></canvas></div>
+    <div class="chart-box short"><canvas id="intakeChart${n}"></canvas></div>
   </div>`;
 }
 
@@ -1766,10 +1766,10 @@ function drawFat(id) {
 
 // Bars fill toward a soft "track" at each day's target, so under-target days read as a gauge and over-target days
 // break through it. Gradient fills, kcal labels on top (7-day view), and the selected day's label emphasised.
-function drawIntake(id) {
-  const el = document.getElementById('intakeChart');
+function drawIntake(id, n) {
+  const el = document.getElementById('intakeChart' + n);
   if (!el || !window.Chart) return;
-  const p = S.people[id], n = S.intakeRange, days = lastDays(p, n), sel = viewDay();
+  const p = S.people[id], days = lastDays(p, n), sel = viewDay();
   const muted = css('--muted'), strong = css('--text'), track = css('--surface-2'), good = css('--good'), bad = css('--warn'), surface = css('--surface'), border = css('--border');
   const nowTarget = Math.round(macros(p)?.kcal || 0);
   const tgt = x => x.target || nowTarget || 0;
@@ -1864,7 +1864,7 @@ function drawIntake(id) {
   }));
 }
 
-const SUBS = [['today', 'วันนี้'], ['stats', 'สถิติ'], ['weight', 'น้ำหนัก'], ['goals', 'เป้าหมาย'], ['profile', 'ข้อมูลส่วนตัว']];
+const SUBS = [['today', 'TDEE วันนี้'], ['stats', 'สถิติ TDEE'], ['weight', 'น้ำหนัก'], ['goals', 'เป้าหมาย'], ['profile', 'ข้อมูลส่วนตัว']];
 let sub = 'today';
 
 function personPage(id) {
@@ -1876,7 +1876,7 @@ function personPage(id) {
       <div class="card ta-rings"><h2>🍽️ ควรกินต่อวัน${viewDay() === todayStr() ? '' : ` <span class="muted" style="font-weight:400">· ${dayLabel(viewDay())}</span>`}<button class="ringtog${ringMin ? ' min' : ''}" data-ringtoggle aria-label="${ringMin ? 'แสดงวงแหวน' : 'ย่อเป็นแถบ'}"><i></i></button></h2>${energyBlock(id, viewDay())}</div>
       <div class="card ta-eaten"><h2>🥗 ${viewDay() === todayStr() ? 'วันนี้กินไปแล้ว' : 'กินไปแล้ว'}</h2>${eatenBlock(id)}</div>
     </div>`;
-  else if (sub === 'stats') body = intakeCard(id);
+  else if (sub === 'stats') body = `<div class="grid">${intakeCard(id, 7)}${intakeCard(id, 30)}</div>`;
   else if (sub === 'weight') {
     const rows = e.map((x, i) => {
       const prev = e[i + 1], d = prev ? x.weight - prev.weight : null;
@@ -2024,7 +2024,7 @@ function bind() {
   });
   document.querySelectorAll('[data-sub]').forEach(b => b.onclick = () => { sub = b.dataset.sub; render(); window.scrollTo(0, 0); });
   document.querySelectorAll('details[data-prog]').forEach(d => d.ontoggle = () => { openProg[d.dataset.prog] = d.open; });
-  document.querySelectorAll('[data-range]').forEach(b => b.onclick = () => { S.intakeRange = +b.dataset.range; save(); render(); });
+
   document.querySelectorAll('form[data-add]').forEach(f => f.onsubmit = ev => {
     ev.preventDefault();
     const p = S.people[f.dataset.add], fd = new FormData(f);
