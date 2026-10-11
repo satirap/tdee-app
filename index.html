@@ -359,7 +359,12 @@ table.log td{padding:7px 8px;border-bottom:1px solid var(--border);font-variant-
 .act{display:grid;grid-template-columns:1.4fr 1fr 1.6fr .8fr auto;gap:6px;align-items:end;padding:8px 0;border-bottom:1px dashed var(--border)}
 .act .dual{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .pf{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
-footer{margin-top:24px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:13px;color:var(--muted)}
+footer{margin-top:24px;font-size:13px;color:var(--muted)}
+.footbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+#setupBtn[aria-expanded="true"]{background:var(--surface-2)}
+.setup{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px;padding:12px;border-radius:14px;background:var(--surface);border:1px solid var(--border)}
+.setup span{flex:1 1 100%;font-size:12.5px}
+.importbtn{display:inline-flex;flex-direction:row;align-items:center;cursor:pointer;border:1px solid var(--border);border-radius:9px;padding:6px 12px;color:var(--text);font-size:15px}
 .hidden{display:none!important}
 [hidden]{display:none!important}
 .tag{font-size:10px;font-weight:600;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:0 4px;margin-left:6px;vertical-align:1px}
@@ -419,8 +424,9 @@ button:focus:not(:focus-visible){outline:none}
   /* Cards read like grouped app sections */
   .card{border-color:transparent;border-radius:18px;padding:16px;box-shadow:0 1px 2px rgba(0,0,0,.04),0 4px 14px rgba(0,0,0,.04)}
   button.btn:active,button.ghost:active,.bigact:active,.addin:active,.res-main:active{transform:scale(.98)}
-  footer{justify-content:center;margin-top:28px}
-  footer span{flex:1 1 100%;text-align:center}
+  footer{margin-top:28px}
+  .footbar,.setup{justify-content:center}
+  .setup span{text-align:center}
 }
 </style>
 </head>
@@ -442,11 +448,16 @@ button:focus:not(:focus-visible){outline:none}
   </header>
   <main id="app"></main>
   <footer id="footer" class="hidden">
-    <button class="ghost" id="logoutBtn">🔒 ล็อก</button>
-    <button class="ghost" id="aiKeyBtn">✨ AI key</button>
-    <button class="ghost" id="exportBtn">⬇︎ Export ข้อมูล (JSON)</button>
-    <label class="ghost" style="flex-direction:row;cursor:pointer;border:1px solid var(--border);border-radius:9px;padding:6px 12px;color:var(--text);font-size:15px">⬆︎ Import<input type="file" id="importFile" accept=".json" hidden></label>
-    <span>ข้อมูลซิงก์ผ่าน Firebase · Export ไว้สำรองเป็นระยะ</span>
+    <div class="footbar">
+      <button class="ghost" id="logoutBtn">🔒 ล็อก</button>
+      <button class="ghost" id="setupBtn" aria-expanded="false" aria-controls="setupPanel">⚙️ App Setup</button>
+    </div>
+    <div class="setup" id="setupPanel" hidden>
+      <button class="ghost" id="aiKeyBtn">✨ AI key</button>
+      <button class="ghost" id="exportBtn">⬇︎ Export ข้อมูล (JSON)</button>
+      <label class="ghost importbtn">⬆︎ Import<input type="file" id="importFile" accept=".json" hidden></label>
+      <span>ข้อมูลซิงก์ผ่าน Firebase · Export ไว้สำรองเป็นระยะ</span>
+    </div>
   </footer>
 </div>
 
@@ -2509,6 +2520,13 @@ async function runAi(form, desc, img, fix) {
 }
 
 
+document.getElementById('setupBtn').onclick = () => {
+  const b = document.getElementById('setupBtn'), panel = document.getElementById('setupPanel'), open = panel.hidden;
+  panel.hidden = !open; b.setAttribute('aria-expanded', String(open));
+  // Bring the whole panel into view, clear of the phone's bottom tab bar.
+  if (open) { const nav = document.getElementById('tabs').getBoundingClientRect(), bar = nav.top > innerHeight / 2 ? innerHeight - nav.top : 0;
+    const gap = panel.getBoundingClientRect().bottom - (innerHeight - bar - 12); if (gap > 0) window.scrollBy({ top: gap, behavior: 'smooth' }); }
+};
 document.getElementById('aiKeyBtn').onclick = () => { const had = aiKey(), k = askAiKey(); if (k !== had) alert(k ? 'บันทึก API key แล้ว' : 'ลบ API key แล้ว'); };
 
 // A half-filled food form survives switching apps: iOS may re-render or even reload the page meanwhile.
