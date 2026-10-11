@@ -167,7 +167,25 @@ button.x:hover{color:var(--danger)}
 .it .l1{justify-content:flex-start}
 .it .l1 .kc{margin-left:auto}
 
-.mhead{display:flex;justify-content:space-between;align-items:baseline;padding:12px 2px 2px;font-size:13px;font-weight:600;color:var(--muted)}
+.mhead{display:flex;justify-content:space-between;align-items:center;padding:10px 2px 2px;font-size:13px;font-weight:600;color:var(--muted);min-height:34px}
+.mhead[data-mfold]{cursor:pointer;-webkit-user-select:none;user-select:none}
+.mhead .mname em{font-style:normal;font-weight:500;color:var(--muted)}
+.mhead .mright{display:flex;align-items:center;gap:8px}
+.micon{display:grid;place-items:center;width:30px;height:30px;border:0;border-radius:50%;background:color-mix(in srgb, var(--mc) 14%, transparent);color:var(--mc);cursor:pointer;font:inherit;font-size:19px;font-weight:600;line-height:1;padding:0}
+.mchev{width:8px;height:8px;border:solid var(--mc);border-width:0 1.8px 1.8px 0;transform:rotate(45deg);margin:0 4px 4px 2px;transition:transform .2s}
+.mgroup.fold .mchev{transform:rotate(-45deg);margin:0 5px 0 0}
+.mgroup.fold{padding-bottom:4px}
+.toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:60;background:var(--text);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:14px;box-shadow:0 6px 20px rgba(0,0,0,.2);transition:opacity .4s;max-width:90vw}
+.toast.out{opacity:0}
+.ta-rings h2{display:flex;align-items:center;gap:6px}
+.ringtog{margin-left:auto;display:grid;place-items:center;width:32px;height:32px;border:0;border-radius:50%;background:var(--surface-2);color:var(--muted);cursor:pointer;padding:0}
+.ringtog i{width:8px;height:8px;border:solid currentColor;border-width:0 1.8px 1.8px 0;transform:rotate(-135deg);margin-top:4px;transition:transform .2s}
+.ringtog.min i{transform:rotate(45deg);margin:0 0 4px}
+.kbar{display:block;width:100%;border:0;background:none;padding:2px 0 0;font:inherit;color:inherit;text-align:left;cursor:pointer}
+.kbar-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:14px;margin-bottom:8px}
+.kbar-top b{font-size:20px;font-variant-numeric:tabular-nums}
+.kbar-track{display:flex;height:12px;border-radius:99px;background:var(--surface-2);overflow:hidden}
+.kbar-track i{display:block;height:100%}
 .mhead b{color:var(--text);font-variant-numeric:tabular-nums}
 .mhead b small{font-size:11px;font-weight:500;color:var(--muted)}
 .it button.nm{border:0;background:none;padding:0;font:inherit;font-size:14px;font-weight:500;color:var(--text);text-align:left;cursor:pointer}
@@ -1240,6 +1258,14 @@ function energyBlock(id, d = todayStr()) {
   const kcal = dayItems(p, d).length ? daySum(p, d, 'kcal') : p.days?.[d]?.kcal || 0, prot = daySum(p, d, 'p'), over = Math.round(kcal - m.kcal), protLeft = m.prot.g - prot;
   const tol = +p.tol || 50, hit = Math.abs(over) <= tol, tdee = m.kcal + tdeeGap(p);
   const kStatus = hit ? 'ถึงเป้า ✓' : over < 0 ? `เหลือ ${fmt(-over)}` : kcal <= tdee ? `+${fmt(over)} · ยังลดอยู่` : `+${fmt(over)} · พักลด`;
+  if (ringMin) {
+    // Folded: one kcal bar (eaten vs target; anything past the target in amber), tap to bring the rings back.
+    const over = kcal > m.kcal, base = over ? m.kcal / kcal * 100 : kcal / m.kcal * 100;
+    return `<button class="kbar" data-ringtoggle aria-label="แสดงวงแหวน">
+      <span class="kbar-top"><span>🔥 <b>${fmt(kcal)}</b> / ${fmt(m.kcal)} kcal</span><span class="${hit ? 'good' : over ? 'warn' : 'muted'}">${kStatus}</span></span>
+      <span class="kbar-track"><i style="width:${Math.min(100, base).toFixed(1)}%;background:${hit ? 'var(--good)' : 'var(--c)'}"></i>${over ? `<i style="width:${(100 - base).toFixed(1)}%;background:${hit ? 'var(--good)' : 'var(--warn)'}"></i>` : ''}</span>
+    </button>`;
+  }
   // The rings carry the day at a glance; the numbers and meal split fold away (state remembered on this device).
   let open = false;
   try { open = localStorage.getItem('tdee-edetail') === '1'; } catch {}
@@ -1462,15 +1488,38 @@ function aiFood(r) {
     serving: `${num(amt)} ${meas ? meas.n : unit}`, g: meas ? amt * meas.ml : r.grams > 0 ? Math.round(r.grams) : null, units: [] };
 }
 
+// Per-device folding: each meal group, and the rings card (folded = a single kcal bar).
+const lsGet = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+let mealFold = lsGet('tdee-mealfold', {}), ringMin = lsGet('tdee-ringmin', false);
+const PLATE_ICON = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="13" cy="12.5" r="6.5"/><circle cx="13" cy="12.5" r="3.3"/><path d="M3 4.5v4a1.5 1.5 0 0 0 3 0v-4M4.5 10v9.5"/><path d="M21.5 4.5c-1.2.8-1.6 2.6-1.6 4.5h1.6v10.5"/></svg>';
+function toast(msg) {
+  const t = Object.assign(document.createElement('div'), { className: 'toast', textContent: msg });
+  document.body.append(t);
+  setTimeout(() => t.classList.add('out'), 2200); setTimeout(() => t.remove(), 2700);
+}
+// A logged line → a My Meal ingredient. % eaten is folded into the amount; per-macro adjustments keep their eaten values as a fixed line.
+function mealIngredient(x) {
+  if (x.adj) { const e = eff(x), r1 = v => Math.round(v * 10) / 10; return { id: uid(), name: x.name, p: r1(e.p), c: r1(e.c), f: r1(e.f), kcal: Math.round(e.kcal), qty: 1, amount: 1, unit: 's', unitName: x.unitName || 'ที่' }; }
+  const k = (x.pct ?? 100) / 100, it = { id: uid(), name: x.name, p: +x.p || 0, c: +x.c || 0, f: +x.f || 0, kcal: +x.kcal || 0,
+    qty: (x.qty ?? 1) * k, amount: (x.amount ?? x.qty ?? 1) * k, unit: x.unit || 's', unitName: x.unitName };
+  if (x.foodId) it.foodId = x.foodId;
+  return it;
+}
+
 function mealGroups(p, d, items) {
   const groups = [...MEALS, ['', 'ไม่ระบุมื้อ', '•']].map(([k, n, ic]) => {
     const its = items.filter(x => k ? x.meal === k : !MEALS.some(m => m[0] === x.meal));
     if (!k && !its.length) return '';
-    const kc = its.reduce((t, y) => t + lineKcal(y), 0);
-    return `<div class="mgroup" data-mealslot="${k}">
-      <div class="mhead"><span>${ic} ${n}</span>${its.length ? `<b>${fmt(kc)} <small>kcal</small></b>` : '<span class="muted">–</span>'}</div>
-      ${its.map(x => itemChip(x)).join('')}
-      ${k ? `<button class="addin" data-addto="${k}">+ เพิ่ม</button>` : ''}
+    const kc = its.reduce((t, y) => t + lineKcal(y), 0), fold = !!(k && its.length && mealFold[k]);
+    return `<div class="mgroup${fold ? ' fold' : ''}" data-mealslot="${k}">
+      <div class="mhead"${k && its.length ? ` data-mfold="${k}"` : ''}><span class="mname">${ic} ${n}${fold ? `<em> · ${its.length} รายการ</em>` : ''}</span>
+        <span class="mright">${its.length ? `<b>${fmt(kc)} <small>kcal</small></b>` : '<span class="muted">–</span>'}
+        ${k && its.length >= 2 && !fold ? `<button class="micon" data-savemeal="${k}" title="บันทึกมื้อนี้เป็น My Meal" aria-label="บันทึกมื้อนี้เป็น My Meal">${PLATE_ICON}</button>` : ''}
+        ${fold ? `<button class="micon plus" data-addto="${k}" aria-label="เพิ่มอาหาร">+</button>` : ''}
+        ${k && its.length ? '<i class="mchev" aria-hidden="true"></i>' : ''}</span></div>
+      ${fold ? '' : its.map(x => itemChip(x)).join('')}
+      ${k && !fold ? `<button class="addin" data-addto="${k}">+ เพิ่ม</button>` : ''}
     </div>`;
   }).join('');
   return `<div class="eaten">${groups}</div>`;
@@ -1771,7 +1820,7 @@ function personPage(id) {
   let body;
   if (sub === 'today') body = `
     <div class="today-grid">
-      <div class="card ta-rings"><h2>🍽️ ควรกินต่อวัน${viewDay() === todayStr() ? '' : ` <span class="muted" style="font-weight:400">· ${dayLabel(viewDay())}</span>`}</h2>${energyBlock(id, viewDay())}</div>
+      <div class="card ta-rings"><h2>🍽️ ควรกินต่อวัน${viewDay() === todayStr() ? '' : ` <span class="muted" style="font-weight:400">· ${dayLabel(viewDay())}</span>`}<button class="ringtog${ringMin ? ' min' : ''}" data-ringtoggle aria-label="${ringMin ? 'แสดงวงแหวน' : 'ย่อเป็นแถบ'}"><i></i></button></h2>${energyBlock(id, viewDay())}</div>
       <div class="card ta-eaten"><h2>🥗 ${viewDay() === todayStr() ? 'วันนี้กินไปแล้ว' : 'กินไปแล้ว'}</h2>${eatenBlock(id)}</div>
     </div>`;
   else if (sub === 'stats') body = intakeCard(id);
@@ -1954,6 +2003,21 @@ function bind() {
     document.querySelector('.it.flash')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   };
   document.querySelectorAll('[data-addto]').forEach(b => b.onclick = () => openSheet(id, b.dataset.addto));
+  document.querySelectorAll('[data-mfold]').forEach(h => h.onclick = ev => {
+    if (ev.target.closest('button')) return;
+    const k = h.dataset.mfold; mealFold[k] = !mealFold[k]; lsSet('tdee-mealfold', mealFold); render();
+  });
+  document.querySelectorAll('[data-ringtoggle]').forEach(b => b.onclick = () => { ringMin = !ringMin; lsSet('tdee-ringmin', ringMin); render(); });
+  // Save a meal's lines as a My Meal in one go (name it, done).
+  document.querySelectorAll('[data-savemeal]').forEach(b => b.onclick = () => {
+    if (sharedError || !S.shared) { alert('ใช้ My Meal ไม่ได้ตอนนี้'); return; }
+    const k = b.dataset.savemeal, its = list().filter(x => x.meal === k), mn = MEALS.find(x => x[0] === k)[1];
+    const date = new Date(dayMs(day)).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+    const name = prompt(`ตั้งชื่อ My Meal (${its.length} รายการ)`, `${k === 's' ? mn : 'อาหาร' + mn} ${date}`);
+    if (!name?.trim()) return;
+    sharedWrite({ [`meals.${uid()}`]: { name: name.trim(), items: its.map(mealIngredient), created: Date.now() } });
+    toast(`บันทึก “${name.trim()}” ใน My Meal แล้ว`);
+  });
   const on = (sel, fn) => { const el = document.querySelector(sel); if (el) el.onclick = fn; };
   on('[data-sheetclose]', closeSheet);
   const bg = document.querySelector('[data-sheetbg]');
