@@ -175,6 +175,20 @@ button.x:hover{color:var(--danger)}
 .mchev{width:8px;height:8px;border:solid var(--mc);border-width:0 1.8px 1.8px 0;transform:rotate(45deg);margin:0 4px 4px 2px;transition:transform .2s}
 .mgroup.fold .mchev{transform:rotate(-45deg);margin:0 5px 0 0}
 .mgroup.fold{padding-bottom:4px}
+.selrow{display:flex;align-items:center;gap:10px;width:100%;border:0;background:var(--surface);border-radius:12px;margin-top:6px;padding:10px 12px;font:inherit;color:var(--text);text-align:left;cursor:pointer}
+.selrow .nm{flex:1;min-width:0}
+.selrow .ck{flex:none;width:22px;height:22px;border-radius:50%;border:2px solid color-mix(in srgb, var(--mc) 60%, transparent);display:grid;place-items:center}
+.selrow.on{box-shadow:0 0 0 2px var(--mc)}
+.selrow.on .ck{background:var(--mc);border-color:var(--mc)}
+.selrow.on .ck::after{content:"";width:6px;height:10px;border:solid #fff;border-width:0 2.2px 2.2px 0;transform:rotate(45deg) translate(-1px,-1px)}
+.selbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.selbar input{flex:1 1 100%;font-size:15px;height:42px}
+.selbar .btn{flex:1;background:var(--mc);padding:10px}
+.selbar .btn[disabled]{opacity:.45}
+.pcount{white-space:nowrap;display:inline-block;font-size:11px;font-weight:600;color:var(--mc,var(--muted));background:color-mix(in srgb, var(--mc, var(--muted)) 14%, transparent);border-radius:99px;padding:1px 7px;margin-left:6px;vertical-align:1px}
+.parts{margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--surface-2);font-size:13px;color:var(--muted);display:grid;gap:3px}
+.parts > div{display:flex;justify-content:space-between;gap:8px}
+.parts .ghost{justify-self:start;margin-top:4px}
 .toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:60;background:var(--text);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:14px;box-shadow:0 6px 20px rgba(0,0,0,.2);transition:opacity .4s;max-width:90vw}
 .toast.out{opacity:0}
 .ta-rings h2{display:flex;align-items:center;gap:6px}
@@ -1316,8 +1330,11 @@ function itemChip(x, ns = '') {
     : `<em>${esc(x.unitName || 'ที่')}</em>`;
   const e = eff(x), r1 = v => num(Math.round(v * 10) / 10), open = openItem === x.id, pct = x.pct ?? 100, adj = x.adj || {};
   const badge = [pct !== 100 ? `${pct}%` : '', ...[['p', 'P'], ['c', 'C'], ['f', 'F']].filter(([k]) => (adj[k] ?? 100) !== 100).map(([k, l]) => `${l} ${adj[k]}%`)].filter(Boolean).join(' · ');
+  const parts = !ns && x.parts?.length ? x.parts : null;
   return `<div class="it${open ? ' open' : ''}${x.id === flashId ? ' flash' : ''}" data-${ns}row="${x.id}">
-    <div class="l1"><span class="nm">${x.mealId || getFood(x.foodId)?.meal ? '🍱 ' : ''}${esc(x.name)}${!ns && badge ? `<span class="pbadge">${badge}</span>` : ''}</span><span class="kc">${fmt(lineKcal(x))} <small>kcal</small></span><button class="x" data-${ns || 'un'}${ns ? 'del' : 'eat'}="${x.id}" title="ลบ">✕</button></div>
+    <div class="l1"><span class="nm">${x.mealId || getFood(x.foodId)?.meal || parts ? '🍱 ' : ''}${esc(x.name)}${parts ? `<span class="pcount">${parts.length} รายการ</span>` : ''}${!ns && badge ? `<span class="pbadge">${badge}</span>` : ''}</span><span class="kc">${fmt(lineKcal(x))} <small>kcal</small></span><button class="x" data-${ns || 'un'}${ns ? 'del' : 'eat'}="${x.id}" title="ลบ">✕</button></div>
+    ${open && parts ? `<div class="parts">${parts.map(y => `<div><span>${esc(y.name)}</span><span>${fmt(eff(y).kcal)}</span></div>`).join('')}
+      <button class="ghost sm" data-ungroup="${x.id}">แยกรายการ</button></div>` : ''}
     ${open ? `<div class="l2"><input class="amt" type="number" inputmode="decimal" step="any" min="0" data-${ns}amt="${x.id}" value="${+(+amt).toFixed(2)}">${unit}
       <span class="mac">P ${r1(e.p)} · C ${r1(e.c)} · F ${r1(e.f)}</span></div>
       ${ns ? '' : `<div class="pctrow"><span class="lbl">กินไป</span>${[100, 75, 50, 25].map(v => `<button class="${pct === v ? 'on' : ''}" data-pct="${v}" data-item="${x.id}">${v}</button>`).join('')}
@@ -1491,7 +1508,9 @@ function aiFood(r) {
 // Per-device folding: each meal group, and the rings card (folded = a single kcal bar).
 const lsGet = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
-let mealFold = lsGet('tdee-mealfold', {}), ringMin = lsGet('tdee-ringmin', false);
+let mealFold = lsGet('tdee-mealfold', {}), ringMin = lsGet('tdee-ringfold', true);
+// Picking lines in a meal to combine into one set: { meal, ids:Set, name }.
+let mealSel = null;
 const PLATE_ICON = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="13" cy="12.5" r="6.5"/><circle cx="13" cy="12.5" r="3.3"/><path d="M3 4.5v4a1.5 1.5 0 0 0 3 0v-4M4.5 10v9.5"/><path d="M21.5 4.5c-1.2.8-1.6 2.6-1.6 4.5h1.6v10.5"/></svg>';
 function toast(msg) {
   const t = Object.assign(document.createElement('div'), { className: 'toast', textContent: msg });
@@ -1511,11 +1530,18 @@ function mealGroups(p, d, items) {
   const groups = [...MEALS, ['', 'ไม่ระบุมื้อ', '•']].map(([k, n, ic]) => {
     const its = items.filter(x => k ? x.meal === k : !MEALS.some(m => m[0] === x.meal));
     if (!k && !its.length) return '';
-    const kc = its.reduce((t, y) => t + lineKcal(y), 0), fold = !!(k && its.length && mealFold[k]);
+    const kc = its.reduce((t, y) => t + lineKcal(y), 0), sel = mealSel?.meal === k && k ? mealSel : null, fold = !sel && !!(k && its.length && mealFold[k]);
+    if (sel) return `<div class="mgroup selecting" data-mc="${k}">
+      <div class="mhead"><span class="mname">${ic} เลือกรายการที่จะรวมเป็นชุด</span></div>
+      ${its.map(x => `<button class="it selrow${sel.ids.has(x.id) ? ' on' : ''}" data-selitem="${x.id}"><i class="ck" aria-hidden="true"></i><span class="nm">${esc(x.name)}</span><span class="kc">${fmt(lineKcal(x))} <small>kcal</small></span></button>`).join('')}
+      <div class="selbar"><input id="selName" value="${esc(sel.name)}" placeholder="ชื่อชุด" autocomplete="off">
+        <button class="btn" data-selsave ${sel.ids.size < 2 ? 'disabled' : ''}>🍽 รวมเป็นชุด${sel.ids.size ? ` (${sel.ids.size})` : ''}</button>
+        <button class="ghost" data-selcancel>ยกเลิก</button></div>
+    </div>`;
     return `<div class="mgroup${fold ? ' fold' : ''}" data-mealslot="${k}">
       <div class="mhead"${k && its.length ? ` data-mfold="${k}"` : ''}><span class="mname">${ic} ${n}${fold ? `<em> · ${its.length} รายการ</em>` : ''}</span>
         <span class="mright">${its.length ? `<b>${fmt(kc)} <small>kcal</small></b>` : '<span class="muted">–</span>'}
-        ${k && its.length >= 2 && !fold ? `<button class="micon" data-savemeal="${k}" title="บันทึกมื้อนี้เป็น My Meal" aria-label="บันทึกมื้อนี้เป็น My Meal">${PLATE_ICON}</button>` : ''}
+        ${k && its.length >= 2 && !fold ? `<button class="micon" data-savemeal="${k}" title="เลือกรายการรวมเป็นชุด" aria-label="เลือกรายการรวมเป็นชุด">${PLATE_ICON}</button>` : ''}
         ${fold ? `<button class="micon plus" data-addto="${k}" aria-label="เพิ่มอาหาร">+</button>` : ''}
         ${k && its.length ? '<i class="mchev" aria-hidden="true"></i>' : ''}</span></div>
       ${fold ? '' : its.map(x => itemChip(x)).join('')}
@@ -2002,23 +2028,48 @@ function bind() {
     changed();
     document.querySelector('.it.flash')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   };
+  const on = (sel, fn) => { const el = document.querySelector(sel); if (el) el.onclick = fn; };
   document.querySelectorAll('[data-addto]').forEach(b => b.onclick = () => openSheet(id, b.dataset.addto));
   document.querySelectorAll('[data-mfold]').forEach(h => h.onclick = ev => {
     if (ev.target.closest('button')) return;
     const k = h.dataset.mfold; mealFold[k] = !mealFold[k]; lsSet('tdee-mealfold', mealFold); render();
   });
-  document.querySelectorAll('[data-ringtoggle]').forEach(b => b.onclick = () => { ringMin = !ringMin; lsSet('tdee-ringmin', ringMin); render(); });
-  // Save a meal's lines as a My Meal in one go (name it, done).
+  document.querySelectorAll('[data-ringtoggle]').forEach(b => b.onclick = () => { ringMin = !ringMin; lsSet('tdee-ringfold', ringMin); render(); });
+  // Plate icon: pick some of a meal's lines, name them, and they become one 🍱 line (also saved as a My Meal).
+  // The line keeps its original lines in `parts`, so "แยกรายการ" restores them exactly.
   document.querySelectorAll('[data-savemeal]').forEach(b => b.onclick = () => {
     if (sharedError || !S.shared) { alert('ใช้ My Meal ไม่ได้ตอนนี้'); return; }
-    const k = b.dataset.savemeal, its = list().filter(x => x.meal === k), mn = MEALS.find(x => x[0] === k)[1];
+    const k = b.dataset.savemeal, mn = MEALS.find(x => x[0] === k)[1];
     const date = new Date(dayMs(day)).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', timeZone: 'UTC' });
-    const name = prompt(`ตั้งชื่อ My Meal (${its.length} รายการ)`, `${k === 's' ? mn : 'อาหาร' + mn} ${date}`);
-    if (!name?.trim()) return;
-    sharedWrite({ [`meals.${uid()}`]: { name: name.trim(), items: its.map(mealIngredient), created: Date.now() } });
-    toast(`บันทึก “${name.trim()}” ใน My Meal แล้ว`);
+    mealSel = { meal: k, ids: new Set(), name: `${k === 's' ? mn : 'อาหาร' + mn} ${date}` }; openItem = null; render();
   });
-  const on = (sel, fn) => { const el = document.querySelector(sel); if (el) el.onclick = fn; };
+  const selName = document.getElementById('selName');
+  if (selName) selName.oninput = () => { mealSel.name = selName.value; };
+  document.querySelectorAll('[data-selitem]').forEach(b => b.onclick = () => {
+    const id = b.dataset.selitem; mealSel.ids.has(id) ? mealSel.ids.delete(id) : mealSel.ids.add(id); render();
+  });
+  on('[data-selcancel]', () => { mealSel = null; render(); });
+  on('[data-selsave]', () => {
+    const all = list(), picked = all.filter(x => mealSel.ids.has(x.id));
+    if (picked.length < 2) return;
+    const name = mealSel.name.trim() || picked.map(x => x.name).join(' + ').slice(0, 60);
+    const mid = uid(), ings = picked.map(mealIngredient), created = Date.now(), t = mealTotals(ings);
+    sharedWrite({ [`meals.${mid}`]: { name, items: ings, created } });
+    (S.shared.meals ||= {})[mid] = { name, items: ings, created };
+    const line = { id: uid(), foodId: mid, name, p: t.p, c: t.c, f: t.f, kcal: t.kcal, qty: 1, amount: 1, unit: 's', unitName: 'ชุด', meal: mealSel.meal, parts: picked.map(x => ({ ...x })) };
+    const at = all.findIndex(x => mealSel.ids.has(x.id)), rest = all.filter(x => !mealSel.ids.has(x.id));
+    rest.splice(all.slice(0, at).filter(x => !mealSel.ids.has(x.id)).length, 0, line);
+    p.log[day] = rest; mealSel = null; flashId = line.id;
+    changed();
+    toast(`รวมเป็น “${name}” แล้ว · อยู่ใน My Meal ด้วย`);
+  });
+  document.querySelectorAll('[data-ungroup]').forEach(b => b.onclick = () => {
+    const all = list(), i = all.findIndex(x => x.id === b.dataset.ungroup);
+    if (i < 0) return;
+    const g = all[i];
+    all.splice(i, 1, ...g.parts.map(y => ({ ...y, meal: g.meal })));
+    openItem = null; changed();
+  });
   on('[data-sheetclose]', closeSheet);
   const bg = document.querySelector('[data-sheetbg]');
   if (bg) bg.onclick = ev => { if (ev.target === bg && sheet?.mode !== 'loading') closeSheet(); };
@@ -2510,7 +2561,7 @@ function bindMealEditor() {
   };
 }
 
-function setTab(t) { S.tab = t; sub = 'today'; logDate = null; addMeal = null; openItem = null; save(); render(); window.scrollTo(0, 0); }
+function setTab(t) { S.tab = t; sub = 'today'; logDate = null; addMeal = null; openItem = null; mealSel = null; save(); render(); window.scrollTo(0, 0); }
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => setTab(b.dataset.tab));
 
 document.getElementById('exportBtn').onclick = () => {
