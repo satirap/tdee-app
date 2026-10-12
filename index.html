@@ -272,6 +272,19 @@ body.noscroll{overflow:hidden}
 @keyframes spin{to{transform:rotate(360deg)}}
 .ai-res{display:flex;flex-direction:column;gap:8px}
 .ai-res img{width:96px;height:96px;align-self:center}
+.aithumbs{display:flex;gap:6px;justify-content:center;flex-wrap:wrap}
+.aithumbs img{width:64px!important;height:64px!important;border-radius:10px;object-fit:cover}
+.aithumbs.big img{width:120px!important;height:120px!important}
+.aiitems{display:grid;gap:8px}
+.aiitem{background:var(--surface-2);border-radius:12px;padding:10px 12px}
+.ai-irow{display:flex;align-items:baseline;gap:8px}
+.ai-irow b{flex:1;font-size:15px}
+.ai-irow .k{font-weight:700;white-space:nowrap}
+.ai-irow .k small{font-weight:500;color:var(--muted);font-size:11px}
+.ai-isub{font-size:12.5px;color:var(--muted);margin-top:2px}
+.aimatch{margin-top:6px;border:1px dashed var(--border);background:var(--surface);color:var(--muted);border-radius:9px;padding:5px 9px;font:inherit;font-size:12px;cursor:pointer;text-align:left}
+.aimatch.on{border-style:solid;border-color:var(--mc);color:var(--mc);font-weight:600}
+.ainew{display:inline-block;margin-top:6px;font-size:12px;color:var(--muted)}
 .ai-name{font-size:17px;font-weight:600}
 .ai-kcal{font-size:30px;font-weight:700;line-height:1.1}
 .ai-kcal small{font-size:14px;font-weight:500;color:var(--muted)}
@@ -786,7 +799,7 @@ const macroLine = f => `${fmt(foodKcal(f))} kcal · P ${num(f.p || 0)} · C ${nu
 
 // Measurable units convert through ml, taking 1 ml ≈ 1 g (close enough for drinks and everyday food).
 const MEAS = [['g', 'กรัม', 1], ['ml', 'มล.', 1], ['oz', 'oz', 29.57], ['tsp', 'ช้อนชา', 5], ['tbsp', 'ช้อนโต๊ะ', 15], ['cup', 'ถ้วยตวง', 240], ['ladle', 'ทัพพี', 60]].map(([k, n, ml]) => ({ k, n, ml }));
-const COUNT = ['ที่', 'จาน', 'ชาม', 'แก้ว', 'ถ้วย', 'ชิ้น', 'ฟอง', 'ลูก', 'ผล', 'ซอง', 'กล่อง', 'ขวด', 'แท่ง'];
+const COUNT = ['ที่', 'จาน', 'ชาม', 'แก้ว', 'ถ้วย', 'ชิ้น', 'ตัว', 'ฟอง', 'ลูก', 'ผล', 'ซอง', 'กล่อง', 'ขวด', 'แท่ง'];
 const MEAS_BY = Object.fromEntries(MEAS.map(u => [u.k, u]));
 const unitName = s => String(s || '').replace(/^1\s+/, '') || 'ที่';
 
@@ -1421,15 +1434,72 @@ function saveSheet() {
     else localStorage.removeItem(SHEET_KEY);
   } catch {}
 }
+// Photos sent to AI are kept for this tab (sessionStorage) so a reload, an error or a correction never needs a new photo.
+const AIIMG_KEY = 'tdee-aiimgs', AIPEND_KEY = 'tdee-aipending';
+const keepImgs = imgs => { try { imgs?.length ? sessionStorage.setItem(AIIMG_KEY, JSON.stringify({ at: Date.now(), imgs })) : sessionStorage.removeItem(AIIMG_KEY); } catch {} };
+const keptImgs = () => { try { const v = JSON.parse(sessionStorage.getItem(AIIMG_KEY)); return v && Date.now() - v.at < DRAFT_TTL ? v.imgs : null; } catch { return null; } };
+const setPending = v => { try { v ? sessionStorage.setItem(AIPEND_KEY, JSON.stringify(v)) : sessionStorage.removeItem(AIPEND_KEY); } catch {} };
+
+// Name similarity (character bigrams, ignoring spaces and text in brackets) to find an existing My Food item for an AI item.
+const normName = n => String(n || '').toLowerCase().replace(/\(.*?\)/g, '').replace(/[\s\-–·,.:\/]+/g, '');
+function nameSim(a, b) {
+  const x = normName(a), y = normName(b);
+  if (!x || !y) return 0;
+  if (x === y) return 1;
+  if (x.length < 2 || y.length < 2) return 0;
+  const grams = t => { const m = new Map(); for (let i = 0; i < t.length - 1; i++) { const g = t.slice(i, i + 2); m.set(g, (m.get(g) || 0) + 1); } return m; };
+  const A = grams(x), B = grams(y);
+  let hit = 0;
+  for (const [g, n] of A) hit += Math.min(n, B.get(g) || 0);
+  return 2 * hit / (x.length + y.length - 2);
+}
+function matchFood(name) {
+  let best = null;
+  for (const f of [...foodList(), ...stdFoods()]) {
+    const sc = (f.name === name ? 2 : 0) + nameSim(name, f.name);
+    if (!best || sc > best.sc || (sc === best.sc && usesOf(f.id) > usesOf(best.f.id))) best = { f, sc };
+  }
+  return best && best.sc >= 0.72 ? best.f : null;
+}
+// An AI item logged against an existing food: same unit if it has it, else by grams, else scaled by kcal.
+function aiLine(it, f) {
+  const us = unitsOf(f), kc = foodKcal(f);
+  if (us.some(u => u.k === it.unit) && it.amount > 0) return lineFor(f.id, f, { amount: +it.amount, unit: it.unit });
+  if (it.grams > 0 && us.some(u => u.k === 'g')) return lineFor(f.id, f, { amount: Math.round(it.grams), unit: 'g' });
+  const q = kc > 0 ? Math.round((+it.kcal || 0) / kc * 100) / 100 : 1;
+  return { ...lineFor(f.id, f), qty: q, amount: q, unit: 's', unitName: unitName(f.serving) };
+}
+// An AI item as a new My Food entry. Counted items are stored per 1 unit (กุ้ง per ตัว) so any count can be logged later.
+function aiNew(it) {
+  const fd = aiFood(it), counted = !MEAS_BY[fd.unit] && fd.amt > 1;
+  if (counted) {
+    const k = fd.amt, d = v => Math.round(v / k * 10) / 10;
+    Object.assign(fd, { p: d(fd.p), c: d(fd.c), f: d(fd.f), kcal: Math.round(fd.kcal / k), amt: 1, serving: `1 ${fd.unit}`, g: fd.g ? Math.round(fd.g / k) : null });
+  }
+  return { food: fd, pick: counted ? { amount: +it.amount, unit: 's' } : null };
+}
+// What the result card will log: each kept item, matched to My Food unless the user switched it to "new".
+function aiPlan() {
+  return aiItems(sheet.result).map((it, i) => {
+    if (sheet.drop?.[i]) return null;
+    const match = matchFood(it.name), useOld = !!match && sheet.use?.[i] !== false;
+    if (useOld) return { i, it, match, useOld, line: aiLine(it, match) };
+    const { food, pick } = aiNew(it);
+    return { i, it, match, useOld, food, pick, line: lineFor(null, food, pick) };
+  }).filter(Boolean);
+}
+const sumEff = lines => lines.reduce((a, l) => { const e = eff(l); return { p: a.p + e.p, c: a.c + e.c, f: a.f + e.f, kcal: a.kcal + e.kcal }; }, { p: 0, c: 0, f: 0, kcal: 0 });
+
 function openSheet(id, meal) { sheet = { id, meal, mode: 'search' }; addMeal = meal; eatView = 'new'; render(); }
 function closeSheet() {
   if (!sheet) return;
   const key = 'eat-' + sheet.id;
   sheet.ctrl?.abort();
   searchQ[key] = ''; delete scanDraft[key];
-  sheet = null; clearDraft(); saveSheet(); render();
+  sheet = null; clearDraft(); saveSheet(); keepImgs(null); setPending(null); render();
 }
 const imgSrc = img => `data:${img.type};base64,${img.data}`;
+const thumbs = (imgs, big) => imgs?.length ? `<div class="aithumbs${big ? ' big' : ''}">${imgs.map(im => `<img src="${imgSrc(im)}" alt="">`).join('')}</div>` : '';
 function sheetHtml(id) {
   if (!sheet || sheet.id !== id) return '';
   const [mk, mn0, ic] = MEALS.find(m => m[0] === sheet.meal) || MEALS[0], r = sheet.result, mn = mk === 's' ? mn0 : 'มื้อ' + mn0;
@@ -1437,28 +1507,38 @@ function sheetHtml(id) {
   const err = sheet.err ? `<div class="alert">${esc(sheet.err)}</div>` : '';
   let body;
   if (sheet.mode === 'loading') body = `<div class="ai-wait">
-      ${sheet.img ? `<img src="${imgSrc(sheet.img)}" alt="">` : `<div class="ai-q">“${esc(sheet.desc)}”</div>`}
+      ${sheet.imgs?.length ? thumbs(sheet.imgs, true) : `<div class="ai-q">“${esc(sheet.desc)}”</div>`}
       <div class="spin" aria-hidden="true"></div>
-      <b>${sheet.fixing ? 'AI กำลังแก้ตามที่บอก…' : sheet.img ? 'AI กำลังดูอาหาร…' : 'AI กำลังประเมิน…'}</b>
+      <b>${sheet.fixing ? 'AI กำลังแก้ตามที่บอก…' : sheet.imgs?.length ? 'AI กำลังดูอาหาร…' : 'AI กำลังประเมิน…'}</b>
       <span class="muted" data-aisec>${aiWaitText()}</span>
       <button class="ghost" data-aicancel>ยกเลิก</button></div>`;
+  else if (sheet.mode === 'retry') body = `<div class="ai-wait">
+      ${sheet.imgs?.length ? thumbs(sheet.imgs, true) : `<div class="ai-q">“${esc(sheet.desc)}”</div>`}
+      <button class="btn" data-airetry>↻ ลองใหม่ (ใช้${sheet.imgs?.length ? 'รูป' : 'ข้อความ'}เดิม)</button>
+      ${sheet.imgs?.length ? '<button class="ghost wide2" data-aiphotobig>📷 เลือกรูปใหม่</button>' : ''}
+      <button class="ghost wide2" data-aiback>กลับไปค้นหา</button></div>`;
   else if (sheet.mode === 'result') {
-    const un = MEAS_BY[r.unit]?.n || r.unit;
+    const plan = aiPlan(), tot = sumEff(plan.map(x => x.line)), many = aiItems(r).length > 1, r1 = v => num(Math.round(v * 10) / 10);
+    const qty = x => x.useOld ? `${num(Math.round(x.line.amount * 100) / 100)} ${x.line.unitName || ''}` : `${num(x.it.amount)} ${MEAS_BY[x.it.unit]?.n || x.it.unit}`;
     body = `<div class="ai-res">
-      ${sheet.img ? `<img src="${imgSrc(sheet.img)}" alt="">` : ''}
+      ${thumbs(sheet.imgs)}
       <div class="ai-name">${esc(r.name)}</div>
-      <div class="ai-kcal">${fmt(r.kcal)} <small>kcal</small></div>
-      <div class="muted">${num(r.amount)} ${esc(un)}${r.grams > 0 && !MEAS_BY[r.unit] ? ` · ~${fmt(r.grams)} ก.` : ''} · P ${num(r.p)} · C ${num(r.c)} · F ${num(r.f)}</div>
-      ${r.parts?.length ? `<div class="aiparts">${r.parts.map(x => `<div><span>${esc(x.name)} · ${esc(x.amount)}</span><span>${fmt(x.kcal)}</span></div>`).join('')}</div>` : ''}
+      <div class="ai-kcal">${fmt(tot.kcal)} <small>kcal</small></div>
+      <div class="muted">P ${r1(tot.p)} · C ${r1(tot.c)} · F ${r1(tot.f)}${plan.length > 1 ? ` · ${plan.length} รายการ` : ''}</div>
+      <div class="aiitems">${plan.map(x => { const e = eff(x.line); return `<div class="aiitem">
+        <div class="ai-irow"><b>${esc(x.useOld ? x.match.name : x.it.name)}</b><span class="k">${fmt(e.kcal)} <small>kcal</small></span>${many ? `<button class="x" data-aidrop="${x.i}" aria-label="ไม่ได้กินรายการนี้">✕</button>` : ''}</div>
+        <div class="ai-isub">${esc(qty(x))} · P ${r1(e.p)} · C ${r1(e.c)} · F ${r1(e.f)}</div>
+        ${x.match ? `<button class="aimatch${x.useOld ? ' on' : ''}" data-aiuse="${x.i}">${x.useOld ? '↺ ใช้เมนูเดิมใน My Food · แตะเพื่อสร้างใหม่' : `+ เมนูใหม่ · มีเมนูคล้าย “${esc(x.match.name)}” แตะเพื่อใช้เมนูเดิม`}</button>` : '<span class="ainew">+ บันทึกเป็นเมนูใหม่ใน My Food</span>'}
+      </div>`; }).join('') || '<div class="muted">ไม่มีรายการ</div>'}</div>
       ${r.note ? `<div class="muted" style="font-size:13px">${esc(r.note)}</div>` : ''}
       ${sheet.adjust ? `<div class="adjbox">
         <b>บอก AI ว่าต่างจากที่กินจริงตรงไหน</b>
         <div class="qfix">${AI_QUICK_FIX.map(t => `<button type="button" data-qfix="${esc(t)}">${esc(t)}</button>`).join('')}</div>
         <textarea id="aiFix" rows="2" placeholder="เช่น หมูกินไปครึ่งเดียว น้ำจิ้มแค่ 1 ช้อน"></textarea>
         <button class="bigact" data-aifixsend>✨ ให้ AI ปรับตามนี้</button>
-        <button class="linkbtn" data-aiedit>หรือแก้ตัวเลขเอง</button></div>`
+        ${plan.length === 1 ? '<button class="linkbtn" data-aiedit>หรือแก้ตัวเลขเอง</button>' : ''}</div>`
       : `<button class="bigact" data-aiadjust>✏️ ปรับให้ตรงกับที่กิน</button>`}
-      <button class="btn" data-aisave>✓ บันทึกลง${mn} · ${fmt(r.kcal)} kcal</button></div>`;
+      <button class="btn" data-aisave ${plan.length ? '' : 'disabled'}>✓ บันทึกลง${mn} · ${fmt(tot.kcal)} kcal</button></div>`;
   } else if (sheet.mode === 'confirm' && getFood(sheet.foodId)) {
     const f = getFood(sheet.foodId), us = unitsOf(f), n = confirmNumbers(f, sheet.pick);
     body = `<div class="ai-res">
@@ -1499,22 +1579,24 @@ function confirmNumbers(f, pick) {
 const aiWaitText = () => { const s = sheet?.t0 ? Math.floor((Date.now() - sheet.t0) / 1000) : 0; return `${s} วินาที · ปกติใช้ 10–30 วินาที`; };
 setInterval(() => { const el = document.querySelector('[data-aisec]'); if (el) el.textContent = aiWaitText(); }, 1000);
 
-async function sheetAi(desc, img, fix) {
+async function sheetAi(desc, imgs, fix) {
   const s = sheet;
   if (!s) return;
   const ctrl = new AbortController();
-  Object.assign(s, { mode: 'loading', desc, img, err: null, t0: Date.now(), ctrl, fixing: !!fix });
+  Object.assign(s, { mode: 'loading', desc, imgs: imgs || null, err: null, t0: Date.now(), ctrl, fixing: !!fix });
+  keepImgs(imgs); if (!fix) setPending({ id: s.id, meal: s.meal, desc, page: pageKey(), at: Date.now() });
   render();
   try {
-    const r = await aiNutrition(desc, img, fix?.prev, fix?.fix, ctrl.signal);
+    const r = await aiNutrition(desc, imgs, fix?.prev, fix?.fix, ctrl.signal);
     if (sheet !== s || ctrl.signal.aborted) return;
-    Object.assign(s, { mode: 'result', result: r });
+    Object.assign(s, { mode: 'result', result: r, use: {}, drop: {} });
   } catch (e) {
     if (sheet !== s || ctrl.signal.aborted) return;
     console.warn(e);
-    Object.assign(s, { mode: s.result ? 'result' : 'search', err: aiError(e) });
+    // Keep the photos: the user retries with one tap instead of taking them again.
+    Object.assign(s, { mode: s.result ? 'result' : 'retry', err: aiError(e) });
   }
-  s.ctrl = null;
+  s.ctrl = null; setPending(null);
   saveSheet(); render();
 }
 // AI result → a My Food entry (same shape the food form saves).
@@ -2221,10 +2303,15 @@ function bind() {
   on('[data-aiphotobig]', () => {
     if (!aiKey() && !askAiKey()) return;
     const desc = (searchQ['eat-' + id] || '').trim();
-    pickPhoto().then(img => { if (img && sheet) sheetAi(desc, img); });
+    pickPhoto().then(imgs => { if (imgs && sheet) sheetAi(desc, imgs); });
   });
   on('[data-aitext]', () => { sheet.mode = 'aitext'; sheet.err = null; sheet.desc = (searchQ['eat-' + id] || '').trim() || sheet.desc; render(); document.getElementById('aiAsk')?.focus(); });
   on('[data-aiback]', () => { sheet.mode = 'search'; sheet.err = null; render(); });
+  on('[data-airetry]', () => { if (aiKey() || askAiKey()) sheetAi(sheet.desc, sheet.imgs); });
+  document.querySelectorAll('[data-aiuse]').forEach(b => b.onclick = () => {
+    const i = +b.dataset.aiuse, cur = sheet.use?.[i] !== false; (sheet.use ||= {})[i] = !cur; render();
+  });
+  document.querySelectorAll('[data-aidrop]').forEach(b => b.onclick = () => { (sheet.drop ||= {})[+b.dataset.aidrop] = true; render(); });
   on('[data-aiasksend]', () => {
     const desc = document.getElementById('aiAsk').value.trim();
     if (!desc) { sheet.err = 'พิมพ์ว่ากินอะไรก่อน'; sheet.desc = ''; render(); return; }
@@ -2241,14 +2328,27 @@ function bind() {
     const fix = document.getElementById('aiFix').value.trim();
     if (!fix) { document.getElementById('aiFix').focus(); return; }
     sheet.adjust = false;
-    sheetAi(sheet.desc, sheet.img, { prev: sheet.result, fix });
+    sheetAi(sheet.desc, sheet.imgs, { prev: sheet.result, fix });
   });
+  // Save: matched items log against the existing My Food item, new ones are added to My Food (one per item, reusable).
+  // One item logs as one line; several log as one 🍱 set whose parts can be opened or split back.
   on('[data-aisave]', () => {
-    const food = aiFood(sheet.result);
-    if (S.shared && !sharedError) eatFood(addFood(food), food); else eat(food);
+    const plan = aiPlan(), name = sheet.result.name, share = S.shared && !sharedError;
+    if (!plan.length) return;
+    const lines = plan.map(x => {
+      if (x.useOld) { if (share) sharedWrite({ [`uses.${x.match.id}`]: increment(1) }); return x.line; }
+      if (!share) { const l = lineFor(null, x.food, x.pick); delete l.foodId; return l; }
+      const fid = addFood(x.food);
+      sharedWrite({ [`uses.${fid}`]: increment(1) });
+      return lineFor(fid, x.food, x.pick);
+    });
+    keepImgs(null);
+    if (lines.length === 1) { eat(lines[0]); return; }
+    const t = sumEff(lines), r1 = v => Math.round(v * 10) / 10;
+    eat({ name, p: r1(t.p), c: r1(t.c), f: r1(t.f), kcal: Math.round(t.kcal), qty: 1, amount: 1, unit: 's', unitName: 'ชุด', parts: lines.map(l => ({ ...l, id: uid() })) });
   });
   on('[data-aiedit]', () => {
-    const food = aiFood(sheet.result), key = 'eat-' + id;
+    const food = aiFood(aiSingle(sheet.result)), key = 'eat-' + id;
     scanDraft[key] = { v: food, note: 'ค่าจาก AI · แก้ได้ก่อนบันทึก' };
     searchQ[key] = ''; sheet.mode = 'search'; sheet.result = null; saveSheet(); render();
   });
@@ -2483,55 +2583,67 @@ const getAi = () => aiClientP ||= import('https://cdn.jsdelivr.net/npm/@anthropi
   .catch(e => { aiClientP = null; throw e; });
 
 const AI_UNITS = [...MEAS.map(u => u.k), ...COUNT];
-const AI_SCHEMA = {
+const AI_ITEM = {
   type: 'object', additionalProperties: false,
-  required: ['name', 'amount', 'unit', 'grams', 'p', 'c', 'f', 'kcal', 'note'],
+  required: ['name', 'amount', 'unit', 'grams', 'p', 'c', 'f', 'kcal'],
   properties: {
     name: { type: 'string' }, amount: { type: 'number' }, unit: { type: 'string', enum: AI_UNITS }, grams: { type: 'number' },
-    p: { type: 'number' }, c: { type: 'number' }, f: { type: 'number' }, kcal: { type: 'number' }, note: { type: 'string' },
-    parts: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['name', 'amount', 'kcal'],
-      properties: { name: { type: 'string' }, amount: { type: 'string' }, kcal: { type: 'number' } } } },
+    p: { type: 'number' }, c: { type: 'number' }, f: { type: 'number' }, kcal: { type: 'number' },
   },
 };
-AI_SCHEMA.required.push('parts');
-const AI_SYSTEM = `You estimate nutrition for a calorie-tracking app used by two people in Bangkok. The user describes what they ate (Thai or English), and may attach a photo of the dish or of a nutrition label.
+const AI_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['name', 'note', 'items'],
+  properties: { name: { type: 'string' }, note: { type: 'string' }, items: { type: 'array', items: AI_ITEM } },
+};
+// Older single-food answers read as a one-item list; aiSingle folds a plate into one food (for the food form).
+const aiItems = r => r?.items?.length ? r.items : r ? [{ name: r.name, amount: r.amount, unit: r.unit, grams: r.grams, p: r.p, c: r.c, f: r.f, kcal: r.kcal }] : [];
+function aiSingle(r) {
+  const its = aiItems(r);
+  if (its.length === 1) return its[0];
+  const t = its.reduce((a, x) => ({ p: a.p + (+x.p || 0), c: a.c + (+x.c || 0), f: a.f + (+x.f || 0), kcal: a.kcal + (+x.kcal || 0), grams: a.grams + (+x.grams || 0) }), { p: 0, c: 0, f: 0, kcal: 0, grams: 0 });
+  return { name: r.name, amount: 1, unit: 'จาน', ...t };
+}
+const AI_SYSTEM = `You estimate nutrition for a calorie-tracking app used by two people in Bangkok. The user describes what they ate (Thai or English), and may attach one or more photos of the same meal (dish, plate from other angles, or a nutrition label).
 
-Return ONE serving exactly as described (e.g. "1 ลูก", "ชามพิเศษ", "2 ช้อนชา"); if no amount is given, use the usual single serving in Thailand.
-- Nutrition label photo: use the label's own numbers and its kcal as printed (do not recompute kcal from macros). Scale if the user names a different amount. Carbohydrate = total carbohydrate as printed.
-- Dish photo or description: estimate realistic Thai street-food / restaurant portions, including cooking oil, sauces and sugar, and whether soup/broth is eaten as described. Base values on Thai FDA, INMUCAL (Mahidol) or USDA data.
+Split the meal into items, each with its own amount and nutrition, so each item can be reused later on its own.
+- items: one item per separately served or separately eaten component - e.g. grilled prawns, steamed rice, dipping sauce, a side of vegetables, a drink. A dish cooked as one (ข้าวกะเพรา, ก๋วยเตี๋ยว, แกง, ส้มตำ) is a single item. A single food is a one-item list.
+- item name: short Thai name a person would search for to log it again, WITHOUT quantities or counts (never '2 ตัว', '150 ก.', '1/4 ตัว', 'ครึ่งจาน'); keep brand and preparation/modifiers (e.g. 'กุ้งแม่น้ำเผา', 'ข้าวสวย', 'น้ำจิ้มซีฟู้ด', 'ไม่กินน้ำซุป'). The quantity goes in amount + unit.
+- unit: g or ml when the item is naturally weighed or is a drink of known volume; otherwise a Thai count unit from the list (ตัว for whole prawns/fish/shellfish, ชิ้น, ลูก, ฟอง, จาน, ชาม, แก้ว, ...). Codes: g=grams, ml=millilitres, tsp=teaspoon 5 ml, tbsp=tablespoon 15 ml, cup=240 ml, ladle=Thai rice ladle 60 g, oz=fluid ounce.
+- amount: number of those units eaten. grams: weight of that item as eaten in g (ml for drinks), best estimate; 0 only if impossible to tell.
+- Nutrition label photo: use the label's numbers and its kcal as printed (do not recompute kcal from macros); scale to the amount eaten. Carbohydrate = total carbohydrate as printed.
+- Dish photos or descriptions: realistic Thai street-food / restaurant portions, including cooking oil, sauces and sugar, and whether soup/broth is eaten as described. Base values on Thai FDA, INMUCAL (Mahidol) or USDA data.
 - kcal is the real energy of the food; fiber and sugar alcohols add little, so kcal may be below 4/4/9 of the macros.
-- unit: g or ml when the serving is naturally weighed or is a drink of known volume; otherwise a Thai count unit from the list (ที่, จาน, ชาม, แก้ว, ลูก, ชิ้น, ขวด, ...). Codes: g=grams, ml=millilitres, tsp=teaspoon 5 ml, tbsp=tablespoon 15 ml, cup=240 ml, ladle=Thai rice ladle 60 g, oz=fluid ounce.
-- amount: the number of those units in the serving. grams: weight of the whole serving in g (ml for drinks), your best estimate; 0 only if impossible to tell.
-- name: short Thai name people would search for, with brand and key modifiers (e.g. ไม่เติมน้ำตาล, ไม่กินน้ำซุป).
-- note: one short Thai sentence (under 80 characters) with the main assumption, e.g. portion size or data source.
-- Protein/carbs/fat in grams to 1 decimal; kcal as an integer.
-- Dipping sauces, dressings, soups, drinks and side dishes served separately are often not finished. Unless the user says otherwise, count only a typical eaten amount (e.g. dipping sauce 1-2 tbsp, not the whole cup) - never assume a side container was emptied.
+- Dipping sauces, dressings, soups, drinks and sides served separately are often not finished: unless the user says otherwise, count a typical eaten amount (e.g. dipping sauce 1-2 tbsp), never the whole container.
 - Amounts the user states override what the photo suggests.
-- parts: every component you counted, each with the amount counted (Thai, e.g. "~150 ก.", "1 ช้อนโต๊ะ") and its kcal; the parts must add up to kcal.
-- A message may include your previous estimate and a correction from the user: apply the correction and keep the rest of the estimate unless it must change.`;
+- name (top level): short Thai name for the whole meal, also without quantities. note: one short Thai sentence (under 80 characters) with the main assumption.
+- Protein/carbs/fat in grams to 1 decimal; kcal as an integer.
+- A message may include your previous estimate and a correction from the user: apply the correction and keep the rest unless it must change.`;
 
-// Opens the photo picker (camera or library) and returns a downscaled JPEG as base64, or null if cancelled.
+// Opens the photo picker (camera or library; several photos allowed) and returns downscaled JPEGs as base64, or null if cancelled.
+const AI_MAX_PHOTOS = 4;
 function pickPhoto() {
-  const input = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/*' });
+  const input = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/*', multiple: true });
   const picked = new Promise(resolve => {
-    input.onchange = () => resolve(input.files[0] || null);
+    input.onchange = () => resolve(input.files?.length ? [...input.files].slice(0, AI_MAX_PHOTOS) : null);
     input.addEventListener('cancel', () => resolve(null));
   });
   input.click();
-  return picked.then(async file => {
-    if (!file) return null;
-    const bmp = await createImageBitmap(file), k = Math.min(1, 1568 / Math.max(bmp.width, bmp.height));
-    const c = Object.assign(document.createElement('canvas'), { width: Math.round(bmp.width * k), height: Math.round(bmp.height * k) });
-    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
-    return { type: 'image/jpeg', data: c.toDataURL('image/jpeg', 0.85).split(',')[1] };
+  return picked.then(async files => {
+    if (!files) return null;
+    return Promise.all(files.map(async file => {
+      const bmp = await createImageBitmap(file), k = Math.min(1, 1280 / Math.max(bmp.width, bmp.height));
+      const c = Object.assign(document.createElement('canvas'), { width: Math.round(bmp.width * k), height: Math.round(bmp.height * k) });
+      c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+      return { type: 'image/jpeg', data: c.toDataURL('image/jpeg', 0.8).split(',')[1] };
+    }));
   });
 }
 
-async function aiNutrition(desc, img, prev, fix, signal) {
+async function aiNutrition(desc, imgs, prev, fix, signal) {
   const client = await getAi();
   const content = [];
-  if (img) content.push({ type: 'image', source: { type: 'base64', media_type: img.type, data: img.data } });
-  let text = desc || 'ประเมินจากรูปนี้';
+  for (const img of imgs || []) content.push({ type: 'image', source: { type: 'base64', media_type: img.type, data: img.data } });
+  let text = desc || (imgs?.length > 1 ? 'ประเมินจากรูปเหล่านี้ (มื้อเดียวกัน)' : 'ประเมินจากรูปนี้');
   if (prev) text += `\n\nPrevious estimate: ${JSON.stringify(prev)}\nCorrection from the user: ${fix}`;
   content.push({ type: 'text', text });
   const res = await client.beta.messages.create({
@@ -2568,11 +2680,11 @@ document.addEventListener('click', async ev => {
   if (!aiKey() && !askAiKey()) return;
   // The picker must open inside the tap itself (iOS), so start it before anything is awaited.
   const photoP = b.hasAttribute('data-aiphoto') ? pickPhoto() : null;
-  const img = photoP && await photoP;
-  if (photoP && !img) return;
+  const imgs = photoP && await photoP;
+  if (photoP && !imgs) return;
   const desc = form.elements.name.value.trim();
-  if (!desc && !img) { note.textContent = 'พิมพ์ชื่ออาหาร หรือเลือกรูปก่อน'; return; }
-  runAi(form, desc, img);
+  if (!desc && !imgs) { note.textContent = 'พิมพ์ชื่ออาหาร หรือเลือกรูปก่อน'; return; }
+  runAi(form, desc, imgs);
 });
 
 // "บอก AI เพิ่ม": re-ask with the same photo and description, the current values and the user's correction.
@@ -2581,7 +2693,7 @@ function sendAiFix(form) {
   if (!fix) return;
   const el = form.elements, last = form.aiLast;
   const prev = last?.result || { name: el.name.value, amount: +el.amt.value, unit: el.unit.value, grams: +el.g.value || 0, p: +el.p.value, c: +el.c.value, f: +el.f.value, kcal: +el.kcal.value };
-  runAi(form, last?.desc ?? el.name.value.trim(), last?.img || null, { prev, fix });
+  runAi(form, last?.desc ?? el.name.value.trim(), last?.imgs || null, { prev, fix });
 }
 document.addEventListener('click', ev => {
   const b = ev.target.closest('[data-aifix]');
@@ -2594,21 +2706,22 @@ document.addEventListener('keydown', ev => {
 function showAi(form, r) {
   form.querySelector('.ainote').textContent = r.note;
   const parts = form.querySelector('.aiparts');
-  parts.innerHTML = (r.parts || []).map(x => `<div><span>${esc(x.name)} · ${esc(x.amount)}</span><span>${fmt(x.kcal)}</span></div>`).join('');
-  parts.hidden = !r.parts?.length;
+  const its = aiItems(r);
+  parts.innerHTML = its.length > 1 ? its.map(x => `<div><span>${esc(x.name)} · ${num(x.amount)} ${esc(MEAS_BY[x.unit]?.n || x.unit)}</span><span>${fmt(x.kcal)}</span></div>`).join('') : '';
+  parts.hidden = its.length < 2;
   form.querySelector('.aifixrow').hidden = false;
   form.querySelector('.aifix').value = '';
 }
 
-async function runAi(form, desc, img, fix) {
+async function runAi(form, desc, imgs, fix) {
   const note = form.querySelector('.ainote'), btns = form.querySelectorAll('[data-ai],[data-aiphoto],[data-aifix]');
   btns.forEach(x => x.disabled = true);
-  note.textContent = fix ? 'AI กำลังแก้…' : img ? 'AI กำลังดูรูป…' : 'กำลังถาม AI…';
+  note.textContent = fix ? 'AI กำลังแก้…' : imgs ? 'AI กำลังดูรูป…' : 'กำลังถาม AI…';
   try {
-    const r = await aiNutrition(desc, img, fix?.prev, fix?.fix);
+    const r = await aiNutrition(desc, imgs, fix?.prev, fix?.fix);
     if (!form.isConnected) return;
-    form.aiLast = { desc, img, result: r };
-    fillFromAi(form, r);
+    form.aiLast = { desc, imgs, result: r };
+    fillFromAi(form, aiSingle(r));
     showAi(form, r);
   } catch (e) {
     console.warn(e);
@@ -2765,7 +2878,12 @@ if (formDraft?.page === pageKey()) {
 }
 try {
   const sv = JSON.parse(localStorage.getItem(SHEET_KEY));
-  if (sv && !sheet && sv.page === pageKey() && Date.now() - sv.at < DRAFT_TTL) { sheet = { id: sv.id, meal: knownMeal(sv.meal), mode: 'result', desc: sv.desc, result: sv.result }; addMeal = sv.meal; }
+  if (sv && !sheet && sv.page === pageKey() && Date.now() - sv.at < DRAFT_TTL) { sheet = { id: sv.id, meal: knownMeal(sv.meal), mode: 'result', desc: sv.desc, result: sv.result, imgs: keptImgs(), use: {}, drop: {} }; addMeal = sv.meal; }
+  // The page was reloaded while AI was working (iOS can do that after the camera): offer a one-tap retry with the same photos.
+  const pend = JSON.parse(sessionStorage.getItem(AIPEND_KEY) || 'null');
+  if (pend && !sheet && pend.page === pageKey() && Date.now() - pend.at < 15 * 60e3) {
+    sheet = { id: pend.id, meal: knownMeal(pend.meal), mode: 'retry', desc: pend.desc, imgs: keptImgs(), err: 'การรอผล AI ถูกขัดจังหวะ · กดลองใหม่ได้เลย ไม่ต้องถ่ายรูปใหม่' }; addMeal = sheet.meal;
+  }
 } catch {}
 if (configured && pin) listen();
 render();
