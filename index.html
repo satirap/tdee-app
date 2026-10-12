@@ -275,6 +275,8 @@ body.noscroll{overflow:hidden}
 .aithumbs{display:flex;gap:6px;justify-content:center;flex-wrap:wrap}
 .aithumbs img{width:64px!important;height:64px!important;border-radius:10px;object-fit:cover}
 .aithumbs.big img{width:120px!important;height:120px!important}
+.aithumb{position:relative;display:inline-block}
+.aithumb .x{position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;font-size:12px;padding:0;display:grid;place-items:center}
 .aiitems{display:grid;gap:8px}
 .aiitem{background:var(--surface-2);border-radius:12px;padding:10px 12px}
 .ai-irow{display:flex;align-items:baseline;gap:8px}
@@ -1564,9 +1566,15 @@ function sheetHtml(id) {
       <div class="muted" id="cfMac">${n.mac}</div>
       <button class="btn" data-cfsave>✓ บันทึกลง${mn}</button>
       <button class="ghost wide2" data-cfback>กลับไปค้นหา</button></div>`;
-  } else if (sheet.mode === 'aitext') body = `<label class="ai-ask">บอก AI ว่ากินอะไร<textarea id="aiAsk" rows="3" placeholder="ข้าวมันไก่ต้ม พิเศษ ไม่กินน้ำซุป">${esc(sheet.desc || '')}</textarea></label>
+  } else if (sheet.mode === 'aitext') {
+    // Compose before asking AI: photos (optional, removable, up to 4) plus what you know in words; nothing is sent until ✨.
+    const imgs = sheet.imgs || [];
+    body = `${imgs.length ? `<div class="aithumbs big">${imgs.map((im, k) => `<span class="aithumb"><img src="${imgSrc(im)}" alt=""><button class="x" data-aiimgdel="${k}" aria-label="เอารูปนี้ออก">✕</button></span>`).join('')}</div>` : ''}
+      <label class="ai-ask">${imgs.length ? 'บอก AI เพิ่ม (ถ้ารู้ว่ากินอะไร / เท่าไหร่)' : 'บอก AI ว่ากินอะไร'}<textarea id="aiAsk" rows="3" placeholder="${imgs.length ? 'กุ้ง 4 ตัว ข้าว 150 ก. น้ำจิ้มนิดเดียว' : 'ข้าวมันไก่ต้ม พิเศษ ไม่กินน้ำซุป'}">${esc(sheet.desc || '')}</textarea></label>
+      ${imgs.length < AI_MAX_PHOTOS ? `<button class="ghost wide2" data-aiaddphoto>📷 ${imgs.length ? 'เพิ่มรูป' : 'แนบรูป'}</button>` : ''}
       <button class="btn" data-aiasksend>✨ ให้ AI ประเมิน</button>
       <button class="ghost wide2" data-aiback>กลับ</button>`;
+  }
   else body = `<button class="bigact" data-aiphotobig>📷 ถ่าย / เลือกรูป ให้ AI</button>
       <div class="acts2"><button class="bigact" data-aitext>✨ พิมพ์บอก AI</button><button class="bigact" data-sheetscan>▥ บาร์โค้ด</button></div>
       ${foodSearch('eat-' + id, 'eat')}`;
@@ -1593,6 +1601,17 @@ function confirmNumbers(f, pick) {
 const aiWaitText = () => { const s = sheet?.t0 ? Math.floor((Date.now() - sheet.t0) / 1000) : 0; return `${s} วินาที · ปกติใช้ 10–30 วินาที`; };
 setInterval(() => { const el = document.querySelector('[data-aisec]'); if (el) el.textContent = aiWaitText(); }, 1000);
 
+function openCompose(desc, imgs) {
+  if (!sheet) return;
+  Object.assign(sheet, { mode: 'aitext', err: null, desc: desc || '', imgs: imgs?.length ? imgs : null });
+  composeSave(); render();
+}
+// The compose screen (photos + text) is kept for this tab, so iOS reloading the app after the camera brings it back.
+function composeSave() {
+  if (!sheet || sheet.mode !== 'aitext') return;
+  keepImgs(sheet.imgs);
+  setPending({ id: sheet.id, meal: sheet.meal, desc: sheet.desc || '', page: pageKey(), at: Date.now(), compose: true });
+}
 async function sheetAi(desc, imgs, fix) {
   const s = sheet;
   if (!s) return;
@@ -2317,10 +2336,16 @@ function bind() {
   on('[data-aiphotobig]', () => {
     if (!aiKey() && !askAiKey()) return;
     const desc = (searchQ['eat-' + id] || '').trim();
-    pickPhoto().then(imgs => { if (imgs && sheet) sheetAi(desc, imgs); });
+    pickPhoto().then(imgs => { if (imgs && sheet) openCompose(desc, imgs); });
   });
-  on('[data-aitext]', () => { sheet.mode = 'aitext'; sheet.err = null; sheet.desc = (searchQ['eat-' + id] || '').trim() || sheet.desc; render(); document.getElementById('aiAsk')?.focus(); });
-  on('[data-aiback]', () => { sheet.mode = 'search'; sheet.err = null; render(); });
+  on('[data-aitext]', () => { openCompose((searchQ['eat-' + id] || '').trim() || sheet.desc, null); document.getElementById('aiAsk')?.focus(); });
+  const ask = document.getElementById('aiAsk');
+  if (ask) ask.oninput = () => { sheet.desc = ask.value; composeSave(); };
+  on('[data-aiaddphoto]', () => {
+    pickPhoto().then(more => { if (more && sheet) { sheet.imgs = [...(sheet.imgs || []), ...more].slice(0, AI_MAX_PHOTOS); composeSave(); render(); } });
+  });
+  document.querySelectorAll('[data-aiimgdel]').forEach(b => b.onclick = () => { sheet.imgs.splice(+b.dataset.aiimgdel, 1); if (!sheet.imgs.length) sheet.imgs = null; composeSave(); render(); });
+  on('[data-aiback]', () => { sheet.mode = 'search'; sheet.err = null; sheet.imgs = null; keepImgs(null); setPending(null); render(); });
   on('[data-airetry]', () => { if (aiKey() || askAiKey()) sheetAi(sheet.desc, sheet.imgs); });
   document.querySelectorAll('[data-aiuse]').forEach(b => b.onclick = () => {
     const i = +b.dataset.aiuse, cur = sheet.use?.[i] !== false; (sheet.use ||= {})[i] = !cur; render();
@@ -2332,9 +2357,9 @@ function bind() {
   document.querySelectorAll('[data-aidrop]').forEach(b => b.onclick = () => { (sheet.drop ||= {})[+b.dataset.aidrop] = true; render(); });
   on('[data-aiasksend]', () => {
     const desc = document.getElementById('aiAsk').value.trim();
-    if (!desc) { sheet.err = 'พิมพ์ว่ากินอะไรก่อน'; sheet.desc = ''; render(); return; }
+    if (!desc && !sheet.imgs?.length) { sheet.err = 'พิมพ์ว่ากินอะไร หรือแนบรูปก่อน'; sheet.desc = ''; render(); return; }
     if (!aiKey() && !askAiKey()) return;
-    sheetAi(desc, null);
+    sheetAi(desc, sheet.imgs);
   });
   on('[data-aicancel]', () => { sheet.ctrl?.abort(); sheet.ctrl = null; sheet.mode = sheet.result ? 'result' : 'search'; render(); });
   on('[data-aiadjust]', () => { sheet.adjust = true; render(); document.querySelector('.adjbox')?.scrollIntoView({ block: 'center' }); });
@@ -2644,6 +2669,7 @@ Split the meal into items, each with its own amount and nutrition, so each item 
 - Dish photos or descriptions: realistic Thai street-food / restaurant portions, including cooking oil, sauces and sugar, and whether soup/broth is eaten as described. Base values on Thai FDA, INMUCAL (Mahidol) or USDA data.
 - kcal is the real energy of the food; fiber and sugar alcohols add little, so kcal may be below 4/4/9 of the macros.
 - Dipping sauces, dressings, soups, drinks and sides served separately are often not finished: unless the user says otherwise, count a typical eaten amount (e.g. dipping sauce 1-2 tbsp), never the whole container.
+- When text and photos come together, the text says what was eaten and how much (trust it for items and amounts); use the photos for portion size, cooking method, oil and sauces, and anything the text leaves out.
 - Amounts the user states override what the photo suggests.
 - name (top level): short Thai name for the whole meal, also without quantities. note: one short Thai sentence (under 80 characters) with the main assumption.
 - Protein/carbs/fat in grams to 1 decimal; kcal as an integer.
@@ -2912,7 +2938,10 @@ try {
   // The page was reloaded while AI was working (iOS can do that after the camera): offer a one-tap retry with the same photos.
   const pend = JSON.parse(sessionStorage.getItem(AIPEND_KEY) || 'null');
   if (pend && !sheet && pend.page === pageKey() && Date.now() - pend.at < 15 * 60e3) {
-    sheet = { id: pend.id, meal: knownMeal(pend.meal), mode: 'retry', desc: pend.desc, imgs: keptImgs(), err: 'การรอผล AI ถูกขัดจังหวะ · กดลองใหม่ได้เลย ไม่ต้องถ่ายรูปใหม่' }; addMeal = sheet.meal;
+    sheet = pend.compose
+      ? { id: pend.id, meal: knownMeal(pend.meal), mode: 'aitext', desc: pend.desc, imgs: keptImgs() }
+      : { id: pend.id, meal: knownMeal(pend.meal), mode: 'retry', desc: pend.desc, imgs: keptImgs(), err: 'การรอผล AI ถูกขัดจังหวะ · กดลองใหม่ได้เลย ไม่ต้องถ่ายรูปใหม่' };
+    addMeal = sheet.meal;
   }
 } catch {}
 if (configured && pin) listen();
