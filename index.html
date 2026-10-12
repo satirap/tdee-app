@@ -286,6 +286,10 @@ body.noscroll{overflow:hidden}
 .aimatch.on{border-style:solid;border-color:var(--mc);color:var(--mc);font-weight:600}
 .ainew{display:inline-block;margin-top:6px;font-size:12px;color:var(--muted)}
 .ai-name{font-size:17px;font-weight:600}
+.ai-name-in{font:inherit;font-size:17px;font-weight:600;padding:6px 10px;border-radius:10px}
+.ai-item-in{flex:1;min-width:0;font:inherit;font-size:15px;font-weight:600;padding:4px 8px;border-radius:8px;background:var(--surface)}
+.nmrow{display:flex;flex-direction:row;align-items:center;gap:8px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);font-size:12px;color:var(--muted)}
+.nmrow input{flex:1;font-size:14px;padding:5px 8px;border-radius:8px}
 .ai-kcal{font-size:30px;font-weight:700;line-height:1.1}
 .ai-kcal small{font-size:14px;font-weight:500;color:var(--muted)}
 .ai-res .aiparts{background:var(--surface-2);border-radius:12px;padding:8px 12px;font-size:13px}
@@ -1356,6 +1360,14 @@ const curMeal = () => addMeal || autoMeal();
 
 // One logged/meal line as a card: name, kcal and ✕; tap it to open amount, unit, macros (and meal move).
 const lineKcal = x => eff(x).kcal;
+// Where a line's name lives: its own (sets, free lines), its My Food item, or its My Meal (renaming the source keeps every
+// log in sync, since synced lines take the name from the source). Built-in reference foods can't be renamed.
+function renameKind(x) {
+  if (x.foodId && S.shared?.foods?.[x.foodId]) return 'food';
+  if (x.foodId && S.shared?.meals?.[x.foodId]) return 'meal';
+  if (x.foodId && STD_BY_ID[x.foodId]) return null;
+  return 'line';
+}
 function itemChip(x, ns = '') {
   const us = unitsOf(x.foodId ? getFood(x.foodId) : null), cur = x.unit || 's', amt = x.amount ?? x.qty ?? 1, q = x.qty ?? 1;
   const unit = us.some(u => u.k === cur)
@@ -1366,6 +1378,7 @@ function itemChip(x, ns = '') {
   const parts = !ns && x.parts?.length ? x.parts : null;
   return `<div class="it${open ? ' open' : ''}${x.id === flashId ? ' flash' : ''}" data-${ns}row="${x.id}">
     <div class="l1"><span class="nm">${x.mealId || getFood(x.foodId)?.meal || parts ? '🍱 ' : ''}${esc(x.name)}${parts ? `<span class="pcount">${parts.length} รายการ</span>` : ''}${!ns && badge ? `<span class="pbadge">${badge}</span>` : ''}</span><span class="kc">${fmt(lineKcal(x))} <small>kcal</small></span><button class="x" data-${ns || 'un'}${ns ? 'del' : 'eat'}="${x.id}" title="ลบ">✕</button></div>
+    ${open && !ns && renameKind(x) ? `<label class="nmrow">ชื่อ<input data-rename="${x.id}" value="${esc(x.name)}" autocomplete="off" enterkeyhint="done"></label>` : ''}
     ${open && parts ? `<div class="parts">${parts.map(y => `<div><span>${esc(y.name)}</span><span>${fmt(eff(y).kcal)}</span></div>`).join('')}
       <button class="ghost sm" data-ungroup="${x.id}">แยกรายการ</button></div>` : ''}
     ${open ? `<div class="l2"><input class="amt" type="number" inputmode="decimal" step="any" min="0" data-${ns}amt="${x.id}" value="${+(+amt).toFixed(2)}">${unit}
@@ -1485,6 +1498,7 @@ function aiPlan() {
     const match = matchFood(it.name), useOld = !!match && sheet.use?.[i] !== false;
     if (useOld) return { i, it, match, useOld, line: aiLine(it, match) };
     const { food, pick } = aiNew(it);
+    if (sheet.names?.[i]) food.name = sheet.names[i];
     return { i, it, match, useOld, food, pick, line: lineFor(null, food, pick) };
   }).filter(Boolean);
 }
@@ -1522,11 +1536,11 @@ function sheetHtml(id) {
     const qty = x => x.useOld ? `${num(Math.round(x.line.amount * 100) / 100)} ${x.line.unitName || ''}` : `${num(x.it.amount)} ${MEAS_BY[x.it.unit]?.n || x.it.unit}`;
     body = `<div class="ai-res">
       ${thumbs(sheet.imgs)}
-      <div class="ai-name">${esc(r.name)}</div>
+      ${plan.length > 1 ? `<input class="ai-name-in" data-aititle value="${esc(sheet.title ?? r.name)}" aria-label="ชื่อชุด" autocomplete="off">` : ''}
       <div class="ai-kcal">${fmt(tot.kcal)} <small>kcal</small></div>
       <div class="muted">P ${r1(tot.p)} · C ${r1(tot.c)} · F ${r1(tot.f)}${plan.length > 1 ? ` · ${plan.length} รายการ` : ''}</div>
       <div class="aiitems">${plan.map(x => { const e = eff(x.line); return `<div class="aiitem">
-        <div class="ai-irow"><b>${esc(x.useOld ? x.match.name : x.it.name)}</b><span class="k">${fmt(e.kcal)} <small>kcal</small></span>${many ? `<button class="x" data-aidrop="${x.i}" aria-label="ไม่ได้กินรายการนี้">✕</button>` : ''}</div>
+        <div class="ai-irow">${x.useOld ? `<b>${esc(x.match.name)}</b>` : `<input class="ai-item-in" data-ainame="${x.i}" value="${esc(x.food.name)}" aria-label="ชื่อเมนู" autocomplete="off">`}<span class="k">${fmt(e.kcal)} <small>kcal</small></span>${many ? `<button class="x" data-aidrop="${x.i}" aria-label="ไม่ได้กินรายการนี้">✕</button>` : ''}</div>
         <div class="ai-isub">${esc(qty(x))} · P ${r1(e.p)} · C ${r1(e.c)} · F ${r1(e.f)}</div>
         ${x.match ? `<button class="aimatch${x.useOld ? ' on' : ''}" data-aiuse="${x.i}">${x.useOld ? '↺ ใช้เมนูเดิมใน My Food · แตะเพื่อสร้างใหม่' : `+ เมนูใหม่ · มีเมนูคล้าย “${esc(x.match.name)}” แตะเพื่อใช้เมนูเดิม`}</button>` : '<span class="ainew">+ บันทึกเป็นเมนูใหม่ใน My Food</span>'}
       </div>`; }).join('') || '<div class="muted">ไม่มีรายการ</div>'}</div>
@@ -1589,7 +1603,7 @@ async function sheetAi(desc, imgs, fix) {
   try {
     const r = await aiNutrition(desc, imgs, fix?.prev, fix?.fix, ctrl.signal);
     if (sheet !== s || ctrl.signal.aborted) return;
-    Object.assign(s, { mode: 'result', result: r, use: {}, drop: {} });
+    Object.assign(s, { mode: 'result', result: r, use: {}, drop: {}, names: {}, title: undefined });
   } catch (e) {
     if (sheet !== s || ctrl.signal.aborted) return;
     console.warn(e);
@@ -2311,6 +2325,10 @@ function bind() {
   document.querySelectorAll('[data-aiuse]').forEach(b => b.onclick = () => {
     const i = +b.dataset.aiuse, cur = sheet.use?.[i] !== false; (sheet.use ||= {})[i] = !cur; render();
   });
+  // Typing updates the plan without re-rendering, so the keyboard stays up.
+  const ttl = document.querySelector('[data-aititle]');
+  if (ttl) ttl.oninput = () => { sheet.title = ttl.value; };
+  document.querySelectorAll('[data-ainame]').forEach(inp => inp.oninput = () => { (sheet.names ||= {})[+inp.dataset.ainame] = inp.value.trim(); });
   document.querySelectorAll('[data-aidrop]').forEach(b => b.onclick = () => { (sheet.drop ||= {})[+b.dataset.aidrop] = true; render(); });
   on('[data-aiasksend]', () => {
     const desc = document.getElementById('aiAsk').value.trim();
@@ -2333,7 +2351,7 @@ function bind() {
   // Save: matched items log against the existing My Food item, new ones are added to My Food (one per item, reusable).
   // One item logs as one line; several log as one 🍱 set whose parts can be opened or split back.
   on('[data-aisave]', () => {
-    const plan = aiPlan(), name = sheet.result.name, share = S.shared && !sharedError;
+    const plan = aiPlan(), name = (sheet.title ?? sheet.result.name).trim() || sheet.result.name, share = S.shared && !sharedError;
     if (!plan.length) return;
     const lines = plan.map(x => {
       if (x.useOld) { if (share) sharedWrite({ [`uses.${x.match.id}`]: increment(1) }); return x.line; }
@@ -2374,6 +2392,18 @@ function bind() {
     for (const k of Object.keys(adj)) if (adj[k] === 100) delete adj[k];
     if (Object.keys(adj).length) it.adj = adj; else delete it.adj;
     changed();
+  });
+  document.querySelectorAll('[data-rename]').forEach(inp => {
+    inp.onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); inp.blur(); } };
+    inp.onchange = () => {
+      const it = list().find(x => x.id === inp.dataset.rename), name = inp.value.trim();
+      if (!it || !name || name === it.name) { inp.value = it?.name || ''; return; }
+      const kind = renameKind(it);
+      if (kind === 'food' && !sharedError) sharedWrite({ [`foods.${it.foodId}.name`]: name });
+      if (kind === 'meal' && !sharedError) sharedWrite({ [`meals.${it.foodId}.name`]: name });
+      it.name = name; changed();
+      toast(kind === 'line' ? 'เปลี่ยนชื่อแล้ว' : `เปลี่ยนชื่อใน ${kind === 'food' ? 'My Food' : 'My Meal'} แล้ว`);
+    };
   });
   document.querySelectorAll('[data-tomeal]').forEach(b => b.onclick = () => {
     const it = list().find(x => x.id === b.dataset.item);
