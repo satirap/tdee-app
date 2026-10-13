@@ -191,6 +191,18 @@ button.x:hover{color:var(--danger)}
 .parts{margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--surface-2);font-size:13px;color:var(--muted);display:grid;gap:3px}
 .parts > div{display:flex;justify-content:space-between;gap:8px}
 .parts .ghost{justify-self:start;margin-top:4px}
+.planline{text-align:center;font-size:13px;color:var(--muted);margin-top:8px}
+.kbar + .planline{text-align:left;margin-top:6px}
+.planseg{display:block;height:100%;background:repeating-linear-gradient(45deg,color-mix(in srgb, var(--c) 45%, transparent) 0 5px,transparent 5px 9px)}
+.it.plan{background:transparent;border:1.5px dashed color-mix(in srgb, var(--mc, var(--muted)) 55%, transparent);box-shadow:none}
+.it.plan .kc{color:var(--muted)}
+.pchk{flex:none;width:22px;height:22px;border-radius:50%;border:2px solid color-mix(in srgb, var(--mc, var(--muted)) 70%, transparent);background:transparent;margin-right:8px;cursor:pointer;padding:0;align-self:center}
+.pchk:active{background:var(--mc)}
+.plantag{font-size:10.5px;font-weight:700;color:var(--mc,var(--muted));border:1px solid currentColor;border-radius:6px;padding:0 5px;margin-right:6px;vertical-align:1px}
+.plank{font-style:normal;font-size:11.5px;font-weight:600;color:var(--muted);border:1px dashed var(--border);border-radius:99px;padding:1px 7px}
+.planseg-toggle{display:flex;align-self:stretch}
+.planseg-toggle button{flex:1;padding:7px}
+.sheet .planseg-toggle button.on{background:var(--mc);color:#fff}
 .toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:60;background:var(--text);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:14px;box-shadow:0 6px 20px rgba(0,0,0,.2);transition:opacity .4s;max-width:90vw}
 .toast.out{opacity:0}
 .ta-rings h2{display:flex;align-items:center;gap:6px}
@@ -576,8 +588,12 @@ function eff(x) {
 
 // Daily kcal total plus that day's target, so a week's balance is judged against the target in effect each day.
 // Today follows the live target; a past day keeps the target it had (or today's, if it never had one).
+// Planned lines ({plan:true}) are a preview of what you intend to eat: they never count in totals, charts or stats
+// until ticked as eaten. Unticked plans simply stay in the log as plans.
+const isEaten = x => !x.plan;
+const planKcal = (p, d) => dayItems(p, d).filter(x => x.plan).reduce((s, x) => s + eff(x).kcal, 0);
 function recordDay(p, d, edited) {
-  const items = dayItems(p, d);
+  const items = dayItems(p, d).filter(isEaten);
   p.days ||= {};
   if (!items.length) { if (edited) delete p.days[d]; return; }
   const kcal = Math.round(items.reduce((s, x) => s + eff(x).kcal, 0));
@@ -1246,7 +1262,7 @@ function statsBlock(id, withExtras = true) {
 
 // Donut of the day's calories: protein slice centred at the top, grams printed inside each slice,
 // total kcal in the middle.
-const daySum = (p, d, k) => dayItems(p, d).reduce((s, x) => s + eff(x)[k], 0);
+const daySum = (p, d, k) => dayItems(p, d).filter(isEaten).reduce((s, x) => s + eff(x)[k], 0);
 
 // Two progress rings: outer = kcal eaten vs target (a second red lap shows the overshoot), inner = protein.
 function rings(m, kcal, prot, tol = 50, tdee = Infinity) {
@@ -1305,21 +1321,22 @@ function energyBlock(id, d = todayStr()) {
   if (!r) return `<div class="alert">${!profileReady(p) ? 'กรอก <b>เพศ อายุ ส่วนสูง</b> ในแท็บ “ข้อมูลส่วนตัว” ก่อน' : 'บันทึกน้ำหนักอย่างน้อย 1 ครั้ง'} เพื่อคำนวณ TDEE</div>`;
   const m = d === todayStr() ? m0 : { ...m0, kcal: p.days?.[d]?.target || m0.kcal };
   const kcal = dayItems(p, d).length ? daySum(p, d, 'kcal') : p.days?.[d]?.kcal || 0, prot = daySum(p, d, 'p'), over = Math.round(kcal - m.kcal), protLeft = m.prot.g - prot;
-  const tol = +p.tol || 50, hit = Math.abs(over) <= tol, tdee = m.kcal + tdeeGap(p);
+  const tol = +p.tol || 50, hit = Math.abs(over) <= tol, tdee = m.kcal + tdeeGap(p), plan = Math.round(planKcal(p, d)), after = Math.round(m.kcal - kcal - plan);
+  const planLine = plan > 0 ? `<div class="planline">🗓 แผน ${fmt(plan)} kcal → ${after >= 0 ? `จะเหลือ ${fmt(after)}` : kcal + plan <= tdee ? `จะ +${fmt(-after)} · ยังลดอยู่` : `จะ +${fmt(-after)} · พักลด`}</div>` : '';
   const kStatus = hit ? 'ถึงเป้า ✓' : over < 0 ? `เหลือ ${fmt(-over)}` : kcal <= tdee ? `+${fmt(over)} · ยังลดอยู่` : `+${fmt(over)} · พักลด`;
   if (ringMin && isPhone()) {
     // Folded: one kcal bar (eaten vs target; anything past the target in amber), tap to bring the rings back.
     const over = kcal > m.kcal, base = over ? m.kcal / kcal * 100 : kcal / m.kcal * 100;
     return `<button class="kbar" data-ringtoggle aria-label="แสดงวงแหวน">
       <span class="kbar-top"><span>🔥 <b>${fmt(kcal)}</b> / ${fmt(m.kcal)} kcal</span><span class="${hit ? 'good' : over ? 'warn' : 'muted'}">${kStatus}</span></span>
-      <span class="kbar-track"><i style="width:${Math.min(100, base).toFixed(1)}%;background:${hit ? 'var(--good)' : 'var(--c)'}"></i>${over ? `<i style="width:${(100 - base).toFixed(1)}%;background:${hit ? 'var(--good)' : 'var(--warn)'}"></i>` : ''}</span>
-    </button>`;
+      <span class="kbar-track"><i style="width:${Math.min(100, base).toFixed(1)}%;background:${hit ? 'var(--good)' : 'var(--c)'}"></i>${over ? `<i style="width:${(100 - base).toFixed(1)}%;background:${hit ? 'var(--good)' : 'var(--warn)'}"></i>` : ''}${plan > 0 ? `<i class="planseg" style="width:${Math.max(0, Math.min(100 - Math.min(100, base), plan / Math.max(m.kcal, kcal) * 100)).toFixed(1)}%"></i>` : ''}</span>
+    </button>${planLine}`;
   }
   // The rings carry the day at a glance; the numbers and meal split fold away (state remembered on this device).
   let open = false;
   try { const v = localStorage.getItem('tdee-edetail'); open = v === null ? !isPhone() : v === '1'; } catch {}
   if (!isPhone()) open = true;
-  return `${rings(m, kcal, prot, tol, tdee)}
+  return `${rings(m, kcal, prot, tol, tdee)}${planLine}
     <details class="edetail" ${open ? 'open' : ''}><summary><span><i class="o">ดูรายละเอียด</i><i class="c">ซ่อนรายละเอียด</i></span></summary>
     <div class="ring-rows">
       <div><span class="rk"><i style="background:var(--c)"></i>🔥 แคลอรี</span><span><b>${fmt(kcal)}</b> / ${fmt(m.kcal)}</span>
@@ -1333,7 +1350,7 @@ function energyBlock(id, d = todayStr()) {
       return `<div><span class="rk"><i style="background:var(--${col})"></i>${label}</span><span><b>${fmt(v)}</b> / ${fmt(max)} ก.</span>
         <span class="${left < 0 ? 'warn' : 'muted'}">${left < 0 ? `+${fmt(-left)} ก.` : left === 0 ? 'พอดี' : `เหลือ ${fmt(left)} ก.`}</span></div>`;
     }).join('')}</div>
-    ${mealSplit(dayItems(p, d))}
+    ${mealSplit(dayItems(p, d).filter(isEaten))}
     </details>
     ${r.target < r.floor ? `<div class="alert">เป้าคำนวณได้ ${fmt(r.target)} kcal ต่ำกว่าขั้นต่ำที่แนะนำ (${r.floor}) จึงแสดงเป็น ${r.floor} แทน · ลองลด “ลดวันละ” ลง</div>` : ''}`;
 }
@@ -1378,8 +1395,8 @@ function itemChip(x, ns = '') {
   const e = eff(x), r1 = v => num(Math.round(v * 10) / 10), open = openItem === x.id, pct = x.pct ?? 100, adj = x.adj || {};
   const badge = [pct !== 100 ? `${pct}%` : '', ...[['p', 'P'], ['c', 'C'], ['f', 'F']].filter(([k]) => (adj[k] ?? 100) !== 100).map(([k, l]) => `${l} ${adj[k]}%`)].filter(Boolean).join(' · ');
   const parts = !ns && x.parts?.length ? x.parts : null;
-  return `<div class="it${open ? ' open' : ''}${x.id === flashId ? ' flash' : ''}" data-${ns}row="${x.id}">
-    <div class="l1"><span class="nm">${x.mealId || getFood(x.foodId)?.meal || parts ? '🍱 ' : ''}${esc(x.name)}${parts ? `<span class="pcount">${parts.length} รายการ</span>` : ''}${!ns && badge ? `<span class="pbadge">${badge}</span>` : ''}</span><span class="kc">${fmt(lineKcal(x))} <small>kcal</small></span><button class="x" data-${ns || 'un'}${ns ? 'del' : 'eat'}="${x.id}" title="ลบ">✕</button></div>
+  return `<div class="it${open ? ' open' : ''}${x.id === flashId ? ' flash' : ''}${!ns && x.plan ? ' plan' : ''}" data-${ns}row="${x.id}">
+    <div class="l1">${!ns && x.plan ? `<button class="pchk" data-eatplan="${x.id}" aria-label="กินแล้ว นับแคล" title="กินแล้ว"></button>` : ''}<span class="nm">${x.plan && !ns ? '<span class="plantag">แผน</span>' : ''}${x.mealId || getFood(x.foodId)?.meal || parts ? '🍱 ' : ''}${esc(x.name)}${parts ? `<span class="pcount">${parts.length} รายการ</span>` : ''}${!ns && badge ? `<span class="pbadge">${badge}</span>` : ''}</span><span class="kc">${fmt(lineKcal(x))} <small>kcal</small></span><button class="x" data-${ns || 'un'}${ns ? 'del' : 'eat'}="${x.id}" title="ลบ">✕</button></div>
     ${open && !ns && renameKind(x) ? `<label class="nmrow">ชื่อ<input data-rename="${x.id}" value="${esc(x.name)}" autocomplete="off" enterkeyhint="done"></label>` : ''}
     ${open && parts ? `<div class="parts">${parts.map(y => `<div><span>${esc(y.name)}</span><span>${fmt(eff(y).kcal)}</span></div>`).join('')}
       <button class="ghost sm" data-ungroup="${x.id}">แยกรายการ</button></div>` : ''}
@@ -1388,7 +1405,8 @@ function itemChip(x, ns = '') {
       ${ns ? '' : `<div class="pctrow"><span class="lbl">กินไป</span>${[100, 75, 50, 25].map(v => `<button class="${pct === v ? 'on' : ''}" data-pct="${v}" data-item="${x.id}">${v}</button>`).join('')}
         <span class="pin"><input type="number" inputmode="numeric" min="1" max="100" value="${pct}" data-pctin="${x.id}">%</span></div>
       <div class="adjrow"><span class="lbl">ปรับ</span>${[['p', 'โปรตีน'], ['c', 'คาร์บ'], ['f', 'ไขมัน']].map(([k, l]) => `<label>${l}<span class="pin"><input type="number" inputmode="numeric" min="0" max="100" value="${adj[k] ?? 100}" data-adj="${k}" data-item="${x.id}">%</span></label>`).join('')}</div>`}
-      ${ns ? '' : `<div class="mv">ย้ายไป ${MEALS.map(([k, n]) => `<button class="${x.meal === k ? 'on' : ''}" data-tomeal="${k}" data-item="${x.id}">${n}</button>`).join('')}</div>`}` : ''}
+      ${ns ? '' : `<div class="mv">ย้ายไป ${MEALS.map(([k, n]) => `<button class="${x.meal === k ? 'on' : ''}" data-tomeal="${k}" data-item="${x.id}">${n}</button>`).join('')}</div>
+      ${x.plan ? '' : `<button class="linkbtn" data-toplan="${x.id}">ยังไม่ได้กิน · เปลี่ยนเป็นแผน</button>`}`}` : ''}
   </div>`;
 }
 function setAmount(it, v) {
@@ -1441,7 +1459,7 @@ function eatenBlock(id) {
 
 // The add sheet opens from a meal's "+ เพิ่ม": AI photo, AI text, barcode, search and lists, all logging into that meal.
 // mode: search | aitext | loading | result. The AI result (without the photo) is kept on the device across reloads.
-let sheet = null;
+let sheet = null, planMode = false;
 const SHEET_KEY = 'tdee-sheet';
 function saveSheet() {
   try {
@@ -1519,7 +1537,8 @@ const thumbs = (imgs, big) => imgs?.length ? `<div class="aithumbs${big ? ' big'
 function sheetHtml(id) {
   if (!sheet || sheet.id !== id) return '';
   const [mk, mn0, ic] = MEALS.find(m => m[0] === sheet.meal) || MEALS[0], r = sheet.result, mn = mk === 's' ? mn0 : 'มื้อ' + mn0;
-  const head = `<div class="sh-head"><b>${ic} เพิ่ม · ${mn}</b><button class="x" data-sheetclose aria-label="ปิด">✕</button></div>`;
+  const head = `<div class="sh-head"><b>${ic} เพิ่ม · ${mn}</b><button class="x" data-sheetclose aria-label="ปิด">✕</button></div>
+    <div class="seg planseg-toggle">${[[false, '✓ กินแล้ว'], [true, '○ วางแผน']].map(([v, l]) => `<button type="button" data-planmode="${v ? 1 : 0}" class="${planMode === v ? 'on' : ''}">${l}</button>`).join('')}</div>`;
   const err = sheet.err ? `<div class="alert">${esc(sheet.err)}</div>` : '';
   let body;
   if (sheet.mode === 'loading') body = `<div class="ai-wait">
@@ -1668,7 +1687,7 @@ function mealGroups(p, d, items) {
   const groups = [...MEALS, ['', 'ไม่ระบุมื้อ', '•']].map(([k, n, ic]) => {
     const its = items.filter(x => k ? x.meal === k : !MEALS.some(m => m[0] === x.meal));
     if (!k && !its.length) return '';
-    const kc = its.reduce((t, y) => t + lineKcal(y), 0), sel = mealSel?.meal === k && k ? mealSel : null, fold = !sel && !!(k && its.length && mealFold[k]);
+    const kc = its.filter(isEaten).reduce((t, y) => t + eff(y).kcal, 0), kp = its.filter(x => x.plan).reduce((t, y) => t + eff(y).kcal, 0), sel = mealSel?.meal === k && k ? mealSel : null, fold = !sel && !!(k && its.length && mealFold[k]);
     const oname = IDS.find(x => x !== S.tab) === 'ton' ? 'ต้น' : 'พัช';
     if (sel) return `<div class="mgroup selecting" data-mc="${k}">
       <div class="mhead"><span class="mname">${ic} ${sel.mode === 'copy' ? `เลือกรายการที่จะคัดลอกไปให้${oname}` : 'เลือกรายการที่จะรวมเป็นชุด'}</span></div>
@@ -1683,7 +1702,7 @@ function mealGroups(p, d, items) {
       <div class="mhead"${k && its.length ? ` data-mfold="${k}"` : ''}><span class="mleft"><span class="mname">${ic} ${n}${fold ? `<em> · ${its.length} รายการ</em>` : ''}</span>
         ${k && its.length && !fold ? (o => `<button class="micon" data-copymeal="${k}" style="color:${C(o)};background:color-mix(in srgb, ${C(o)} 14%, transparent)" title="เลือกรายการคัดลอกไปให้${o === 'ton' ? 'ต้น' : 'พัช'}" aria-label="เลือกรายการคัดลอกไปให้${o === 'ton' ? 'ต้น' : 'พัช'}">${TO_PERSON_ICON}</button>`)(IDS.find(x => x !== S.tab)) : ''}
         ${k && its.length >= 2 && !fold ? `<button class="micon" data-savemeal="${k}" title="เลือกรายการรวมเป็นชุด" aria-label="เลือกรายการรวมเป็นชุด">${PLATE_ICON}</button>` : ''}</span>
-        <span class="mright">${its.length ? `<b>${fmt(kc)} <small>kcal</small></b>` : '<span class="muted">–</span>'}
+        <span class="mright">${kp ? `<em class="plank">แผน ${fmt(kp)}</em>` : ''}${its.length ? `<b>${fmt(kc)} <small>kcal</small></b>` : '<span class="muted">–</span>'}
         ${fold ? `<button class="micon plus" data-addto="${k}" aria-label="เพิ่มอาหาร">+</button>` : ''}
         ${k && its.length ? '<i class="mchev" aria-hidden="true"></i>' : ''}</span></div>
       ${fold ? '' : its.map(x => itemChip(x)).join('')}
@@ -2261,7 +2280,7 @@ function bind() {
     // A day that only had a total (from before per-day lists) keeps it as a line item, so adding food doesn't wipe it.
     if (!dayItems(p, day).length && p.days?.[day]?.kcal) list().push({ id: uid(), name: 'ยอดที่บันทึกไว้ก่อนหน้า', p: 0, c: 0, f: 0, kcal: p.days[day].kcal, qty: 1, amount: 1, unit: 's' });
     const nid = uid();
-    list().push({ id: nid, qty: 1, meal: curMeal(), ...item });
+    list().push({ id: nid, qty: 1, meal: curMeal(), ...item, ...(planMode ? { plan: true } : {}) });
     flashId = nid; setTimeout(() => { if (flashId === nid) flashId = null; }, 2000);
     if (sheet) { const key = 'eat-' + sheet.id; searchQ[key] = ''; delete scanDraft[key]; sheet = null; saveSheet(); }
     changed();
@@ -2417,6 +2436,17 @@ function bind() {
     for (const k of Object.keys(adj)) if (adj[k] === 100) delete adj[k];
     if (Object.keys(adj).length) it.adj = adj; else delete it.adj;
     changed();
+  });
+  document.querySelectorAll('[data-planmode]').forEach(b => b.onclick = () => { planMode = b.dataset.planmode === '1'; render(); });
+  document.querySelectorAll('[data-eatplan]').forEach(b => b.onclick = ev => {
+    ev.stopPropagation();
+    const it = list().find(x => x.id === b.dataset.eatplan);
+    if (!it) return;
+    delete it.plan; flashId = it.id; changed();
+  });
+  document.querySelectorAll('[data-toplan]').forEach(b => b.onclick = () => {
+    const it = list().find(x => x.id === b.dataset.toplan);
+    if (it) { it.plan = true; openItem = null; changed(); }
   });
   document.querySelectorAll('[data-rename]').forEach(inp => {
     inp.onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); inp.blur(); } };
