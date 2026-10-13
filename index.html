@@ -191,8 +191,10 @@ button.x:hover{color:var(--danger)}
 .parts{margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--surface-2);font-size:13px;color:var(--muted);display:grid;gap:3px}
 .parts > div{display:flex;justify-content:space-between;gap:8px}
 .parts .ghost{justify-self:start;margin-top:4px}
-.planline{text-align:center;font-size:13px;color:var(--muted);margin-top:8px}
-.kbar + .planline{text-align:left;margin-top:6px}
+.plansum{margin-top:12px;padding:10px 14px;border-radius:14px;border:1.5px dashed var(--border);background:var(--surface);font-size:13.5px;line-height:1.6;color:var(--muted)}
+.plansum b{color:var(--text)}
+.plansum b.good{color:var(--good)} .plansum b.warn{color:var(--warn)}
+@media (max-width:560px){.plansum{position:sticky;bottom:calc(74px + env(safe-area-inset-bottom));z-index:15;border-style:solid;border-color:color-mix(in srgb, var(--c) 40%, var(--border));box-shadow:0 6px 20px rgba(0,0,0,.12)}}
 .planseg{display:block;height:100%;background:repeating-linear-gradient(45deg,color-mix(in srgb, var(--c) 45%, transparent) 0 5px,transparent 5px 9px)}
 .it.plan{background:transparent;border:1.5px dashed color-mix(in srgb, var(--mc, var(--muted)) 55%, transparent);box-shadow:none}
 .it.plan .kc{color:var(--muted)}
@@ -1322,7 +1324,6 @@ function energyBlock(id, d = todayStr()) {
   const m = d === todayStr() ? m0 : { ...m0, kcal: p.days?.[d]?.target || m0.kcal };
   const kcal = dayItems(p, d).length ? daySum(p, d, 'kcal') : p.days?.[d]?.kcal || 0, prot = daySum(p, d, 'p'), over = Math.round(kcal - m.kcal), protLeft = m.prot.g - prot;
   const tol = +p.tol || 50, hit = Math.abs(over) <= tol, tdee = m.kcal + tdeeGap(p), plan = Math.round(planKcal(p, d)), after = Math.round(m.kcal - kcal - plan);
-  const planLine = plan > 0 ? `<div class="planline">🗓 แผน ${fmt(plan)} kcal → ${after >= 0 ? `จะเหลือ ${fmt(after)}` : kcal + plan <= tdee ? `จะ +${fmt(-after)} · ยังลดอยู่` : `จะ +${fmt(-after)} · พักลด`}</div>` : '';
   const kStatus = hit ? 'ถึงเป้า ✓' : over < 0 ? `เหลือ ${fmt(-over)}` : kcal <= tdee ? `+${fmt(over)} · ยังลดอยู่` : `+${fmt(over)} · พักลด`;
   if (ringMin && isPhone()) {
     // Folded: one kcal bar (eaten vs target; anything past the target in amber), tap to bring the rings back.
@@ -1330,13 +1331,13 @@ function energyBlock(id, d = todayStr()) {
     return `<button class="kbar" data-ringtoggle aria-label="แสดงวงแหวน">
       <span class="kbar-top"><span>🔥 <b>${fmt(kcal)}</b> / ${fmt(m.kcal)} kcal</span><span class="${hit ? 'good' : over ? 'warn' : 'muted'}">${kStatus}</span></span>
       <span class="kbar-track"><i style="width:${Math.min(100, base).toFixed(1)}%;background:${hit ? 'var(--good)' : 'var(--c)'}"></i>${over ? `<i style="width:${(100 - base).toFixed(1)}%;background:${hit ? 'var(--good)' : 'var(--warn)'}"></i>` : ''}${plan > 0 ? `<i class="planseg" style="width:${Math.max(0, Math.min(100 - Math.min(100, base), plan / Math.max(m.kcal, kcal) * 100)).toFixed(1)}%"></i>` : ''}</span>
-    </button>${planLine}`;
+    </button>`;
   }
   // The rings carry the day at a glance; the numbers and meal split fold away (state remembered on this device).
   let open = false;
   try { const v = localStorage.getItem('tdee-edetail'); open = v === null ? !isPhone() : v === '1'; } catch {}
   if (!isPhone()) open = true;
-  return `${rings(m, kcal, prot, tol, tdee)}${planLine}
+  return `${rings(m, kcal, prot, tol, tdee)}
     <details class="edetail" ${open ? 'open' : ''}><summary><span><i class="o">ดูรายละเอียด</i><i class="c">ซ่อนรายละเอียด</i></span></summary>
     <div class="ring-rows">
       <div><span class="rk"><i style="background:var(--c)"></i>🔥 แคลอรี</span><span><b>${fmt(kcal)}</b> / ${fmt(m.kcal)}</span>
@@ -1454,6 +1455,7 @@ function eatenBlock(id) {
     ${sharedError ? rulesAlert() : ''}
     ${!items.length && oldTotal ? `<div class="eaten muted" style="font-size:13px;padding-top:12px">บันทึกไว้ ${fmt(oldTotal)} kcal (ไม่มีรายการ)</div>` : ''}
     ${mealGroups(p, d, items)}
+    ${planSummary(p, d, m)}
     ${sheetHtml(id)}`;
 }
 
@@ -1681,6 +1683,19 @@ function mealIngredient(x) {
     qty: (x.qty ?? 1) * k, amount: (x.amount ?? x.qty ?? 1) * k, unit: x.unit || 's', unitName: x.unitName };
   if (x.foodId) it.foodId = x.foodId;
   return it;
+}
+
+// Shown only while something is planned: planned total and what would be left after eating it, against the day's target.
+// Sticks above the phone's tab bar so it stays in view while adding to any meal.
+function planSummary(p, d, m) {
+  const plans = dayItems(p, d).filter(x => x.plan);
+  if (!plans.length) return '';
+  const plan = Math.round(plans.reduce((t, x) => t + eff(x).kcal, 0)), target = d === todayStr() ? m.kcal : p.days?.[d]?.target || m.kcal;
+  const eaten = Math.round(daySum(p, d, 'kcal')), left = Math.round(target - eaten), after = left - plan, tdee = target + tdeeGap(p);
+  const res = after >= 0 ? `<b class="good">กินตามแผนแล้วจะเหลือ ${fmt(after)}</b>`
+    : `<b class="warn">กินตามแผนแล้ว +${fmt(-after)} จากเป้า · ${eaten + plan <= tdee ? 'ยังลดอยู่' : 'พักลด'}</b>`;
+  return `<div class="plansum"><div>🗓 วางแผนไว้ ${plans.length} รายการ · <b>${fmt(plan)}</b> kcal</div>
+    <div>${left >= 0 ? `เหลือ ${fmt(left)}` : `ตอนนี้ +${fmt(-left)} จากเป้า`} → ${res}</div></div>`;
 }
 
 function mealGroups(p, d, items) {
