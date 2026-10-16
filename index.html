@@ -501,7 +501,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.3.0', APP_BUILD = '2026-10-16 21:37'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.4.0', APP_BUILD = '2026-10-16 21:42'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -790,6 +790,10 @@ function calc(p, weight) {
 // Trial: only these people get day types (the others keep the weekly average); Health data still counts for anyone.
 const DAY_TYPE_IDS = ['ton'];
 const DAY_TYPES = [['badminton', '🏸', 'แบด'], ['weights', '🏋️', 'เวท'], ['rest', '😴', 'พัก']];
+// A day may combine badminton and weights: stored as 'badminton+weights' (its own group for learning; kcal = sum of parts).
+const typeParts = t => (t || '').split('+').filter(Boolean);
+const typeKcalOf = (p, t) => typeParts(t).reduce((s, k) => s + (+(p.typeKcal?.[k] ?? TYPE_KCAL[k]) || 0), 0);
+const typeLabel = t => { const xs = typeParts(t).map(k => DAY_TYPES.find(y => y[0] === k)).filter(Boolean); return xs.length ? `${xs.map(y => y[1]).join('')} ${xs.map(y => y[2]).join(' + ')}` : ''; };
 const TYPE_KCAL = { badminton: 900, weights: 300, rest: 0 };
 const idOf = p => IDS.find(i => S.people[i] === p);
 const healthDay = (p, d) => S.health?.[idOf(p)]?.days?.[d];
@@ -803,7 +807,7 @@ function typeTdee(p, type, r = calc(p)) {
   const from = new Date(dayMs(todayStr()) - 60 * 864e5).toISOString().slice(0, 10);
   const xs = Object.entries(p.dayType || {}).filter(([d, t]) => t === type && d >= from && d < todayStr()).map(([d]) => realTdee(p, d, r)).filter(Boolean);
   if (xs.length >= 2) return { tdee: Math.round(xs.reduce((a, b) => a + b, 0) / xs.length), learned: xs.length };
-  return { tdee: Math.round(r.base + (+(p.typeKcal?.[type] ?? TYPE_KCAL[type]) || 0) * r.exPct / 100), learned: 0 };
+  return { tdee: Math.round(r.base + typeKcalOf(p, type) * r.exPct / 100), learned: 0 };
 }
 // The day's TDEE and kcal target, and where it came from: health | type | avg.
 function dayPlan(p, d = todayStr()) {
@@ -1395,7 +1399,7 @@ function energyBlock(id, d = todayStr()) {
   if (!r) return `<div class="alert">${!profileReady(p) ? 'กรอก <b>เพศ อายุ ส่วนสูง</b> ในแท็บ “ข้อมูลส่วนตัว” ก่อน' : 'บันทึกน้ำหนักอย่างน้อย 1 ครั้ง'} เพื่อคำนวณ TDEE</div>`;
   const pl = dayPlan(p, d), h = healthDay(p, d);
   const m = d === todayStr() || pl.type || pl.real ? macros(p, d) : { ...m0, kcal: p.days?.[d]?.target || m0.kcal };
-  const typeRow = `${DAY_TYPE_IDS.includes(id) ? `<div class="daytype">${DAY_TYPES.map(([k, ic, n]) => `<button data-daytype="${k}" data-pid="${id}" class="${pl.type === k ? 'on' : ''}">${ic} ${n}</button>`).join('')}</div>` : ''}
+  const typeRow = `${DAY_TYPE_IDS.includes(id) ? `<div class="daytype">${DAY_TYPES.map(([k, ic, n]) => `<button data-daytype="${k}" data-pid="${id}" class="${typeParts(pl.type).includes(k) ? 'on' : ''}">${ic} ${n}</button>`).join('')}</div>` : ''}
     ${pl.real ? `<div class="hline">⌚ TDEE จริงจาก Health ${fmt(pl.real)} · Active ${fmt(h.active)} · Resting ${fmt(h.resting)}</div>` : ''}`;
   const kcal = dayItems(p, d).length ? daySum(p, d, 'kcal') : p.days?.[d]?.kcal || 0, prot = daySum(p, d, 'p'), over = Math.round(kcal - m.kcal), protLeft = m.prot.g - prot;
   const tol = +p.tol || 50, hit = Math.abs(over) <= tol, tdee = Math.max(pl.tdee, m.kcal), plan = Math.round(planKcal(p, d)), after = Math.round(m.kcal - kcal - plan);
@@ -2008,12 +2012,12 @@ function workoutPage(id) {
   const wk = days.slice(-7).filter(x => x.active != null), prev = days.slice(-14, -7).filter(x => x.active != null);
   const a7 = avgOf(wk.map(x => x.active)), a7p = avgOf(prev.map(x => x.active)), chg = a7 != null && a7p ? (a7 - a7p) / a7p * 100 : null;
   const tdee7 = avgOf(wk.map(x => x.real)), est = calc(p)?.tdee;
-  const types = [...DAY_TYPES, [undefined, '·', 'ไม่ระบุ']].map(([k, ic, n]) => {
-    const xs = have.filter(x => x.type === k);
-    if (!xs.length) return '';
+  const groups = [...new Set(have.map(x => x.type || ''))].sort((a, b) => (a ? 0 : 1) - (b ? 0 : 1) || a.localeCompare(b));
+  const types = groups.map(g => {
+    const k = g || undefined, xs = have.filter(x => (x.type || '') === g);
     // "ที่ตั้งไว้" = the estimate from settings (BMR × job + the type's exercise kcal), to compare with what Health measured.
-    const r = calc(p), set = !r ? null : k ? r.base + (+(p.typeKcal?.[k] ?? TYPE_KCAL[k]) || 0) * r.exPct / 100 : r.tdee;
-    return `<tr><td>${ic} ${n}</td><td class="num">${xs.length}</td><td class="num">${fmt(avgOf(xs.map(x => x.active)))}</td><td class="num"><b>${fmt(avgOf(xs.map(x => x.real)))}</b></td><td class="num muted">${set ? fmt(set) : '–'}</td></tr>`;
+    const r = calc(p), set = !r ? null : k ? r.base + typeKcalOf(p, k) * r.exPct / 100 : r.tdee;
+    return `<tr><td>${k ? typeLabel(k) : '· ไม่ระบุ'}</td><td class="num">${xs.length}</td><td class="num">${fmt(avgOf(xs.map(x => x.active)))}</td><td class="num"><b>${fmt(avgOf(xs.map(x => x.real)))}</b></td><td class="num muted">${set ? fmt(set) : '–'}</td></tr>`;
   }).join('');
   if (!have.length) return `<div class="card"><h2>⌚ Workout (Beta)</h2><div class="empty">ยังไม่มีข้อมูลจาก Apple Health · คำสั่งลัดจะส่งเข้ามาทุกคืน</div></div>`;
   return `<div class="grid">
@@ -2051,8 +2055,8 @@ function drawWorkout(id) {
       scales: { x: { stacked: true, grid: { display: false }, ticks: { color: muted, maxRotation: 0, autoSkip: true, maxTicksLimit: 10 } },
         y: { stacked: true, beginAtZero: true, grid: { color: grid }, border: { display: false }, ticks: { color: muted, maxTicksLimit: 5 } } },
       plugins: { legend: { display: false }, tooltip: { ...tip, filter: it => it.datasetIndex === 1 && it.raw != null, callbacks: { title,
-        label: it => { const x = days[it.dataIndex], ty = x.type && DAY_TYPES.find(y => y[0] === x.type);
-          return [`Active ${fmt(x.active)} · Resting ${fmt(x.resting)}`, `TDEE จริง ${fmt(x.real)}${ty ? ` · ${ty[1]} ${ty[2]}` : ''}`]; } } } } }
+        label: it => { const x = days[it.dataIndex], ty = typeLabel(x.type);
+          return [`Active ${fmt(x.active)} · Resting ${fmt(x.resting)}`, `TDEE จริง ${fmt(x.real)}${ty ? ` · ${ty}` : ''}`]; } } } } }
   }));
   // 7-day rolling average of active energy over the days that have data.
   const roll = days.map((_, i) => avgOf(days.slice(Math.max(0, i - 6), i + 1).filter(x => x.active != null).map(x => x.active)));
@@ -2274,8 +2278,8 @@ function drawIntake(id, n) {
           filter: it => !it.dataset.track && it.raw != null,
           callbacks: {
             title: it => new Date(dayMs(days[it[0].dataIndex].d)).toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'UTC' }),
-            label: it => { const x = days[it.dataIndex], d = x.kcal - tgt(x), t = p.dayType?.[x.d], ty = t && DAY_TYPES.find(y => y[0] === t);
-              return [`${fmt(x.kcal)} kcal${ty ? ` · ${ty[1]} ${ty[2]}` : ''}`, `${d > 0 ? '+' : 'ขาด '}${fmt(Math.abs(d))} จากเป้า ${fmt(tgt(x))}`, ...(d > 0 ? [`TDEE ${fmt(tdeeX(x))} ±5% · ${STATE_WORD[kcalState(x.kcal, tgt(x), tdeeX(x), 0)]}`] : []), ...(x.est ? [`⌚ เป้าจาก Health · ตอนวางแผน ${fmt(x.est)}`] : [])]; }
+            label: it => { const x = days[it.dataIndex], d = x.kcal - tgt(x), ty = typeLabel(p.dayType?.[x.d]);
+              return [`${fmt(x.kcal)} kcal${ty ? ` · ${ty}` : ''}`, `${d > 0 ? '+' : 'ขาด '}${fmt(Math.abs(d))} จากเป้า ${fmt(tgt(x))}`, ...(d > 0 ? [`TDEE ${fmt(tdeeX(x))} ±5% · ${STATE_WORD[kcalState(x.kcal, tgt(x), tdeeX(x), 0)]}`] : []), ...(x.est ? [`⌚ เป้าจาก Health · ตอนวางแผน ${fmt(x.est)}`] : [])]; }
           }
         }
       },
@@ -2466,7 +2470,10 @@ function bind() {
   document.querySelectorAll('[data-daytype]').forEach(b => b.onclick = () => {
     const p = S.people[b.dataset.pid], d = b.closest('.person-card') ? todayStr() : viewDay(), t = b.dataset.daytype;
     p.dayType = { ...(p.dayType || {}) };
-    if (p.dayType[d] === t) delete p.dayType[d]; else p.dayType[d] = t;
+    let parts = typeParts(p.dayType[d]);
+    parts = parts.includes(t) ? parts.filter(k => k !== t) : t === 'rest' ? ['rest'] : [...parts.filter(k => k !== 'rest'), t];
+    const v = DAY_TYPES.map(y => y[0]).filter(k => parts.includes(k)).join('+');
+    if (v) p.dayType[d] = v; else delete p.dayType[d];
     recordDay(p, d, false); save(); render();
   });
   if (!p) return;
