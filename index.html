@@ -501,7 +501,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.0.0', APP_BUILD = '2026-10-16 18:02'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.1.0', APP_BUILD = '2026-10-16 18:53'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -1344,9 +1344,12 @@ function rings(m, kcal, prot, tol = 50, tdee = Infinity) {
     ${hit ? `<text x="${c}" y="${c - 30}" text-anchor="middle" class="rl">ถึงเป้า</text>
     <text x="${c}" y="${c + 2}" text-anchor="middle" class="rv good">✓</text>
     <text x="${c}" y="${c + 30}" text-anchor="middle" class="rl">${over > 0 ? '+' : over < 0 ? '−' : ''}${fmt(Math.abs(over))} kcal</text>`
-    : over > 0 && kcal <= tdee ? `<text x="${c}" y="${c - 30}" text-anchor="middle" class="rl">ยังลดอยู่</text>
+    : over > 0 && kcal < tdee * (1 - TDEE_BAND) ? `<text x="${c}" y="${c - 30}" text-anchor="middle" class="rl">ยังลดอยู่</text>
     <text x="${c}" y="${c + 2}" text-anchor="middle" class="rv warn">${fmt(tdee - kcal)}</text>
     <text x="${c}" y="${c + 30}" text-anchor="middle" class="rl">ต่ำกว่า TDEE</text>`
+    : over > 0 && kcal <= tdee * (1 + TDEE_BAND) ? `<text x="${c}" y="${c - 30}" text-anchor="middle" class="rl">≈ TDEE</text>
+    <text x="${c}" y="${c + 2}" text-anchor="middle" class="rv warn">${kcal >= tdee ? '+' : '−'}${fmt(Math.abs(kcal - tdee))}</text>
+    <text x="${c}" y="${c + 30}" text-anchor="middle" class="rl">ทรงตัว</text>`
     : over > 0 ? `<text x="${c}" y="${c - 30}" text-anchor="middle" class="rl">วันนี้พักลด</text>
     <text x="${c}" y="${c + 2}" text-anchor="middle" class="rv warn">+${fmt(kcal - tdee)}</text>
     <text x="${c}" y="${c + 30}" text-anchor="middle" class="rl">เหนือ TDEE</text>`
@@ -1369,6 +1372,18 @@ function mealSplit(items) {
   </div>`;
 }
 
+// TDEE is an estimate (formula ±10%, food logging 10–20%), so within ±5% of TDEE counts as "≈ TDEE" (maintenance), not a pause.
+const TDEE_BAND = .05;
+// A logged day's TDEE: real from Health, else its stored target plus that day's planned deficit.
+const dayTdee = (p, x) => { const pl = dayPlan(p, x.d); return pl?.real ?? (x.target ? x.target + Math.max(0, (pl?.tdee ?? 0) - (pl?.kcal ?? 0)) : pl?.tdee ?? 0); };
+// hit | left | cut (above target, still below TDEE band) | even (inside TDEE ±5%) | pause (above the band)
+function kcalState(kcal, target, tdee, tol = 50) {
+  if (Math.abs(kcal - target) <= tol) return 'hit';
+  if (kcal < target) return 'left';
+  return kcal < tdee * (1 - TDEE_BAND) ? 'cut' : kcal <= tdee * (1 + TDEE_BAND) ? 'even' : 'pause';
+}
+const STATE_WORD = { cut: 'ยังลดอยู่', even: '≈ TDEE ทรงตัว', pause: 'พักลด' };
+
 // How far the kcal target sits below TDEE (the planned deficit, after the minimum-intake floor).
 // Eating above the target but below TDEE is still a deficit, so it is shown as "ยังลดอยู่", never as a failure.
 const tdeeGap = p => { const pl = dayPlan(p); return pl ? Math.max(0, pl.tdee - pl.kcal) : 0; };
@@ -1382,7 +1397,7 @@ function energyBlock(id, d = todayStr()) {
     ${pl.real ? `<div class="hline">⌚ TDEE จริงจาก Health ${fmt(pl.real)} · Active ${fmt(h.active)} · Resting ${fmt(h.resting)}</div>` : ''}`;
   const kcal = dayItems(p, d).length ? daySum(p, d, 'kcal') : p.days?.[d]?.kcal || 0, prot = daySum(p, d, 'p'), over = Math.round(kcal - m.kcal), protLeft = m.prot.g - prot;
   const tol = +p.tol || 50, hit = Math.abs(over) <= tol, tdee = Math.max(pl.tdee, m.kcal), plan = Math.round(planKcal(p, d)), after = Math.round(m.kcal - kcal - plan);
-  const kStatus = hit ? 'ถึงเป้า ✓' : over < 0 ? `เหลือ ${fmt(-over)}` : kcal <= tdee ? `+${fmt(over)} · ยังลดอยู่` : `+${fmt(over)} · พักลด`;
+  const st = kcalState(kcal, m.kcal, tdee, tol), kStatus = hit ? 'ถึงเป้า ✓' : over < 0 ? `เหลือ ${fmt(-over)}` : `+${fmt(over)} · ${STATE_WORD[st]}`;
   if (ringMin && isPhone()) return typeRow + (() => {
     // Folded: one kcal bar (eaten vs target; anything past the target in amber), tap to bring the rings back.
     const over = kcal > m.kcal, base = over ? m.kcal / kcal * 100 : kcal / m.kcal * 100;
@@ -1751,7 +1766,7 @@ function planSummary(p, d, m) {
   const plan = Math.round(plans.reduce((t, x) => t + eff(x).kcal, 0)), target = d === todayStr() ? m.kcal : p.days?.[d]?.target || m.kcal;
   const eaten = Math.round(daySum(p, d, 'kcal')), left = Math.round(target - eaten), after = left - plan, tdee = target + tdeeGap(p);
   const res = after >= 0 ? `<b class="good">กินตามแผนแล้วจะเหลือ ${fmt(after)}</b>`
-    : `<b class="warn">กินตามแผนแล้ว +${fmt(-after)} จากเป้า · ${eaten + plan <= tdee ? 'ยังลดอยู่' : 'พักลด'}</b>`;
+    : `<b class="warn">กินตามแผนแล้ว +${fmt(-after)} จากเป้า · ${STATE_WORD[kcalState(eaten + plan, target, tdee, 0)]}</b>`;
   return `<div class="plansum"><div>🗓 วางแผนไว้ ${plans.length} รายการ · <b>${fmt(plan)}</b> kcal</div>
     <div>${left >= 0 ? `เหลือ ${fmt(left)}` : `ตอนนี้ +${fmt(-left)} จากเป้า`} → ${res}</div></div>`;
 }
@@ -1928,7 +1943,7 @@ function intakeCard(id, n) {
   const bal = logged.reduce((s, x) => s + x.kcal - x.target, 0);
   const avg = logged.length ? logged.reduce((s, x) => s + x.kcal, 0) / logged.length : null;
   // Same days measured against TDEE (target + planned deficit): what actually happened to the energy balance.
-  const P = S.people[id], tdeeOf = x => { const pl = dayPlan(P, x.d); return pl?.real ?? (x.target ? x.target + Math.max(0, (pl?.tdee ?? 0) - (pl?.kcal ?? 0)) : pl?.tdee ?? 0); };
+  const P = S.people[id], tdeeOf = x => dayTdee(P, x);
   const net = logged.length ? Math.round(logged.reduce((t, x) => t + x.kcal - tdeeOf(x), 0)) : null, realN = logged.filter(x => dayPlan(P, x.d)?.real).length;
   return `<div class="card">
     <h2>${n === 7 ? '📊 TDEE รายสัปดาห์ · 7 วันล่าสุด' : '📈 TDEE ย้อนหลัง 30 วัน'}</h2>
@@ -2081,7 +2096,8 @@ function drawIntake(id, n) {
   const tgt = x => x.target || nowTarget || 0;
   const WD = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
   const label = d => { const t = new Date(dayMs(d)); return n === 7 ? [WD[t.getUTCDay()], String(t.getUTCDate())] : String(t.getUTCDate()); };
-  const top = Math.max(1, ...days.map(x => Math.max(x.kcal || 0, tgt(x))));
+  const tdeeX = x => dayTdee(p, { ...x, target: tgt(x) });
+  const top = Math.max(1, ...days.map(x => Math.max(x.kcal || 0, tgt(x), tdeeX(x) * (1 + TDEE_BAND))));
   const fill = (ctx, base) => {
     const a = ctx.chart.chartArea;
     if (!a) return base;
@@ -2106,6 +2122,22 @@ function drawIntake(id, n) {
       ctx.stroke(); ctx.restore();
     }
   };
+  // Shaded TDEE ±5% band per day: inside it the day is roughly maintenance.
+  const band = {
+    id: 'tdeeBand',
+    beforeDatasetsDraw(chart) {
+      const { ctx, chartArea: a, scales: { x: xs, y: ys } } = chart, half = (xs.getPixelForValue(1) - xs.getPixelForValue(0)) / 2 || (a.right - a.left) / 2;
+      ctx.save();
+      days.forEach((x, i) => {
+        const t = x.kcal != null && tdeeX(x);
+        if (!t) return;
+        const cx = xs.getPixelForValue(i), hi = ys.getPixelForValue(t * (1 + TDEE_BAND)), lo = ys.getPixelForValue(t * (1 - TDEE_BAND)), mid = ys.getPixelForValue(t);
+        ctx.globalAlpha = .13; ctx.fillStyle = bad; ctx.fillRect(cx - half, hi, half * 2, lo - hi);
+        ctx.globalAlpha = .45; ctx.strokeStyle = bad; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(cx - half, mid); ctx.lineTo(cx + half, mid); ctx.stroke();
+      });
+      ctx.restore();
+    }
+  };
   const labels = {
     id: 'kcalLabels',
     afterDatasetsDraw(chart) {
@@ -2126,7 +2158,7 @@ function drawIntake(id, n) {
   const common = { grouped: false, borderSkipped: false, borderRadius: n === 7 ? 10 : 5, barPercentage: n === 7 ? .62 : .78, categoryPercentage: .92, maxBarThickness: 36 };
   charts.push(new Chart(el, {
     type: 'bar',
-    plugins: [limit, labels],
+    plugins: [band, limit, labels],
     data: {
       labels: days.map(x => label(x.d)),
       datasets: [
@@ -2156,7 +2188,7 @@ function drawIntake(id, n) {
           callbacks: {
             title: it => new Date(dayMs(days[it[0].dataIndex].d)).toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'UTC' }),
             label: it => { const x = days[it.dataIndex], d = x.kcal - tgt(x), t = p.dayType?.[x.d], ty = t && DAY_TYPES.find(y => y[0] === t);
-              return [`${fmt(x.kcal)} kcal${ty ? ` · ${ty[1]} ${ty[2]}` : ''}`, `${d > 0 ? '+' : 'ขาด '}${fmt(Math.abs(d))} จากเป้า ${fmt(tgt(x))}`, ...(x.est ? [`⌚ เป้าจาก Health · ตอนวางแผน ${fmt(x.est)}`] : [])]; }
+              return [`${fmt(x.kcal)} kcal${ty ? ` · ${ty[1]} ${ty[2]}` : ''}`, `${d > 0 ? '+' : 'ขาด '}${fmt(Math.abs(d))} จากเป้า ${fmt(tgt(x))}`, ...(d > 0 ? [`TDEE ${fmt(tdeeX(x))} ±5% · ${STATE_WORD[kcalState(x.kcal, tgt(x), tdeeX(x), 0)]}`] : []), ...(x.est ? [`⌚ เป้าจาก Health · ตอนวางแผน ${fmt(x.est)}`] : [])]; }
           }
         }
       },
