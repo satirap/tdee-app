@@ -12,7 +12,7 @@ Fat-loss tracker for two people. Static web app on GitHub Pages: https://satirap
 - `people/{ton|patt}`: profile, goals, `activities`, `entries[]` (weigh-ins), `log{date:[items]}`, `days{date:{kcal,target}}`.
 - Log item: `id, foodId?, name, p,c,f,kcal (per serving), qty, amount, unit, unitName, meal ('b'|'l'|'d'), pct?, adj?{p,c,f}, parts?[]` (parts = lines combined into one 🍱 set). Effective values via `eff(x)`.
 - `people/{id}` also: `dayType{date:'badminton'|'weights'|'rest'}`, `typeKcal{type:kcal}`, `days[d].est` (planned target when Health replaced it).
-- `health/{ton|patt}`: `days{date:{active,resting,at}}` written only by the iPhone Shortcut (REST PATCH, updateMask `days.`date``); the app only reads it.
+- `health/{ton|patt}`: `days{date:{active,resting,at}}` written only by the iPhone Shortcut (REST PATCH, updateMask `days.`date``); the app only reads it. The Shortcut may run several times a day: today's entry is "so far" (target only raised above the estimate, MyFitnessPal style); past days are full-day real TDEE.
 - `shared/foods`: `foods{id:…, last?{amount,unit}}`, `meals{id:{name,items}}`, `uses`, `hidden`.
 - `backups/{date}`: automatic daily copy written by the app.
 - Meals are breakfast/lunch/dinner only; old 's' (snack) lines show under "ไม่ระบุมื้อ".
