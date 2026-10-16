@@ -510,7 +510,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.6.0', APP_BUILD = '2026-10-16 22:11'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.6.1', APP_BUILD = '2026-10-16 22:26'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -1347,7 +1347,7 @@ function statsBlock(id, withExtras = true) {
 const daySum = (p, d, k) => dayItems(p, d).filter(isEaten).reduce((s, x) => s + eff(x)[k], 0);
 
 // Two progress rings: outer = kcal eaten vs target (a second red lap shows the overshoot), inner = protein.
-function rings(m, kcal, prot, tol = 50, tdee = Infinity) {
+function rings(m, kcal, prot, tol = TOL_DEFAULT, tdee = Infinity) {
   const c = 120, ring = (r, w, frac, color) => {
     const L = 2 * Math.PI * r, f = Math.min(1, Math.max(0, frac));
     return f <= 0 ? '' : `<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="round"
@@ -1399,10 +1399,12 @@ function mealSplit(items) {
 
 // TDEE is an estimate (formula ±10%, food logging 10–20%), so within ±5% of TDEE counts as "≈ TDEE" (maintenance), not a pause.
 const TDEE_BAND = .05;
+// Target range: ±100 kcal counts as on target (a 100 kcal miss barely changes weight); can be changed per person in Goals.
+const TOL_DEFAULT = 100;
 // A logged day's TDEE: real from Health, else its stored target plus that day's planned deficit.
 const dayTdee = (p, x) => { const pl = dayPlan(p, x.d); return pl?.real ?? (x.target ? x.target + Math.max(0, (pl?.tdee ?? 0) - (pl?.kcal ?? 0)) : pl?.tdee ?? 0); };
 // hit | left | cut (above target, still below TDEE band) | even (inside TDEE ±5%) | pause (above the band)
-function kcalState(kcal, target, tdee, tol = 50) {
+function kcalState(kcal, target, tdee, tol = TOL_DEFAULT) {
   if (Math.abs(kcal - target) <= tol) return 'hit';
   if (kcal < target) return 'left';
   return kcal < tdee * (1 - TDEE_BAND) ? 'cut' : kcal <= tdee * (1 + TDEE_BAND) ? 'even' : 'pause';
@@ -1421,7 +1423,7 @@ function energyBlock(id, d = todayStr()) {
   const typeRow = `${DAY_TYPE_IDS.includes(id) ? `<div class="daytype">${DAY_TYPES.map(([k, ic, n]) => `<button data-daytype="${k}" data-pid="${id}" class="${typeParts(pl.type).includes(k) ? 'on' : ''}">${ic} ${n}</button>`).join('')}</div>` : ''}
     ${pl.real ? `<div class="hline">⌚ TDEE จริงจาก Health ${fmt(pl.real)} · Active ${fmt(h.active)} · Resting ${fmt(h.resting)}</div>` : ''}`;
   const kcal = dayItems(p, d).length ? daySum(p, d, 'kcal') : p.days?.[d]?.kcal || 0, prot = daySum(p, d, 'p'), over = Math.round(kcal - m.kcal), protLeft = m.prot.g - prot;
-  const tol = +p.tol || 50, hit = Math.abs(over) <= tol, tdee = Math.max(pl.tdee, m.kcal), plan = Math.round(planKcal(p, d)), after = Math.round(m.kcal - kcal - plan);
+  const tol = +p.tol || TOL_DEFAULT, hit = Math.abs(over) <= tol, tdee = Math.max(pl.tdee, m.kcal), plan = Math.round(planKcal(p, d)), after = Math.round(m.kcal - kcal - plan);
   const st = kcalState(kcal, m.kcal, tdee, tol), kStatus = hit ? 'ถึงเป้า ✓' : over < 0 ? `เหลือ ${fmt(-over)}` : `+${fmt(over)} · ${STATE_WORD[st]}`;
   if (ringMin && isPhone()) return typeRow + (() => {
     // Folded: one kcal bar (eaten vs target; anything past the target in amber), tap to bring the rings back.
@@ -1921,7 +1923,7 @@ function goalCard(id) {
       <label>% ไขมันเป้าหมาย<input type="number" data-f="goalFat" step="0.5" min="5" max="50" value="${esc(p.goalFat ?? '')}" placeholder="เช่น 15"></label>
       <label>ลดวันละ (kcal)<input type="number" data-f="deficit" step="50" min="0" max="1000" value="${esc(p.deficit)}">
         ${chips('deficit', [300, 400, 500], p.deficit)}</label>
-      <label>ช่วงถึงเป้า (± kcal)${chips('tol', [50, 100, 150], p.tol ?? 50)}</label>
+      <label>ช่วงถึงเป้า (± kcal)${chips('tol', [50, 100, 150], p.tol ?? TOL_DEFAULT)}</label>
       <label>นับแคลจากการออกกำลังกาย
         <select data-f="exPct">${[[100, '100% (นับเต็ม)'], [75, '75% (แนะนำ)'], [50, '50% (เผื่อเยอะ)'], [0, '0% (ไม่นับเลย)']].map(([v, l]) => `<option value="${v}" ${exPct == v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       ${(DAY_TYPE_IDS.includes(id) ? DAY_TYPES : []).map(([k, ic, n]) => { const t = typeTdee(p, k); return `<label>${ic} วัน${n} ออกกำลัง (kcal)<input type="number" data-tk="${k}" step="50" min="0" max="3000" value="${esc(p.typeKcal?.[k] ?? TYPE_KCAL[k])}">${t?.learned ? `<small class="muted">⌚ TDEE จริงเฉลี่ย ${fmt(t.tdee)} (${t.learned} วัน)</small>` : ''}</label>`; }).join('')}
@@ -2210,7 +2212,7 @@ function drawIntake(id, n) {
     return g;
   };
   // Bars: inside target ±tol = green, short of it = orange, above it = red.
-  const tol = +p.tol || 50;
+  const tol = +p.tol || TOL_DEFAULT;
   // Above that day's TDEE = light purple (a lighter tone than the TDEE line, which is drawn on top with a halo).
   const overT = css('--over-tdee');
   const barColor = x => x.kcal == null ? good : x.kcal > tdeeX(x) ? overT : x.kcal > tgt(x) + tol ? red : x.kcal < tgt(x) - tol ? bad : good;
