@@ -501,7 +501,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.2.0', APP_BUILD = '2026-10-16 19:02'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.2.1', APP_BUILD = '2026-10-16 21:34'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -787,6 +787,8 @@ function calc(p, weight) {
 // Real TDEE comes from Apple Health (an iPhone Shortcut writes vault/{pin}/health/{id}.days[date] = {active, resting});
 // the watch's active energy is trusted at exPct % like the activity list. Without Health data for a day, a day type uses
 // the average real TDEE of past days of that type (2+ samples), else BMR × job factor + the type's exercise kcal.
+// Trial: only these people get day types (the others keep the weekly average); Health data still counts for anyone.
+const DAY_TYPE_IDS = ['ton'];
 const DAY_TYPES = [['badminton', '🏸', 'แบด'], ['weights', '🏋️', 'เวท'], ['rest', '😴', 'พัก']];
 const TYPE_KCAL = { badminton: 900, weights: 300, rest: 0 };
 const idOf = p => IDS.find(i => S.people[i] === p);
@@ -1393,7 +1395,7 @@ function energyBlock(id, d = todayStr()) {
   if (!r) return `<div class="alert">${!profileReady(p) ? 'กรอก <b>เพศ อายุ ส่วนสูง</b> ในแท็บ “ข้อมูลส่วนตัว” ก่อน' : 'บันทึกน้ำหนักอย่างน้อย 1 ครั้ง'} เพื่อคำนวณ TDEE</div>`;
   const pl = dayPlan(p, d), h = healthDay(p, d);
   const m = d === todayStr() || pl.type || pl.real ? macros(p, d) : { ...m0, kcal: p.days?.[d]?.target || m0.kcal };
-  const typeRow = `<div class="daytype">${DAY_TYPES.map(([k, ic, n]) => `<button data-daytype="${k}" data-pid="${id}" class="${pl.type === k ? 'on' : ''}">${ic} ${n}</button>`).join('')}</div>
+  const typeRow = `${DAY_TYPE_IDS.includes(id) ? `<div class="daytype">${DAY_TYPES.map(([k, ic, n]) => `<button data-daytype="${k}" data-pid="${id}" class="${pl.type === k ? 'on' : ''}">${ic} ${n}</button>`).join('')}</div>` : ''}
     ${pl.real ? `<div class="hline">⌚ TDEE จริงจาก Health ${fmt(pl.real)} · Active ${fmt(h.active)} · Resting ${fmt(h.resting)}</div>` : ''}`;
   const kcal = dayItems(p, d).length ? daySum(p, d, 'kcal') : p.days?.[d]?.kcal || 0, prot = daySum(p, d, 'p'), over = Math.round(kcal - m.kcal), protLeft = m.prot.g - prot;
   const tol = +p.tol || 50, hit = Math.abs(over) <= tol, tdee = Math.max(pl.tdee, m.kcal), plan = Math.round(planKcal(p, d)), after = Math.round(m.kcal - kcal - plan);
@@ -1899,7 +1901,7 @@ function goalCard(id) {
       <label>ช่วงถึงเป้า (± kcal)${chips('tol', [50, 100, 150], p.tol ?? 50)}</label>
       <label>นับแคลจากการออกกำลังกาย
         <select data-f="exPct">${[[100, '100% (นับเต็ม)'], [75, '75% (แนะนำ)'], [50, '50% (เผื่อเยอะ)'], [0, '0% (ไม่นับเลย)']].map(([v, l]) => `<option value="${v}" ${exPct == v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-      ${DAY_TYPES.map(([k, ic, n]) => { const t = typeTdee(p, k); return `<label>${ic} วัน${n} ออกกำลัง (kcal)<input type="number" data-tk="${k}" step="50" min="0" max="3000" value="${esc(p.typeKcal?.[k] ?? TYPE_KCAL[k])}">${t?.learned ? `<small class="muted">⌚ TDEE จริงเฉลี่ย ${fmt(t.tdee)} (${t.learned} วัน)</small>` : ''}</label>`; }).join('')}
+      ${(DAY_TYPE_IDS.includes(id) ? DAY_TYPES : []).map(([k, ic, n]) => { const t = typeTdee(p, k); return `<label>${ic} วัน${n} ออกกำลัง (kcal)<input type="number" data-tk="${k}" step="50" min="0" max="3000" value="${esc(p.typeKcal?.[k] ?? TYPE_KCAL[k])}">${t?.learned ? `<small class="muted">⌚ TDEE จริงเฉลี่ย ${fmt(t.tdee)} (${t.learned} วัน)</small>` : ''}</label>`; }).join('')}
     </div>
     <div class="note">${eta || 'ตั้งน้ำหนักเป้าหมาย + ข้อมูลส่วนตัว + บันทึกน้ำหนัก เพื่อดูว่าจะถึงเป้าเมื่อไหร่'}</div>
   </div>`;
