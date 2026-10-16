@@ -501,7 +501,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.1.0', APP_BUILD = '2026-10-16 18:53'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.2.0', APP_BUILD = '2026-10-16 19:02'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -2091,7 +2091,7 @@ function drawIntake(id, n) {
   const el = document.getElementById('intakeChart' + n);
   if (!el || !window.Chart) return;
   const p = S.people[id], days = lastDays(p, n), sel = viewDay();
-  const muted = css('--muted'), strong = css('--text'), track = css('--surface-2'), good = css('--good'), bad = css('--warn'), surface = css('--surface'), border = css('--border');
+  const muted = css('--muted'), strong = css('--text'), track = css('--surface-2'), good = css('--good'), bad = css('--warn'), red = css('--danger'), surface = css('--surface'), border = css('--border');
   const nowTarget = Math.round(macros(p)?.kcal || 0);
   const tgt = x => x.target || nowTarget || 0;
   const WD = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
@@ -2105,7 +2105,9 @@ function drawIntake(id, n) {
     g.addColorStop(0, base); g.addColorStop(1, base + '59');
     return g;
   };
-  const isOver = x => x.kcal != null && x.kcal > tgt(x);
+  // Bars: inside target ±tol = green, short of it = orange, above it = red.
+  const tol = +p.tol || 50, isOver = x => x.kcal != null && x.kcal > tgt(x) + tol;
+  const barColor = x => x.kcal == null ? good : x.kcal > tgt(x) + tol ? red : x.kcal < tgt(x) - tol ? bad : good;
   // Dashed limit line at each day's target, stepping where the target changed.
   const limit = {
     id: 'kcalLimit',
@@ -2119,7 +2121,14 @@ function drawIntake(id, n) {
         if (i === 0) ctx.moveTo(cx - half, py); else ctx.lineTo(cx - half, py);
         ctx.lineTo(cx + half, py);
       });
-      ctx.stroke(); ctx.restore();
+      ctx.stroke();
+      // Target range ±tol: a thin green band around the dashed line.
+      ctx.setLineDash([]); ctx.globalAlpha = .22; ctx.fillStyle = good;
+      days.forEach((x, i) => {
+        const cx = xs.getPixelForValue(i), hi = ys.getPixelForValue(tgt(x) + tol), lo = ys.getPixelForValue(tgt(x) - tol);
+        ctx.fillRect(cx - half, hi, half * 2, lo - hi);
+      });
+      ctx.restore();
     }
   };
   // Shaded TDEE ±5% band per day: inside it the day is roughly maintenance.
@@ -2132,8 +2141,8 @@ function drawIntake(id, n) {
         const t = x.kcal != null && tdeeX(x);
         if (!t) return;
         const cx = xs.getPixelForValue(i), hi = ys.getPixelForValue(t * (1 + TDEE_BAND)), lo = ys.getPixelForValue(t * (1 - TDEE_BAND)), mid = ys.getPixelForValue(t);
-        ctx.globalAlpha = .13; ctx.fillStyle = bad; ctx.fillRect(cx - half, hi, half * 2, lo - hi);
-        ctx.globalAlpha = .45; ctx.strokeStyle = bad; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(cx - half, mid); ctx.lineTo(cx + half, mid); ctx.stroke();
+        ctx.globalAlpha = .08; ctx.fillStyle = strong; ctx.fillRect(cx - half, hi, half * 2, lo - hi);
+        ctx.globalAlpha = .3; ctx.strokeStyle = strong; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(cx - half, mid); ctx.lineTo(cx + half, mid); ctx.stroke();
       });
       ctx.restore();
     }
@@ -2149,7 +2158,7 @@ function drawIntake(id, n) {
         if (x.kcal == null || !bars[i]) return;
         const y = Math.min(bars[i].y, tracks[i]?.y ?? bars[i].y) - 5;
         ctx.font = `${x.d === sel ? 700 : 600} 11px "IBM Plex Sans Thai", sans-serif`;
-        ctx.fillStyle = isOver(x) ? bad : x.d === sel ? strong : muted;
+        ctx.fillStyle = isOver(x) ? red : x.d === sel ? strong : muted;
         ctx.fillText(fmt(x.kcal), bars[i].x, y);
       });
       ctx.restore();
@@ -2164,8 +2173,8 @@ function drawIntake(id, n) {
       datasets: [
         { ...common, track: true, order: 2, data: days.map(tgt), backgroundColor: track, hoverBackgroundColor: track },
         { ...common, order: 1, data: days.map(x => x.kcal ?? null),
-          backgroundColor: ctx => fill(ctx, isOver(days[ctx.dataIndex]) ? bad : good),
-          hoverBackgroundColor: ctx => isOver(days[ctx.dataIndex]) ? bad : good }
+          backgroundColor: ctx => fill(ctx, barColor(days[ctx.dataIndex])),
+          hoverBackgroundColor: ctx => barColor(days[ctx.dataIndex]) }
       ]
     },
     options: {
