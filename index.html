@@ -225,9 +225,6 @@ button.x:hover{color:var(--danger)}
 .lg.box{width:10px;height:10px;border:0;background:var(--lc);border-radius:3px}
 .lg.faint{opacity:.45}
 .lg.dot{width:8px;height:8px;border:0;border-radius:50%;background:var(--lc)}
-.daytype{display:flex;gap:6px;margin:0 0 10px}
-.daytype button{flex:1;border:1px solid var(--border);background:var(--surface);color:var(--muted);border-radius:999px;padding:7px 0;font:inherit;font-size:13px;cursor:pointer}
-.daytype button.on{background:var(--text);border-color:var(--text);color:var(--bg);font-weight:600}
 .hline{font-size:12px;color:var(--muted);margin:-4px 0 8px}
 .appver{font-size:11px;color:var(--muted);text-align:center;margin-top:6px}
 .kbar{display:block;width:100%;border:0;background:none;padding:2px 0 0;font:inherit;color:inherit;text-align:left;cursor:pointer}
@@ -512,7 +509,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.10.0', APP_BUILD = '2026-10-17 00:50'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.10.1', APP_BUILD = '2026-10-17 00:54'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -1473,9 +1470,8 @@ const tdeeGap = p => { const pl = dayPlan(p); return pl ? Math.max(0, pl.tdee - 
 function energyBlock(id, d = todayStr()) {
   const p = S.people[id], r = calc(p), m0 = macros(p);
   if (!r) return `<div class="alert">${!profileReady(p) ? 'กรอก <b>เพศ อายุ ส่วนสูง</b> ในแท็บ “ข้อมูลส่วนตัว” ก่อน' : 'บันทึกน้ำหนักอย่างน้อย 1 ครั้ง'} เพื่อคำนวณ TDEE</div>`;
-  const pl = dayPlan(p, d), h = healthDay(p, d), watch = !p.dayType?.[d] && DAY_TYPE_IDS.includes(id) && watchTypeOf(p, d);
+  const pl = dayPlan(p, d), h = healthDay(p, d);
   const m = d === todayStr() || pl.type || pl.real ? macros(p, d) : { ...m0, kcal: p.days?.[d]?.target || m0.kcal };
-  const typeRow = `${DAY_TYPE_IDS.includes(id) ? `<div class="daytype">${DAY_TYPES.map(([k, ic, n]) => `<button data-daytype="${k}" data-pid="${id}" class="${typeParts(pl.type).includes(k) ? 'on' : ''}">${ic} ${n}${watch && typeParts(pl.type).includes(k) ? ' ⌚' : ''}</button>`).join('')}</div>` : ''}`;
   // Watch / weight-check details live inside "ดูรายละเอียด" so the main view is just the rings.
   const cal = d === todayStr() && calibration(p);
   const hl = `${pl.wk > 0 ? `<div class="hline">⌚ ${workoutsOf(p, d).map(w => `${esc(w.type || 'Workout')} ${fmt(+w.kcal || 0)}${+w.min ? ` (${fmt(+w.min)} นาที)` : ''}`).join(' · ')} · × ${p.exPct ?? 75}% = <b>+${fmt(pl.wkAdd)}</b></div>` : ''}
@@ -1486,7 +1482,7 @@ function energyBlock(id, d = todayStr()) {
   const kcal = dayItems(p, d).length ? daySum(p, d, 'kcal') : p.days?.[d]?.kcal || 0, prot = daySum(p, d, 'p'), over = Math.round(kcal - m.kcal), protLeft = m.prot.g - prot;
   const tol = +p.tol || TOL_DEFAULT, hit = Math.abs(over) <= tol, tdee = Math.max(pl.tdee, m.kcal), plan = Math.round(planKcal(p, d)), after = Math.round(m.kcal - kcal - plan);
   const st = kcalState(kcal, m.kcal, tdee, tol), kStatus = hit ? 'ถึงเป้า ✓' : over < 0 ? `เหลือ ${fmt(-over)}` : `+${fmt(over)} · ${STATE_WORD[st]}`;
-  if (ringMin && isPhone()) return typeRow + (() => {
+  if (ringMin && isPhone()) return (() => {
     // Folded: one kcal bar (eaten vs target; anything past the target in amber), tap to bring the rings back.
     const over = kcal > m.kcal, base = over ? m.kcal / kcal * 100 : kcal / m.kcal * 100;
     return `<button class="kbar" data-ringtoggle aria-label="แสดงวงแหวน">
@@ -1498,7 +1494,7 @@ function energyBlock(id, d = todayStr()) {
   let open = false;
   try { const v = localStorage.getItem('tdee-edetail'); open = v === null ? !isPhone() : v === '1'; } catch {}
   if (!isPhone()) open = true;
-  return `${typeRow}${rings(m, kcal, prot, tol, tdee)}
+  return `${rings(m, kcal, prot, tol, tdee)}
     <details class="edetail" ${open ? 'open' : ''}><summary><span><i class="o">ดูรายละเอียด</i><i class="c">ซ่อนรายละเอียด</i></span></summary>
     <div class="ring-rows">
       <div><span class="rk"><i style="background:var(--c)"></i>🔥 แคลอรี</span><span><b>${fmt(kcal)}</b> / ${fmt(m.kcal)}</span>
@@ -2541,16 +2537,6 @@ function bind() {
   });
   bindFoods();
   const id = S.tab, p = S.people[id];
-  document.querySelectorAll('[data-daytype]').forEach(b => b.onclick = () => {
-    const p = S.people[b.dataset.pid], d = b.closest('.person-card') ? todayStr() : viewDay(), t = b.dataset.daytype;
-    p.dayType = { ...(p.dayType || {}) };
-    const auto = watchTypeOf(p, d);
-    let parts = typeParts(p.dayType[d] || auto);
-    parts = parts.includes(t) ? parts.filter(k => k !== t) : t === 'rest' ? ['rest'] : [...parts.filter(k => k !== 'rest'), t];
-    const v = DAY_TYPES.map(y => y[0]).filter(k => parts.includes(k)).join('+') || (auto ? 'rest' : '');
-    if (v && v !== auto) p.dayType[d] = v; else delete p.dayType[d];
-    recordDay(p, d, false); save(); render();
-  });
   if (!p) return;
   document.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
     if (!confirm('ลบรายการนี้?')) return;
