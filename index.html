@@ -510,7 +510,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.5.1', APP_BUILD = '2026-10-16 21:56'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.5.2', APP_BUILD = '2026-10-16 22:01'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -2204,7 +2204,7 @@ function drawIntake(id, n) {
     return g;
   };
   // Bars: inside target ±tol = green, short of it = orange, above it = red.
-  const tol = +p.tol || 50, isOver = x => x.kcal != null && x.kcal > tgt(x) + tol;
+  const tol = +p.tol || 50;
   // Above that day's TDEE = light purple (a lighter tone than the TDEE line, which is drawn on top with a halo).
   const overT = css('--over-tdee');
   const barColor = x => x.kcal == null ? good : x.kcal > tdeeX(x) ? overT : x.kcal > tgt(x) + tol ? red : x.kcal < tgt(x) - tol ? bad : good;
@@ -2257,27 +2257,10 @@ function drawIntake(id, n) {
       ctx.restore();
     }
   };
-  const labels = {
-    id: 'kcalLabels',
-    afterDatasetsDraw(chart) {
-      if (n !== 7) return;
-      const { ctx } = chart, bars = chart.getDatasetMeta(1).data, tracks = chart.getDatasetMeta(0).data;
-      ctx.save();
-      ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-      days.forEach((x, i) => {
-        if (x.kcal == null || !bars[i]) return;
-        const y = Math.min(bars[i].y, tracks[i]?.y ?? bars[i].y) - 5;
-        ctx.font = `${x.d === sel ? 700 : 600} 11px "IBM Plex Sans Thai", sans-serif`;
-        ctx.fillStyle = x.kcal > tdeeX(x) ? tdeeCol : isOver(x) ? red : x.d === sel ? strong : muted;
-        ctx.fillText(fmt(x.kcal), bars[i].x, y);
-      });
-      ctx.restore();
-    }
-  };
   const common = { grouped: false, borderSkipped: false, borderRadius: n === 7 ? 10 : 5, barPercentage: n === 7 ? .62 : .78, categoryPercentage: .92, maxBarThickness: 36 };
   charts.push(new Chart(el, {
     type: 'bar',
-    plugins: [limit, band, labels],
+    plugins: [limit, band],
     data: {
       labels: days.map(x => label(x.d)),
       datasets: [
@@ -2289,14 +2272,8 @@ function drawIntake(id, n) {
     },
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-      layout: { padding: { top: n === 7 ? 20 : 6, left: 34 } },
-      onClick: (_, els) => {
-        if (!els.length) return;
-        const d = days[els[0].index].d;
-        // Re-render after Chart.js finishes this event; destroying the chart inside its own handler throws and can stall later charts.
-        setTimeout(() => { goDay(d); sub = 'today'; render(); window.scrollTo(0, 0); });
-      },
-      onHover: (ev, els) => { ev.native.target.style.cursor = els.length ? 'pointer' : 'default'; },
+      // No numbers on the bars and no page change: tapping a bar shows its numbers in the tooltip.
+      layout: { padding: { top: 6, left: 34 } },
       plugins: {
         legend: { display: false },
         tooltip: {
