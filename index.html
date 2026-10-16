@@ -512,7 +512,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.8.0', APP_BUILD = '2026-10-16 22:51'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.9.0', APP_BUILD = '2026-10-16 23:37'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -618,7 +618,7 @@ function recordDay(p, d, edited) {
   p.days ||= {};
   if (!items.length) { if (edited) delete p.days[d]; return; }
   const kcal = Math.round(items.reduce((s, x) => s + eff(x).kcal, 0));
-  const live = Math.round(macros(p)?.kcal ?? 0), own = (dayTypeOf(p, d) || healthDay(p, d)) && dayPlan(p, d);
+  const live = Math.round(macros(p)?.kcal ?? 0), own = (dayTypeOf(p, d) || healthDay(p, d) || workoutsOf(p, d).length) && dayPlan(p, d);
   if (own) { p.days[d] = { kcal, target: Math.round(own.kcal), ...(own.real || own.src === 'live' ? { est: Math.round(own.estKcal) } : {}) }; return; }
   p.days[d] = { kcal, target: d === todayStr() ? live || p.days[d]?.target || 0 : p.days[d]?.target ?? live };
 }
@@ -660,7 +660,7 @@ function retargetDays() {
   for (const id of IDS) {
     const p = S.people[id];
     if (!p) continue;
-    const ds = new Set([...Object.keys(p.dayType || {}), ...Object.keys(S.health?.[id]?.days || {})]);
+    const ds = new Set([...Object.keys(p.dayType || {}), ...Object.keys(S.health?.[id]?.days || {}), ...Object.keys(S.health?.[id]?.workouts || {})]);
     for (const d of ds) if (p.days?.[d] || dayItems(p, d).length) recordDay(p, d, false);
   }
 }
@@ -804,11 +804,15 @@ const DAY_TYPES = [['badminton', '🏸', 'แบด'], ['weights', '🏋️', '�
 // A day may combine badminton and weights: stored as 'badminton+weights' (its own group for learning; kcal = sum of parts).
 // For trial people a day with no type chosen counts as rest (from DEFAULT_REST_FROM on; older days stay untyped).
 const DEFAULT_REST_FROM = '2026-10-16';
-// The Shortcut also sends the day's Apple Watch workout names (health days[d].workouts, text or list, any language);
-// badminton / strength workouts set the day type automatically. A type picked by hand always wins.
+// Each Apple Watch workout: a second Shortcut (workout-end automation) writes health/{id}.workouts[date][start] =
+// {type, kcal, min} (REST PATCH, updateMask workouts.`date`.`start`), so every workout is kept on its own.
+// Badminton / strength workouts set the day type automatically (a type picked by hand always wins).
+// Older Shortcut versions may send the names as text in days[d].workouts instead.
 const WORKOUT_TYPES = [['badminton', /badminton|แบด/i], ['weights', /strength|weight|core|ความแข็งแรง|เวท|แกนกลาง/i]];
+const workoutsOf = (p, d) => Object.entries(S.health?.[idOf(p)]?.workouts?.[d] || {}).map(([k, w]) => ({ start: k, ...w })).sort((a, b) => a.start < b.start ? -1 : 1);
+const workoutKcal = (p, d) => Math.round(workoutsOf(p, d).reduce((s, w) => s + (+w.kcal || 0), 0));
 function watchTypeOf(p, d) {
-  const w = healthDay(p, d)?.workouts, txt = Array.isArray(w) ? w.join(',') : String(w || '');
+  const w = healthDay(p, d)?.workouts, txt = [...workoutsOf(p, d).map(x => x.type), ...(Array.isArray(w) ? w : [w || ''])].join(',');
   return WORKOUT_TYPES.filter(([, re]) => re.test(txt)).map(([k]) => k).join('+') || undefined;
 }
 const dayTypeOf = (p, d) => p.dayType?.[d] || (DAY_TYPE_IDS.includes(idOf(p)) && d >= DEFAULT_REST_FROM ? watchTypeOf(p, d) || 'rest' : undefined);
@@ -838,16 +842,19 @@ function soFarTdee(p, d, r = calc(p)) {
   if (!r || !h || d !== todayStr() || !(+h.active > 0)) return null;
   return Math.round(Math.max(+h.resting || 0, r.bmr) + (+h.active || 0) * (p.exPct ?? 75) / 100);
 }
-// The day's TDEE and kcal target, and where it came from: health | live | type | avg.
+// The day's TDEE and kcal target, and where it came from: health | live | workout | type | avg.
+// With watch workouts recorded, the estimate is a rest day's TDEE + the workouts' kcal × exPct (more exact than the type's
+// average); the day's running Active total from the other Shortcut still raises it when higher.
 // Past days use the real full-day TDEE. Today starts from the estimate and only goes up when the watch shows more burned
 // than estimated (like MyFitnessPal's exercise adjustment; never lowered during the day).
 function dayPlan(p, d = todayStr()) {
   const r = calc(p);
   if (!r) return null;
   const real = realTdee(p, d, r), type = dayTypeOf(p, d), sofar = soFarTdee(p, d, r);
-  const est = type ? typeTdee(p, type, r).tdee : Math.round(r.tdee), live = sofar != null && sofar > est;
+  const wk = workoutKcal(p, d), wkAdd = Math.round(wk * (p.exPct ?? 75) / 100);
+  const est = wk > 0 ? typeTdee(p, 'rest', r).tdee + wkAdd : type ? typeTdee(p, type, r).tdee : Math.round(r.tdee), live = sofar != null && sofar > est;
   const tdee = real ?? (live ? sofar : est), kcal = Math.max(tdee - (+p.deficit || 0), r.floor);
-  return { tdee, kcal, est, estKcal: Math.max(est - (+p.deficit || 0), r.floor), real, sofar, type, src: real ? 'health' : live ? 'live' : type ? 'type' : 'avg' };
+  return { tdee, kcal, est, estKcal: Math.max(est - (+p.deficit || 0), r.floor), real, sofar, type, wk, wkAdd, src: real ? 'health' : live ? 'live' : wk > 0 ? 'workout' : type ? 'type' : 'avg' };
 }
 
 // Protein = g/kg bodyweight; fat = % of calories (WHO/IOM AMDR 20–35%); carbs = whatever is left.
@@ -1439,6 +1446,7 @@ function energyBlock(id, d = todayStr()) {
   const pl = dayPlan(p, d), h = healthDay(p, d), watch = !p.dayType?.[d] && DAY_TYPE_IDS.includes(id) && watchTypeOf(p, d);
   const m = d === todayStr() || pl.type || pl.real ? macros(p, d) : { ...m0, kcal: p.days?.[d]?.target || m0.kcal };
   const typeRow = `${DAY_TYPE_IDS.includes(id) ? `<div class="daytype">${DAY_TYPES.map(([k, ic, n]) => `<button data-daytype="${k}" data-pid="${id}" class="${typeParts(pl.type).includes(k) ? 'on' : ''}">${ic} ${n}${watch && typeParts(pl.type).includes(k) ? ' ⌚' : ''}</button>`).join('')}</div>` : ''}
+    ${pl.wk > 0 ? `<div class="hline">⌚ ${workoutsOf(p, d).map(w => `${esc(w.type || 'Workout')} ${fmt(+w.kcal || 0)}${+w.min ? ` (${fmt(+w.min)} นาที)` : ''}`).join(' · ')} · × ${p.exPct ?? 75}% = <b>+${fmt(pl.wkAdd)}</b></div>` : ''}
     ${pl.real ? `<div class="hline">⌚ TDEE จริงจาก Health ${fmt(pl.real)} · Active ${fmt(h.active)} · Resting ${fmt(h.resting)}</div>`
       : pl.sofar != null ? `<div class="hline">⌚ ถึงตอนนี้ Active ${fmt(h.active)}${h.at && h.at.length > 10 ? ` (${esc(h.at.slice(11, 16))})` : ''} · ${pl.src === 'live' ? `<b>เป้าเพิ่ม +${fmt(pl.kcal - pl.estKcal)}</b>` : `ยังไม่เกินที่ประมาณไว้ ${fmt(pl.est)}`}</div>` : ''}`;
   const kcal = dayItems(p, d).length ? daySum(p, d, 'kcal') : p.days?.[d]?.kcal || 0, prot = daySum(p, d, 'p'), over = Math.round(kcal - m.kcal), protLeft = m.prot.g - prot;
