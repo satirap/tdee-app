@@ -26,7 +26,7 @@ Fat-loss tracker for two people. Static web app on GitHub Pages: https://satirap
 - **Never delete or overwrite stored data.** Use the `data-safety` skill: back up → change → compare counts, for every deploy and any data write. Field-level writes only (`updateDoc` / REST `updateMask`).
 - **Diagnose before fixing** reported problems (`diagnose-before-fix` skill).
 - Keep the UI minimal (no hint texts, search-first). Phone = native-app feel (bottom tab bar, sheets); desktop = standard web layout.
-- Wording: above target but under TDEE = "ยังลดอยู่", above TDEE = "พักลด"; amber, not red. Never "เกิน" for kcal. Exception (user, 2026-10-16): calorie chart bars are green inside target ±tol, orange below, red above.
+- Wording: above target but under TDEE = "ยังลดอยู่", above TDEE = "พักลด"; amber, not red. Never "เกิน" for kcal. Exception (user, 2026-10-16): calorie chart bars are green inside target ±tol, orange below, red above, light purple above that day's TDEE (TDEE line = solid purple, drawn on top).
 
 ## Test → deploy workflow
 1. Copy `index.html foods-th.js firebase-config.js *.png` to the scratchpad `site/`, then stub **every** write: `setDoc(personDoc…)`, `setDoc(backupDoc…)`, shared seed `setDoc(sharedDoc…)`, `sharedWrite`, import `setDoc`. Expose `window.__S`/`__render`. Grep that no `setDoc|updateDoc|deleteDoc(` remains.

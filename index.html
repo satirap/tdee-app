@@ -21,7 +21,7 @@
   --bg:#f6f5f2; --surface:#ffffff; --surface-2:#f0eee9; --text:#1d1c1a; --muted:#6b6862;
   --border:#e2dfd8; --ton:#2f6fdb; --patt:#e0613f; --good:#1f8a5b; --warn:#b7791f; --danger:#c43d3d;
   --ton-soft:rgba(47,111,219,.12); --patt-soft:rgba(224,97,63,.12);
-  --prot:#1f8a5b; --carb:#c9941a; --fat:#8a63d2; --on-macro:#fff;
+  --prot:#1f8a5b; --carb:#c9941a; --fat:#8a63d2; --on-macro:#fff; --over-tdee:#c3a9f2;
   --radius:14px;
 }
 @media (prefers-color-scheme: dark){
@@ -29,14 +29,14 @@
     --bg:#141413; --surface:#1e1d1b; --surface-2:#282724; --text:#eceae4; --muted:#9d9a92;
     --border:#34322e; --ton:#6b9bf0; --patt:#f08766; --good:#4cc38a; --warn:#e0a84a; --danger:#ef6b6b;
     --ton-soft:rgba(107,155,240,.16); --patt-soft:rgba(240,135,102,.16);
-    --prot:#4cc38a; --carb:#e6b949; --fat:#a98bf0; --on-macro:#141413;
+    --prot:#4cc38a; --carb:#e6b949; --fat:#a98bf0; --on-macro:#141413; --over-tdee:#6b559e;
   }
 }
 :root[data-theme="dark"]{
   --bg:#141413; --surface:#1e1d1b; --surface-2:#282724; --text:#eceae4; --muted:#9d9a92;
   --border:#34322e; --ton:#6b9bf0; --patt:#f08766; --good:#4cc38a; --warn:#e0a84a; --danger:#ef6b6b;
   --ton-soft:rgba(107,155,240,.16); --patt-soft:rgba(240,135,102,.16);
-  --prot:#4cc38a; --carb:#e6b949; --fat:#a98bf0; --on-macro:#141413;
+  --prot:#4cc38a; --carb:#e6b949; --fat:#a98bf0; --on-macro:#141413; --over-tdee:#6b559e;
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font-family:"IBM Plex Sans Thai",system-ui,sans-serif;font-size:15px;line-height:1.55}
@@ -510,7 +510,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.5.0', APP_BUILD = '2026-10-16 21:50'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.5.1', APP_BUILD = '2026-10-16 21:56'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -1976,7 +1976,7 @@ function intakeCard(id, n) {
     ${net == null ? '' : net < 0
       ? `<div class="tdee-line">สุทธิต่ำกว่า TDEE <b class="good">${fmt(-net)} kcal</b> · ≈ ไขมัน ${num(Math.round(-net / KCAL_PER_KG * 100) / 100)} กก.${realN ? ` · ⌚ จริง ${realN} วัน` : ''}</div>`
       : `<div class="tdee-line">สุทธิเหนือ TDEE ${fmt(net)} kcal${realN ? ` · ⌚ จริง ${realN} วัน` : ''}</div>`}
-    ${legendHtml([['line', 'var(--fat)', 'TDEE ของวันนั้น'], ['band', 'var(--text)', `เป้า = TDEE − แผนลด (±${+P.tol || 50})`], ['box', 'var(--good)', 'ในช่วงเป้า'], ['box', 'var(--warn)', 'ไม่ถึง'], ['box', 'var(--danger)', 'เกินช่วง']])}
+    ${legendHtml([['line', 'var(--fat)', 'TDEE ของวันนั้น'], ['band', 'var(--text)', `เป้า = TDEE − แผนลด (±${+P.tol || 50})`], ['box', 'var(--good)', 'ในช่วงเป้า'], ['box', 'var(--warn)', 'ไม่ถึง'], ['box', 'var(--danger)', 'เกินช่วง'], ['box', 'var(--over-tdee)', 'เกิน TDEE']])}
     <div class="chart-box short"><canvas id="intakeChart${n}"></canvas></div>
   </div>`;
 }
@@ -2205,7 +2205,9 @@ function drawIntake(id, n) {
   };
   // Bars: inside target ±tol = green, short of it = orange, above it = red.
   const tol = +p.tol || 50, isOver = x => x.kcal != null && x.kcal > tgt(x) + tol;
-  const barColor = x => x.kcal == null ? good : x.kcal > tgt(x) + tol ? red : x.kcal < tgt(x) - tol ? bad : good;
+  // Above that day's TDEE = light purple (a lighter tone than the TDEE line, which is drawn on top with a halo).
+  const overT = css('--over-tdee');
+  const barColor = x => x.kcal == null ? good : x.kcal > tdeeX(x) ? overT : x.kcal > tgt(x) + tol ? red : x.kcal < tgt(x) - tol ? bad : good;
   // Dashed limit line at each day's target, stepping where the target changed.
   const limit = {
     id: 'kcalLimit',
@@ -2235,13 +2237,14 @@ function drawIntake(id, n) {
     id: 'tdeeLine',
     afterDatasetsDraw(chart) {
       const { ctx, chartArea: a, scales: { x: xs, y: ys } } = chart, half = (xs.getPixelForValue(1) - xs.getPixelForValue(0)) / 2 || (a.right - a.left) / 2;
-      ctx.save(); ctx.strokeStyle = tdeeCol; ctx.lineWidth = 2; ctx.beginPath();
+      ctx.save(); ctx.beginPath();
       days.forEach((x, i) => {
         const cx = xs.getPixelForValue(i), py = ys.getPixelForValue(tdeeX(x));
         if (i === 0) ctx.moveTo(cx - half, py); else ctx.lineTo(cx - half, py);
         ctx.lineTo(cx + half, py);
       });
-      ctx.stroke();
+      ctx.strokeStyle = surface; ctx.lineWidth = 5; ctx.stroke();
+      ctx.strokeStyle = tdeeCol; ctx.lineWidth = 2; ctx.stroke();
       // Names in front of the lines, at the left edge.
       // Names sit in the left padding, in front of where each line starts (values are in the tooltip).
       const x0 = days[0], yT = ys.getPixelForValue(tdeeX(x0)), yG = ys.getPixelForValue(tgt(x0));
@@ -2265,7 +2268,7 @@ function drawIntake(id, n) {
         if (x.kcal == null || !bars[i]) return;
         const y = Math.min(bars[i].y, tracks[i]?.y ?? bars[i].y) - 5;
         ctx.font = `${x.d === sel ? 700 : 600} 11px "IBM Plex Sans Thai", sans-serif`;
-        ctx.fillStyle = isOver(x) ? red : x.d === sel ? strong : muted;
+        ctx.fillStyle = x.kcal > tdeeX(x) ? tdeeCol : isOver(x) ? red : x.d === sel ? strong : muted;
         ctx.fillText(fmt(x.kcal), bars[i].x, y);
       });
       ctx.restore();
