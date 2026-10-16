@@ -512,7 +512,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.7.0', APP_BUILD = '2026-10-16 22:33'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.8.0', APP_BUILD = '2026-10-16 22:51'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -804,7 +804,14 @@ const DAY_TYPES = [['badminton', '🏸', 'แบด'], ['weights', '🏋️', '�
 // A day may combine badminton and weights: stored as 'badminton+weights' (its own group for learning; kcal = sum of parts).
 // For trial people a day with no type chosen counts as rest (from DEFAULT_REST_FROM on; older days stay untyped).
 const DEFAULT_REST_FROM = '2026-10-16';
-const dayTypeOf = (p, d) => p.dayType?.[d] || (DAY_TYPE_IDS.includes(idOf(p)) && d >= DEFAULT_REST_FROM ? 'rest' : undefined);
+// The Shortcut also sends the day's Apple Watch workout names (health days[d].workouts, text or list, any language);
+// badminton / strength workouts set the day type automatically. A type picked by hand always wins.
+const WORKOUT_TYPES = [['badminton', /badminton|แบด/i], ['weights', /strength|weight|core|ความแข็งแรง|เวท|แกนกลาง/i]];
+function watchTypeOf(p, d) {
+  const w = healthDay(p, d)?.workouts, txt = Array.isArray(w) ? w.join(',') : String(w || '');
+  return WORKOUT_TYPES.filter(([, re]) => re.test(txt)).map(([k]) => k).join('+') || undefined;
+}
+const dayTypeOf = (p, d) => p.dayType?.[d] || (DAY_TYPE_IDS.includes(idOf(p)) && d >= DEFAULT_REST_FROM ? watchTypeOf(p, d) || 'rest' : undefined);
 const typeParts = t => (t || '').split('+').filter(Boolean);
 const typeKcalOf = (p, t) => typeParts(t).reduce((s, k) => s + (+(p.typeKcal?.[k] ?? TYPE_KCAL[k]) || 0), 0);
 const typeLabel = t => { const xs = typeParts(t).map(k => DAY_TYPES.find(y => y[0] === k)).filter(Boolean); return xs.length ? `${xs.map(y => y[1]).join('')} ${xs.map(y => y[2]).join(' + ')}` : ''; };
@@ -1429,9 +1436,9 @@ const tdeeGap = p => { const pl = dayPlan(p); return pl ? Math.max(0, pl.tdee - 
 function energyBlock(id, d = todayStr()) {
   const p = S.people[id], r = calc(p), m0 = macros(p);
   if (!r) return `<div class="alert">${!profileReady(p) ? 'กรอก <b>เพศ อายุ ส่วนสูง</b> ในแท็บ “ข้อมูลส่วนตัว” ก่อน' : 'บันทึกน้ำหนักอย่างน้อย 1 ครั้ง'} เพื่อคำนวณ TDEE</div>`;
-  const pl = dayPlan(p, d), h = healthDay(p, d);
+  const pl = dayPlan(p, d), h = healthDay(p, d), watch = !p.dayType?.[d] && DAY_TYPE_IDS.includes(id) && watchTypeOf(p, d);
   const m = d === todayStr() || pl.type || pl.real ? macros(p, d) : { ...m0, kcal: p.days?.[d]?.target || m0.kcal };
-  const typeRow = `${DAY_TYPE_IDS.includes(id) ? `<div class="daytype">${DAY_TYPES.map(([k, ic, n]) => `<button data-daytype="${k}" data-pid="${id}" class="${typeParts(pl.type).includes(k) ? 'on' : ''}">${ic} ${n}</button>`).join('')}</div>` : ''}
+  const typeRow = `${DAY_TYPE_IDS.includes(id) ? `<div class="daytype">${DAY_TYPES.map(([k, ic, n]) => `<button data-daytype="${k}" data-pid="${id}" class="${typeParts(pl.type).includes(k) ? 'on' : ''}">${ic} ${n}${watch && typeParts(pl.type).includes(k) ? ' ⌚' : ''}</button>`).join('')}</div>` : ''}
     ${pl.real ? `<div class="hline">⌚ TDEE จริงจาก Health ${fmt(pl.real)} · Active ${fmt(h.active)} · Resting ${fmt(h.resting)}</div>`
       : pl.sofar != null ? `<div class="hline">⌚ ถึงตอนนี้ Active ${fmt(h.active)}${h.at && h.at.length > 10 ? ` (${esc(h.at.slice(11, 16))})` : ''} · ${pl.src === 'live' ? `<b>เป้าเพิ่ม +${fmt(pl.kcal - pl.estKcal)}</b>` : `ยังไม่เกินที่ประมาณไว้ ${fmt(pl.est)}`}</div>` : ''}`;
   const kcal = dayItems(p, d).length ? daySum(p, d, 'kcal') : p.days?.[d]?.kcal || 0, prot = daySum(p, d, 'p'), over = Math.round(kcal - m.kcal), protLeft = m.prot.g - prot;
@@ -2494,10 +2501,11 @@ function bind() {
   document.querySelectorAll('[data-daytype]').forEach(b => b.onclick = () => {
     const p = S.people[b.dataset.pid], d = b.closest('.person-card') ? todayStr() : viewDay(), t = b.dataset.daytype;
     p.dayType = { ...(p.dayType || {}) };
-    let parts = typeParts(p.dayType[d]);
+    const auto = watchTypeOf(p, d);
+    let parts = typeParts(p.dayType[d] || auto);
     parts = parts.includes(t) ? parts.filter(k => k !== t) : t === 'rest' ? ['rest'] : [...parts.filter(k => k !== 'rest'), t];
-    const v = DAY_TYPES.map(y => y[0]).filter(k => parts.includes(k)).join('+');
-    if (v) p.dayType[d] = v; else delete p.dayType[d];
+    const v = DAY_TYPES.map(y => y[0]).filter(k => parts.includes(k)).join('+') || (auto ? 'rest' : '');
+    if (v && v !== auto) p.dayType[d] = v; else delete p.dayType[d];
     recordDay(p, d, false); save(); render();
   });
   if (!p) return;
