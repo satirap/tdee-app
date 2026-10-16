@@ -512,7 +512,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.9.0', APP_BUILD = '2026-10-16 23:37'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.10.0', APP_BUILD = '2026-10-17 00:50'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -823,9 +823,12 @@ const TYPE_KCAL = { badminton: 900, weights: 300, rest: 0 };
 const idOf = p => IDS.find(i => S.people[i] === p);
 const healthDay = (p, d) => S.health?.[idOf(p)]?.days?.[d];
 // Full-day TDEE from Health. Today's data is only "so far" (the Shortcut also runs during the day), so today has no real TDEE yet.
+// A day whose resting energy is under 85 % of BMR means the watch was off part of the day: not trusted (estimate instead,
+// and left out of the learned day-type averages).
+const healthComplete = (h, r) => +h.resting >= r.bmr * 0.85;
 function realTdee(p, d, r = calc(p)) {
   const h = healthDay(p, d);
-  if (!r || !h || d >= todayStr() || !(+h.active > 0 || +h.resting > 0)) return null;
+  if (!r || !h || d >= todayStr() || !healthComplete(h, r)) return null;
   return Math.round((+h.resting > 0 ? +h.resting : r.bmr) + (+h.active || 0) * (p.exPct ?? 75) / 100);
 }
 function typeTdee(p, type, r = calc(p)) {
@@ -847,14 +850,40 @@ function soFarTdee(p, d, r = calc(p)) {
 // average); the day's running Active total from the other Shortcut still raises it when higher.
 // Past days use the real full-day TDEE. Today starts from the estimate and only goes up when the watch shows more burned
 // than estimated (like MyFitnessPal's exercise adjustment; never lowered during the day).
-function dayPlan(p, d = todayStr()) {
+// Weight-trend check (MacroFactor style): over the last 28 days, food eaten + weight lost (kg × KCAL_PER_KG) gives the body's
+// real TDEE. Half the gap to what the app predicted for those days (clamped ±200) corrects today's TDEE, so it moves slowly.
+// Skips the first 14 days after the first weigh-in (early water loss). Needs 14+ logged days and 4+ weigh-ins over 21+ days
+// inside the window. Past days keep their own numbers. Cached per render.
+let calibCache = new Map();
+function calibration(p) {
+  const id = idOf(p);
+  if (calibCache.has(id)) return calibCache.get(id);
+  let out = null;
+  const t = dayMs(todayStr()), first = sorted(p)[0]?.date || todayStr();
+  const skip = new Date(dayMs(first) + 14 * 864e5).toISOString().slice(0, 10), from0 = new Date(t - 28 * 864e5).toISOString().slice(0, 10);
+  const from = skip > from0 ? skip : from0;
+  const ws = sorted(p).filter(x => x.date >= from && x.date < todayStr() && +x.weight > 0);
+  const ds = Object.keys(p.days || {}).filter(d => d >= from && d < todayStr() && +p.days[d].kcal > 0);
+  if (ws.length >= 4 && ds.length >= 14 && dayMs(ws.at(-1).date) - dayMs(ws[0].date) >= 21 * 864e5) {
+    const xs = ws.map(x => dayMs(x.date) / 864e5), ys = ws.map(x => +x.weight), n = xs.length;
+    const mx = xs.reduce((a, b) => a + b) / n, my = ys.reduce((a, b) => a + b) / n;
+    const slope = xs.reduce((a, x, i) => a + (x - mx) * (ys[i] - my), 0) / xs.reduce((a, x) => a + (x - mx) ** 2, 0);
+    const eaten = ds.reduce((a, d) => a + +p.days[d].kcal, 0) / ds.length;
+    const real = eaten - slope * KCAL_PER_KG, pred = ds.reduce((a, d) => a + (dayPlan(p, d, true)?.tdee || 0), 0) / ds.length;
+    out = { off: Math.max(-200, Math.min(200, Math.round((real - pred) / 20) * 10)), real: Math.round(real), pred: Math.round(pred), days: ds.length };
+  }
+  calibCache.set(id, out);
+  return out;
+}
+function dayPlan(p, d = todayStr(), raw = false) {
   const r = calc(p);
   if (!r) return null;
   const real = realTdee(p, d, r), type = dayTypeOf(p, d), sofar = soFarTdee(p, d, r);
   const wk = workoutKcal(p, d), wkAdd = Math.round(wk * (p.exPct ?? 75) / 100);
   const est = wk > 0 ? typeTdee(p, 'rest', r).tdee + wkAdd : type ? typeTdee(p, type, r).tdee : Math.round(r.tdee), live = sofar != null && sofar > est;
-  const tdee = real ?? (live ? sofar : est), kcal = Math.max(tdee - (+p.deficit || 0), r.floor);
-  return { tdee, kcal, est, estKcal: Math.max(est - (+p.deficit || 0), r.floor), real, sofar, type, wk, wkAdd, src: real ? 'health' : live ? 'live' : wk > 0 ? 'workout' : type ? 'type' : 'avg' };
+  const off = !raw && d >= todayStr() ? calibration(p)?.off || 0 : 0;
+  const tdee = (real ?? (live ? sofar : est)) + off, kcal = Math.max(tdee - (+p.deficit || 0), r.floor);
+  return { tdee, kcal, est, off, estKcal: Math.max(est + off - (+p.deficit || 0), r.floor), real, sofar, type, wk, wkAdd, src: real ? 'health' : live ? 'live' : wk > 0 ? 'workout' : type ? 'type' : 'avg' };
 }
 
 // Protein = g/kg bodyweight; fat = % of calories (WHO/IOM AMDR 20–35%); carbs = whatever is left.
@@ -1245,6 +1274,7 @@ function gate() {
 }
 
 function render() {
+  calibCache = new Map();
   const blocked = gate();
   document.getElementById('tabs').classList.toggle('hidden', !!blocked);
   document.getElementById('footer').classList.toggle('hidden', !!blocked);
@@ -1445,10 +1475,14 @@ function energyBlock(id, d = todayStr()) {
   if (!r) return `<div class="alert">${!profileReady(p) ? 'กรอก <b>เพศ อายุ ส่วนสูง</b> ในแท็บ “ข้อมูลส่วนตัว” ก่อน' : 'บันทึกน้ำหนักอย่างน้อย 1 ครั้ง'} เพื่อคำนวณ TDEE</div>`;
   const pl = dayPlan(p, d), h = healthDay(p, d), watch = !p.dayType?.[d] && DAY_TYPE_IDS.includes(id) && watchTypeOf(p, d);
   const m = d === todayStr() || pl.type || pl.real ? macros(p, d) : { ...m0, kcal: p.days?.[d]?.target || m0.kcal };
-  const typeRow = `${DAY_TYPE_IDS.includes(id) ? `<div class="daytype">${DAY_TYPES.map(([k, ic, n]) => `<button data-daytype="${k}" data-pid="${id}" class="${typeParts(pl.type).includes(k) ? 'on' : ''}">${ic} ${n}${watch && typeParts(pl.type).includes(k) ? ' ⌚' : ''}</button>`).join('')}</div>` : ''}
-    ${pl.wk > 0 ? `<div class="hline">⌚ ${workoutsOf(p, d).map(w => `${esc(w.type || 'Workout')} ${fmt(+w.kcal || 0)}${+w.min ? ` (${fmt(+w.min)} นาที)` : ''}`).join(' · ')} · × ${p.exPct ?? 75}% = <b>+${fmt(pl.wkAdd)}</b></div>` : ''}
+  const typeRow = `${DAY_TYPE_IDS.includes(id) ? `<div class="daytype">${DAY_TYPES.map(([k, ic, n]) => `<button data-daytype="${k}" data-pid="${id}" class="${typeParts(pl.type).includes(k) ? 'on' : ''}">${ic} ${n}${watch && typeParts(pl.type).includes(k) ? ' ⌚' : ''}</button>`).join('')}</div>` : ''}`;
+  // Watch / weight-check details live inside "ดูรายละเอียด" so the main view is just the rings.
+  const cal = d === todayStr() && calibration(p);
+  const hl = `${pl.wk > 0 ? `<div class="hline">⌚ ${workoutsOf(p, d).map(w => `${esc(w.type || 'Workout')} ${fmt(+w.kcal || 0)}${+w.min ? ` (${fmt(+w.min)} นาที)` : ''}`).join(' · ')} · × ${p.exPct ?? 75}% = <b>+${fmt(pl.wkAdd)}</b></div>` : ''}
     ${pl.real ? `<div class="hline">⌚ TDEE จริงจาก Health ${fmt(pl.real)} · Active ${fmt(h.active)} · Resting ${fmt(h.resting)}</div>`
-      : pl.sofar != null ? `<div class="hline">⌚ ถึงตอนนี้ Active ${fmt(h.active)}${h.at && h.at.length > 10 ? ` (${esc(h.at.slice(11, 16))})` : ''} · ${pl.src === 'live' ? `<b>เป้าเพิ่ม +${fmt(pl.kcal - pl.estKcal)}</b>` : `ยังไม่เกินที่ประมาณไว้ ${fmt(pl.est)}`}</div>` : ''}`;
+      : pl.sofar != null ? `<div class="hline">⌚ ถึงตอนนี้ Active ${fmt(h.active)}${h.at && h.at.length > 10 ? ` (${esc(h.at.slice(11, 16))})` : ''} · ${pl.src === 'live' ? `<b>เป้าเพิ่ม +${fmt(pl.kcal - pl.estKcal)}</b>` : `ยังไม่เกินที่ประมาณไว้ ${fmt(pl.est)}`}</div>` : ''}
+    ${h && !pl.real && d < todayStr() ? `<div class="hline">⌚ ข้อมูลนาฬิกาไม่ครบวัน · ใช้ค่าประมาณ</div>` : ''}
+    ${cal ? `<div class="hline">⚖️ เทียบน้ำหนักจริง ${cal.days} วัน: TDEE จริง ${fmt(cal.real)} · แอปคาด ${fmt(cal.pred)} · ${cal.off ? `ปรับ ${cal.off > 0 ? '+' : ''}${fmt(cal.off)}` : 'ตรงแล้ว ✓'}</div>` : ''}`;
   const kcal = dayItems(p, d).length ? daySum(p, d, 'kcal') : p.days?.[d]?.kcal || 0, prot = daySum(p, d, 'p'), over = Math.round(kcal - m.kcal), protLeft = m.prot.g - prot;
   const tol = +p.tol || TOL_DEFAULT, hit = Math.abs(over) <= tol, tdee = Math.max(pl.tdee, m.kcal), plan = Math.round(planKcal(p, d)), after = Math.round(m.kcal - kcal - plan);
   const st = kcalState(kcal, m.kcal, tdee, tol), kStatus = hit ? 'ถึงเป้า ✓' : over < 0 ? `เหลือ ${fmt(-over)}` : `+${fmt(over)} · ${STATE_WORD[st]}`;
@@ -1479,6 +1513,7 @@ function energyBlock(id, d = todayStr()) {
         <span class="${left < 0 ? 'warn' : 'muted'}">${left < 0 ? `+${fmt(-left)} ก.` : left === 0 ? 'พอดี' : `เหลือ ${fmt(left)} ก.`}</span></div>`;
     }).join('')}</div>
     ${mealSplit(dayItems(p, d).filter(isEaten))}
+    ${hl}
     </details>
     ${r.target < r.floor ? `<div class="alert">เป้าคำนวณได้ ${fmt(r.target)} kcal ต่ำกว่าขั้นต่ำที่แนะนำ (${r.floor}) จึงแสดงเป็น ${r.floor} แทน · ลองลด “ลดวันละ” ลง</div>` : ''}`;
 }
