@@ -5,14 +5,22 @@ Fat-loss tracker for two people. Static web app on GitHub Pages: https://satirap
 ## Files
 - `index.html` – the whole app (HTML + CSS + one ES module, ~2.8k lines). Firebase JS SDK 10.12.2 (gstatic), Chart.js 4.4.1 (cdnjs), Anthropic SDK 0.128.0 (jsdelivr, loaded only for AI).
 - `foods-th.js` – `STD_FOODS` reference foods. `firebase-config.js` – public Firebase config. `firestore.rules`.
+- `VERSION`, `CHANGELOG.md`, `stamp.sh` – version/build stamp.
 - `backups/` – local Firestore backups (gitignored). PIN and backup commands: `CLAUDE.local.md`.
 
 ## Data (Firestore `vault/{PIN}/…`)
 - `people/{ton|patt}`: profile, goals, `activities`, `entries[]` (weigh-ins), `log{date:[items]}`, `days{date:{kcal,target}}`.
 - Log item: `id, foodId?, name, p,c,f,kcal (per serving), qty, amount, unit, unitName, meal ('b'|'l'|'d'), pct?, adj?{p,c,f}, parts?[]` (parts = lines combined into one 🍱 set). Effective values via `eff(x)`.
+- `people/{id}` also: `dayType{date:'badminton'|'weights'|'rest'}`, `typeKcal{type:kcal}`, `days[d].est` (planned target when Health replaced it).
+- `health/{ton|patt}`: `days{date:{active,resting,at}}` written only by the iPhone Shortcut (REST PATCH, updateMask `days.`date``); the app only reads it.
 - `shared/foods`: `foods{id:…, last?{amount,unit}}`, `meals{id:{name,items}}`, `uses`, `hidden`.
 - `backups/{date}`: automatic daily copy written by the app.
 - Meals are breakfast/lunch/dinner only; old 's' (snack) lines show under "ไม่ระบุมื้อ".
+
+## Version + build date (mandatory, every change)
+- Version lives in `VERSION` (semver; bump patch=fix, minor=feature, major=breaking). Add a `CHANGELOG.md` entry `## <version> — <YYYY-MM-DD>` (Thai bullets).
+- Run `./stamp.sh` before every commit: it writes `APP_VERSION`/`APP_BUILD` into `index.html`; the footer shows `v… · build …`.
+- After the Pages deploy, curl the live page and confirm the stamped version; end the reply with "ตอนนี้เป็น vX · build …".
 
 ## Hard rules
 - **Never delete or overwrite stored data.** Use the `data-safety` skill: back up → change → compare counts, for every deploy and any data write. Field-level writes only (`updateDoc` / REST `updateMask`).

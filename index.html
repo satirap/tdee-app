@@ -214,6 +214,11 @@ button.x:hover{color:var(--danger)}
 .ringtog{margin-left:auto;display:grid;place-items:center;width:32px;height:32px;border:0;border-radius:50%;background:var(--surface-2);color:var(--muted);cursor:pointer;padding:0}
 .ringtog i{width:8px;height:8px;border:solid currentColor;border-width:0 1.8px 1.8px 0;transform:rotate(-135deg);margin-top:4px;transition:transform .2s}
 .ringtog.min i{transform:rotate(45deg);margin:0 0 4px}
+.daytype{display:flex;gap:6px;margin:0 0 10px}
+.daytype button{flex:1;border:1px solid var(--border);background:var(--surface);color:var(--muted);border-radius:999px;padding:7px 0;font:inherit;font-size:13px;cursor:pointer}
+.daytype button.on{background:var(--text);border-color:var(--text);color:var(--bg);font-weight:600}
+.hline{font-size:12px;color:var(--muted);margin:-4px 0 8px}
+.appver{font-size:11px;color:var(--muted);text-align:center;margin-top:6px}
 .kbar{display:block;width:100%;border:0;background:none;padding:2px 0 0;font:inherit;color:inherit;text-align:left;cursor:pointer}
 .kbar-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:14px;margin-bottom:8px}
 .kbar-top b{font-size:20px;font-variant-numeric:tabular-nums}
@@ -491,10 +496,12 @@ button:focus:not(:focus-visible){outline:none}
       <label class="ghost importbtn">⬆︎ Import<input type="file" id="importFile" accept=".json" hidden></label>
       <span>ข้อมูลซิงก์ผ่าน Firebase · Export ไว้สำรองเป็นระยะ</span>
     </div>
+    <div class="appver" id="appVer"></div>
   </footer>
 </div>
 
 <script type="module">
+const APP_VERSION = '1.0.0', APP_BUILD = '2026-10-16 18:02'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -590,6 +597,7 @@ function eff(x) {
 
 // Daily kcal total plus that day's target, so a week's balance is judged against the target in effect each day.
 // Today follows the live target; a past day keeps the target it had (or today's, if it never had one).
+// A day with a day type or Health data always follows that day's own plan (est = the planned target once Health replaced it).
 // Planned lines ({plan:true}) are a preview of what you intend to eat: they never count in totals, charts or stats
 // until ticked as eaten. Unticked plans simply stay in the log as plans.
 const isEaten = x => !x.plan;
@@ -599,7 +607,8 @@ function recordDay(p, d, edited) {
   p.days ||= {};
   if (!items.length) { if (edited) delete p.days[d]; return; }
   const kcal = Math.round(items.reduce((s, x) => s + eff(x).kcal, 0));
-  const live = Math.round(macros(p)?.kcal ?? 0);
+  const live = Math.round(macros(p)?.kcal ?? 0), own = (p.dayType?.[d] || healthDay(p, d)) && dayPlan(p, d);
+  if (own) { p.days[d] = { kcal, target: Math.round(own.kcal), ...(own.real ? { est: Math.round(own.estKcal) } : {}) }; return; }
   p.days[d] = { kcal, target: d === todayStr() ? live || p.days[d]?.target || 0 : p.days[d]?.target ?? live };
 }
 
@@ -635,6 +644,15 @@ function onDbError(err) {
   render();
 }
 
+// Days with a day type or Health data get their target from that (recordDay); refresh them when Health data arrives.
+function retargetDays() {
+  for (const id of IDS) {
+    const p = S.people[id];
+    if (!p) continue;
+    const ds = new Set([...Object.keys(p.dayType || {}), ...Object.keys(S.health?.[id]?.days || {})]);
+    for (const d of ds) if (p.days?.[d] || dayItems(p, d).length) recordDay(p, d, false);
+  }
+}
 function listen() {
   unsubs.forEach(u => u()); unsubs = []; loaded = new Set(); dbError = null;
   for (const id of IDS) {
@@ -647,10 +665,17 @@ function listen() {
         if (!snap.metadata.hasPendingWrites) serverSize[id] = sizeOf(S.people[id]);
       } else { S.people[id] = defaults().people[id]; synced[id] = ''; serverSize[id] = { entries: 0, logDays: 0 }; }
       loaded.add(id);
-      if (loaded.size === IDS.length) { syncLogs(); save(); dailyBackup(); }
+      if (loaded.size === IDS.length) { syncLogs(); retargetDays(); save(); dailyBackup(); }
       scheduleRender();
     }, onDbError));
   }
+  // Apple Health data per person, written only by the iPhone Shortcut; the app never writes these documents.
+  S.health = {};
+  for (const id of IDS) unsubs.push(onSnapshot(doc(db, 'vault', pin, 'health', id), snap => {
+    S.health[id] = snap.exists() ? snap.data() : null;
+    if (loaded.size === IDS.length) { retargetDays(); save(); }
+    scheduleRender();
+  }, err => console.warn('health', err)));
   // Shared "My Food" library for both people: vault/{pin}/shared/foods.
   // Maps keyed by id so each add/edit/usage bump is an atomic field update (no lost writes between two phones).
   let seeded = false;
@@ -758,11 +783,41 @@ function calc(p, weight) {
   return { w, bmr, base, weekly, exPct, exPerDay, tdee, target, floor, bmi, expectedRate: Math.max(0, tdee - Math.max(target, floor)) * 7 / KCAL_PER_KG };
 }
 
-// Protein = g/kg bodyweight; fat = % of calories (WHO/IOM AMDR 20–35%); carbs = whatever is left.
-function macros(p) {
+// Day types: the day's TDEE follows what you do that day instead of the weekly average.
+// Real TDEE comes from Apple Health (an iPhone Shortcut writes vault/{pin}/health/{id}.days[date] = {active, resting});
+// the watch's active energy is trusted at exPct % like the activity list. Without Health data for a day, a day type uses
+// the average real TDEE of past days of that type (2+ samples), else BMR × job factor + the type's exercise kcal.
+const DAY_TYPES = [['badminton', '🏸', 'แบด'], ['weights', '🏋️', 'เวท'], ['rest', '😴', 'พัก']];
+const TYPE_KCAL = { badminton: 900, weights: 300, rest: 0 };
+const idOf = p => IDS.find(i => S.people[i] === p);
+const healthDay = (p, d) => S.health?.[idOf(p)]?.days?.[d];
+function realTdee(p, d, r = calc(p)) {
+  const h = healthDay(p, d);
+  if (!r || !h || !(+h.active > 0 || +h.resting > 0)) return null;
+  return Math.round((+h.resting > 0 ? +h.resting : r.bmr) + (+h.active || 0) * (p.exPct ?? 75) / 100);
+}
+function typeTdee(p, type, r = calc(p)) {
+  if (!r) return null;
+  const from = new Date(dayMs(todayStr()) - 60 * 864e5).toISOString().slice(0, 10);
+  const xs = Object.entries(p.dayType || {}).filter(([d, t]) => t === type && d >= from && d < todayStr()).map(([d]) => realTdee(p, d, r)).filter(Boolean);
+  if (xs.length >= 2) return { tdee: Math.round(xs.reduce((a, b) => a + b, 0) / xs.length), learned: xs.length };
+  return { tdee: Math.round(r.base + (+(p.typeKcal?.[type] ?? TYPE_KCAL[type]) || 0) * r.exPct / 100), learned: 0 };
+}
+// The day's TDEE and kcal target, and where it came from: health | type | avg.
+function dayPlan(p, d = todayStr()) {
   const r = calc(p);
   if (!r) return null;
-  const kcal = Math.max(r.target, r.floor);
+  const real = realTdee(p, d, r), type = p.dayType?.[d];
+  const est = type ? typeTdee(p, type, r).tdee : Math.round(r.tdee);
+  const tdee = real ?? est, kcal = Math.max(tdee - (+p.deficit || 0), r.floor);
+  return { tdee, kcal, est, estKcal: Math.max(est - (+p.deficit || 0), r.floor), real, type, src: real ? 'health' : type ? 'type' : 'avg' };
+}
+
+// Protein = g/kg bodyweight; fat = % of calories (WHO/IOM AMDR 20–35%); carbs = whatever is left.
+function macros(p, d = todayStr()) {
+  const r = calc(p);
+  if (!r) return null;
+  const kcal = dayPlan(p, d).kcal;
   const perKg = +(p.proteinPerKg ?? 1), fatPct = +(p.fatPct ?? 30);
   const protG = r.w * perKg, protK = protG * 4;
   const fatK = kcal * fatPct / 100, fatG = fatK / 9;
@@ -1316,28 +1371,31 @@ function mealSplit(items) {
 
 // How far the kcal target sits below TDEE (the planned deficit, after the minimum-intake floor).
 // Eating above the target but below TDEE is still a deficit, so it is shown as "ยังลดอยู่", never as a failure.
-const tdeeGap = p => { const r = calc(p), m = macros(p); return r && m ? Math.max(0, r.tdee - m.kcal) : 0; };
+const tdeeGap = p => { const pl = dayPlan(p); return pl ? Math.max(0, pl.tdee - pl.kcal) : 0; };
 
 function energyBlock(id, d = todayStr()) {
   const p = S.people[id], r = calc(p), m0 = macros(p);
   if (!r) return `<div class="alert">${!profileReady(p) ? 'กรอก <b>เพศ อายุ ส่วนสูง</b> ในแท็บ “ข้อมูลส่วนตัว” ก่อน' : 'บันทึกน้ำหนักอย่างน้อย 1 ครั้ง'} เพื่อคำนวณ TDEE</div>`;
-  const m = d === todayStr() ? m0 : { ...m0, kcal: p.days?.[d]?.target || m0.kcal };
+  const pl = dayPlan(p, d), h = healthDay(p, d);
+  const m = d === todayStr() || pl.type || pl.real ? macros(p, d) : { ...m0, kcal: p.days?.[d]?.target || m0.kcal };
+  const typeRow = `<div class="daytype">${DAY_TYPES.map(([k, ic, n]) => `<button data-daytype="${k}" data-pid="${id}" class="${pl.type === k ? 'on' : ''}">${ic} ${n}</button>`).join('')}</div>
+    ${pl.real ? `<div class="hline">⌚ TDEE จริงจาก Health ${fmt(pl.real)} · Active ${fmt(h.active)} · Resting ${fmt(h.resting)}</div>` : ''}`;
   const kcal = dayItems(p, d).length ? daySum(p, d, 'kcal') : p.days?.[d]?.kcal || 0, prot = daySum(p, d, 'p'), over = Math.round(kcal - m.kcal), protLeft = m.prot.g - prot;
-  const tol = +p.tol || 50, hit = Math.abs(over) <= tol, tdee = m.kcal + tdeeGap(p), plan = Math.round(planKcal(p, d)), after = Math.round(m.kcal - kcal - plan);
+  const tol = +p.tol || 50, hit = Math.abs(over) <= tol, tdee = Math.max(pl.tdee, m.kcal), plan = Math.round(planKcal(p, d)), after = Math.round(m.kcal - kcal - plan);
   const kStatus = hit ? 'ถึงเป้า ✓' : over < 0 ? `เหลือ ${fmt(-over)}` : kcal <= tdee ? `+${fmt(over)} · ยังลดอยู่` : `+${fmt(over)} · พักลด`;
-  if (ringMin && isPhone()) {
+  if (ringMin && isPhone()) return typeRow + (() => {
     // Folded: one kcal bar (eaten vs target; anything past the target in amber), tap to bring the rings back.
     const over = kcal > m.kcal, base = over ? m.kcal / kcal * 100 : kcal / m.kcal * 100;
     return `<button class="kbar" data-ringtoggle aria-label="แสดงวงแหวน">
       <span class="kbar-top"><span>🔥 <b>${fmt(kcal)}</b> / ${fmt(m.kcal)} kcal</span><span class="${hit ? 'good' : over ? 'warn' : 'muted'}">${kStatus}</span></span>
       <span class="kbar-track"><i style="width:${Math.min(100, base).toFixed(1)}%;background:${hit ? 'var(--good)' : 'var(--c)'}"></i>${over ? `<i style="width:${(100 - base).toFixed(1)}%;background:${hit ? 'var(--good)' : 'var(--warn)'}"></i>` : ''}${plan > 0 ? `<i class="planseg" style="width:${Math.max(0, Math.min(100 - Math.min(100, base), plan / Math.max(m.kcal, kcal) * 100)).toFixed(1)}%"></i>` : ''}</span>
     </button>`;
-  }
+  })();
   // The rings carry the day at a glance; the numbers and meal split fold away (state remembered on this device).
   let open = false;
   try { const v = localStorage.getItem('tdee-edetail'); open = v === null ? !isPhone() : v === '1'; } catch {}
   if (!isPhone()) open = true;
-  return `${rings(m, kcal, prot, tol, tdee)}
+  return `${typeRow}${rings(m, kcal, prot, tol, tdee)}
     <details class="edetail" ${open ? 'open' : ''}><summary><span><i class="o">ดูรายละเอียด</i><i class="c">ซ่อนรายละเอียด</i></span></summary>
     <div class="ring-rows">
       <div><span class="rk"><i style="background:var(--c)"></i>🔥 แคลอรี</span><span><b>${fmt(kcal)}</b> / ${fmt(m.kcal)}</span>
@@ -1826,6 +1884,7 @@ function goalCard(id) {
       <label>ช่วงถึงเป้า (± kcal)${chips('tol', [50, 100, 150], p.tol ?? 50)}</label>
       <label>นับแคลจากการออกกำลังกาย
         <select data-f="exPct">${[[100, '100% (นับเต็ม)'], [75, '75% (แนะนำ)'], [50, '50% (เผื่อเยอะ)'], [0, '0% (ไม่นับเลย)']].map(([v, l]) => `<option value="${v}" ${exPct == v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      ${DAY_TYPES.map(([k, ic, n]) => { const t = typeTdee(p, k); return `<label>${ic} วัน${n} ออกกำลัง (kcal)<input type="number" data-tk="${k}" step="50" min="0" max="3000" value="${esc(p.typeKcal?.[k] ?? TYPE_KCAL[k])}">${t?.learned ? `<small class="muted">⌚ TDEE จริงเฉลี่ย ${fmt(t.tdee)} (${t.learned} วัน)</small>` : ''}</label>`; }).join('')}
     </div>
     <div class="note">${eta || 'ตั้งน้ำหนักเป้าหมาย + ข้อมูลส่วนตัว + บันทึกน้ำหนัก เพื่อดูว่าจะถึงเป้าเมื่อไหร่'}</div>
   </div>`;
@@ -1869,7 +1928,8 @@ function intakeCard(id, n) {
   const bal = logged.reduce((s, x) => s + x.kcal - x.target, 0);
   const avg = logged.length ? logged.reduce((s, x) => s + x.kcal, 0) / logged.length : null;
   // Same days measured against TDEE (target + planned deficit): what actually happened to the energy balance.
-  const net = logged.length ? Math.round(bal - tdeeGap(S.people[id]) * logged.length) : null;
+  const P = S.people[id], tdeeOf = x => { const pl = dayPlan(P, x.d); return pl?.real ?? (x.target ? x.target + Math.max(0, (pl?.tdee ?? 0) - (pl?.kcal ?? 0)) : pl?.tdee ?? 0); };
+  const net = logged.length ? Math.round(logged.reduce((t, x) => t + x.kcal - tdeeOf(x), 0)) : null, realN = logged.filter(x => dayPlan(P, x.d)?.real).length;
   return `<div class="card">
     <h2>${n === 7 ? '📊 TDEE รายสัปดาห์ · 7 วันล่าสุด' : '📈 TDEE ย้อนหลัง 30 วัน'}</h2>
     <div class="intake-sum">
@@ -1879,8 +1939,8 @@ function intakeCard(id, n) {
       <div><span class="l">┄ เป้าต่อวัน</span><b class="lim">${fmt(Math.round(macros(S.people[id])?.kcal || 0))}</b><small>kcal</small></div>
     </div>
     ${net == null ? '' : net < 0
-      ? `<div class="tdee-line">สุทธิต่ำกว่า TDEE <b class="good">${fmt(-net)} kcal</b> · ≈ ไขมัน ${num(Math.round(-net / KCAL_PER_KG * 100) / 100)} กก.</div>`
-      : `<div class="tdee-line">สุทธิเหนือ TDEE ${fmt(net)} kcal</div>`}
+      ? `<div class="tdee-line">สุทธิต่ำกว่า TDEE <b class="good">${fmt(-net)} kcal</b> · ≈ ไขมัน ${num(Math.round(-net / KCAL_PER_KG * 100) / 100)} กก.${realN ? ` · ⌚ จริง ${realN} วัน` : ''}</div>`
+      : `<div class="tdee-line">สุทธิเหนือ TDEE ${fmt(net)} kcal${realN ? ` · ⌚ จริง ${realN} วัน` : ''}</div>`}
     <div class="chart-box short"><canvas id="intakeChart${n}"></canvas></div>
   </div>`;
 }
@@ -2095,7 +2155,8 @@ function drawIntake(id, n) {
           filter: it => !it.dataset.track && it.raw != null,
           callbacks: {
             title: it => new Date(dayMs(days[it[0].dataIndex].d)).toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'UTC' }),
-            label: it => { const x = days[it.dataIndex], d = x.kcal - tgt(x); return [`${fmt(x.kcal)} kcal`, `${d > 0 ? '+' : 'ขาด '}${fmt(Math.abs(d))} จากเป้า ${fmt(tgt(x))}`]; }
+            label: it => { const x = days[it.dataIndex], d = x.kcal - tgt(x), t = p.dayType?.[x.d], ty = t && DAY_TYPES.find(y => y[0] === t);
+              return [`${fmt(x.kcal)} kcal${ty ? ` · ${ty[1]} ${ty[2]}` : ''}`, `${d > 0 ? '+' : 'ขาด '}${fmt(Math.abs(d))} จากเป้า ${fmt(tgt(x))}`, ...(x.est ? [`⌚ เป้าจาก Health · ตอนวางแผน ${fmt(x.est)}`] : [])]; }
           }
         }
       },
@@ -2281,6 +2342,12 @@ function bind() {
   });
   bindFoods();
   const id = S.tab, p = S.people[id];
+  document.querySelectorAll('[data-daytype]').forEach(b => b.onclick = () => {
+    const p = S.people[b.dataset.pid], d = b.closest('.person-card') ? todayStr() : viewDay(), t = b.dataset.daytype;
+    p.dayType = { ...(p.dayType || {}) };
+    if (p.dayType[d] === t) delete p.dayType[d]; else p.dayType[d] = t;
+    recordDay(p, d, false); save(); render();
+  });
   if (!p) return;
   document.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
     if (!confirm('ลบรายการนี้?')) return;
@@ -2307,6 +2374,7 @@ function bind() {
     if (ev.target.closest('button')) return;
     const k = h.dataset.mfold; mealFold[k] = !mealFold[k]; lsSet('tdee-mealfold', mealFold); render();
   });
+  document.querySelectorAll('[data-tk]').forEach(inp => inp.onchange = () => { p.typeKcal = { ...(p.typeKcal || {}), [inp.dataset.tk]: Math.max(0, +inp.value || 0) }; save(); render(); });
   document.querySelectorAll('[data-ringtoggle]').forEach(b => b.onclick = () => { ringMin = !ringMin; lsSet('tdee-ringfold', ringMin); render(); });
   // Plate icon: pick some of a meal's lines, name them, and they become one 🍱 line (also saved as a My Meal).
   // The line keeps its original lines in `parts`, so "แยกรายการ" restores them exactly.
@@ -2831,6 +2899,7 @@ async function runAi(form, desc, imgs, fix) {
 }
 
 
+document.getElementById('appVer').textContent = `v${APP_VERSION} · build ${APP_BUILD}`;
 document.getElementById('setupBtn').onclick = () => {
   const b = document.getElementById('setupBtn'), panel = document.getElementById('setupPanel'), open = panel.hidden;
   panel.hidden = !open; b.setAttribute('aria-expanded', String(open));
