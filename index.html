@@ -510,7 +510,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.5.2', APP_BUILD = '2026-10-16 22:01'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.6.0', APP_BUILD = '2026-10-16 22:11'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -1202,6 +1202,11 @@ const CS = id => id === 'ton' ? 'var(--ton-soft)' : 'var(--patt-soft)';
 if (window.Chart) Chart.defaults.animation = false;
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 let charts = [];
+// Tapping anywhere outside a chart closes any open chart tooltip.
+document.addEventListener('click', e => {
+  if (e.target.closest?.('canvas')) return;
+  charts.forEach(c => { if (c.tooltip?.getActiveElements().length) { c.setActiveElements([]); c.tooltip.setActiveElements([], { x: 0, y: 0 }); c.update('none'); } });
+}, true);
 
 function gate() {
   if (!configured) return `<div class="card center"><h2>ยังไม่ได้ตั้งค่า Firebase</h2><p>ใส่ค่า config ในไฟล์ <code>firebase-config.js</code> ตามขั้นตอนใน README.md</p></div>`;
@@ -1976,7 +1981,6 @@ function intakeCard(id, n) {
     ${net == null ? '' : net < 0
       ? `<div class="tdee-line">สุทธิต่ำกว่า TDEE <b class="good">${fmt(-net)} kcal</b> · ≈ ไขมัน ${num(Math.round(-net / KCAL_PER_KG * 100) / 100)} กก.${realN ? ` · ⌚ จริง ${realN} วัน` : ''}</div>`
       : `<div class="tdee-line">สุทธิเหนือ TDEE ${fmt(net)} kcal${realN ? ` · ⌚ จริง ${realN} วัน` : ''}</div>`}
-    ${legendHtml([['line', 'var(--fat)', 'TDEE ของวันนั้น'], ['band', 'var(--text)', `เป้า = TDEE − แผนลด (±${+P.tol || 50})`], ['box', 'var(--good)', 'ในช่วงเป้า'], ['box', 'var(--warn)', 'ไม่ถึง'], ['box', 'var(--danger)', 'เกินช่วง'], ['box', 'var(--over-tdee)', 'เกิน TDEE']])}
     <div class="chart-box short"><canvas id="intakeChart${n}"></canvas></div>
   </div>`;
 }
@@ -2089,9 +2093,11 @@ function drawWorkout(id) {
   }));
 }
 
+// Protein counts as reached from 80% of the goal (±20% band around the goal line).
+const PROT_BUF = .2;
 function proteinCard(id, n) {
   const p = S.people[id], goal = Math.round(macros(p)?.prot.g || 0), days = proteinDays(p, n).filter(x => x.g != null);
-  const hit = days.filter(x => x.g >= goal).length, avg = days.length ? days.reduce((t, x) => t + x.g, 0) / days.length : null;
+  const hit = days.filter(x => x.g >= goal * (1 - PROT_BUF)).length, avg = days.length ? days.reduce((t, x) => t + x.g, 0) / days.length : null;
   return `<div class="card">
     <h2>🥩 โปรตีน ${n === 7 ? '7 วันล่าสุด' : 'ย้อนหลัง 30 วัน'}</h2>
     <div class="intake-sum">
@@ -2099,7 +2105,6 @@ function proteinCard(id, n) {
       <div><span class="l">เฉลี่ยต่อวัน</span>${avg == null ? '<b class="muted">–</b>' : `<b>${fmt(avg)}</b><small>ก.</small>`}</div>
       <div><span class="l">┄ เป้าต่อวัน</span><b class="lim">${fmt(goal)}</b><small>ก.</small></div>
     </div>
-    ${legendHtml([['dash', 'var(--text)', `เป้าโปรตีน ${fmt(goal)} ก.`], ['box', 'var(--prot)', 'ถึงเป้า'], ['box faint', 'var(--prot)', 'ยังไม่ถึง']])}
     <div class="chart-box short"><canvas id="protChart${n}"></canvas></div>
   </div>`;
 }
@@ -2110,9 +2115,9 @@ function drawProtein(id, n) {
   const prot = css('--prot'), muted = css('--muted'), strong = css('--text'), track = css('--surface-2'), surface = css('--surface'), border = css('--border');
   const WD = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
   const label = d => { const t = new Date(dayMs(d)); return n === 7 ? [WD[t.getUTCDay()], String(t.getUTCDate())] : String(t.getUTCDate()); };
-  const top = Math.max(1, goal, ...days.map(x => x.g || 0));
-  // Days that reach the goal are solid; days short of it are a lighter shade of the same green.
-  const shade = x => x.g >= goal ? prot : prot + '73';
+  const top = Math.max(1, goal * (1 + PROT_BUF), ...days.map(x => x.g || 0));
+  // Reached (within −20% of the goal or more) = green; short of that = orange.
+  const warnC = css('--warn'), ok = x => x.g >= goal * (1 - PROT_BUF), shade = x => ok(x) ? prot : warnC;
   const fill = (ctx, base) => {
     const a = ctx.chart.chartArea;
     if (!a) return base;
@@ -2124,8 +2129,14 @@ function drawProtein(id, n) {
     id: 'protGoal',
     afterDatasetsDraw(chart) {
       const { ctx, chartArea: a, scales: { y } } = chart, py = y.getPixelForValue(goal);
-      ctx.save(); ctx.strokeStyle = strong; ctx.globalAlpha = .55; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
-      ctx.beginPath(); ctx.moveTo(a.left, py); ctx.lineTo(a.right, py); ctx.stroke(); ctx.restore();
+      const hi = y.getPixelForValue(goal * (1 + PROT_BUF)), lo = y.getPixelForValue(goal * (1 - PROT_BUF));
+      ctx.save(); ctx.globalAlpha = .18; ctx.fillStyle = prot; ctx.fillRect(a.left, hi, a.right - a.left, lo - hi);
+      ctx.globalAlpha = .55; ctx.strokeStyle = strong; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
+      ctx.beginPath(); ctx.moveTo(a.left, py); ctx.lineTo(a.right, py); ctx.stroke();
+      // Caption in front of the line.
+      ctx.globalAlpha = 1; ctx.font = '600 10.5px "IBM Plex Sans Thai", sans-serif'; ctx.fillStyle = strong;
+      ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillText('เป้า', a.left - 4, py);
+      ctx.restore();
     }
   }, {
     id: 'protLabels',
@@ -2136,7 +2147,7 @@ function drawProtein(id, n) {
       days.forEach((x, i) => {
         if (x.g == null || !bars[i]) return;
         ctx.font = `${x.d === sel ? 700 : 600} 11px "IBM Plex Sans Thai", sans-serif`;
-        ctx.fillStyle = x.g >= goal ? prot : x.d === sel ? strong : muted;
+        ctx.fillStyle = ok(x) ? prot : warnC;
         ctx.fillText(fmt(x.g), bars[i].x, Math.min(bars[i].y, tracks[i]?.y ?? bars[i].y) - 5);
       });
       ctx.restore();
@@ -2154,13 +2165,8 @@ function drawProtein(id, n) {
     },
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-      layout: { padding: { top: n === 7 ? 20 : 6 } },
-      onClick: (_, els) => {
-        if (!els.length) return;
-        const d = days[els[0].index].d;
-        setTimeout(() => { goDay(d); sub = 'today'; render(); window.scrollTo(0, 0); });
-      },
-      onHover: (ev, els) => { ev.native.target.style.cursor = els.length ? 'pointer' : 'default'; },
+      // Tap a bar to see its numbers; no page change.
+      layout: { padding: { top: n === 7 ? 20 : 6, left: 30 } },
       plugins: {
         legend: { display: false },
         tooltip: {
