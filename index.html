@@ -214,6 +214,15 @@ button.x:hover{color:var(--danger)}
 .ringtog{margin-left:auto;display:grid;place-items:center;width:32px;height:32px;border:0;border-radius:50%;background:var(--surface-2);color:var(--muted);cursor:pointer;padding:0}
 .ringtog i{width:8px;height:8px;border:solid currentColor;border-width:0 1.8px 1.8px 0;transform:rotate(-135deg);margin-top:4px;transition:transform .2s}
 .ringtog.min i{transform:rotate(45deg);margin:0 0 4px}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--muted);margin:0 0 8px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.lg{display:inline-block;width:18px;height:0;border-top:2px solid var(--lc)}
+.lg.dash{border-top-style:dashed}
+.lg.band{height:10px;border-top:2px dashed var(--lc);background:color-mix(in srgb,var(--good) 28%,transparent);background-clip:padding-box;border-radius:2px;box-sizing:border-box;border-top:0;position:relative}
+.lg.band::after{content:'';position:absolute;left:0;right:0;top:4px;border-top:2px dashed var(--lc)}
+.lg.box{width:10px;height:10px;border:0;background:var(--lc);border-radius:3px}
+.lg.faint{opacity:.45}
+.lg.dot{width:8px;height:8px;border:0;border-radius:50%;background:var(--lc)}
 .daytype{display:flex;gap:6px;margin:0 0 10px}
 .daytype button{flex:1;border:1px solid var(--border);background:var(--surface);color:var(--muted);border-radius:999px;padding:7px 0;font:inherit;font-size:13px;cursor:pointer}
 .daytype button.on{background:var(--text);border-color:var(--text);color:var(--bg);font-weight:600}
@@ -501,7 +510,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.4.1', APP_BUILD = '2026-10-16 21:46'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.5.0', APP_BUILD = '2026-10-16 21:50'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -1232,6 +1241,7 @@ function render() {
     app.innerHTML = `
       <div class="card">
         <h2>น้ำหนัก</h2>
+        ${legendHtml(IDS.map(i => ['line', `var(--${i})`, S.people[i].name]).concat([['dash', 'var(--muted)', 'เป้าน้ำหนัก']]))}
         <div class="chart-box tall"><canvas id="chartAll"></canvas></div>
       </div>
       <div class="grid g2" style="margin-top:14px">${IDS.map(summaryCard).join('')}</div>`;
@@ -1966,6 +1976,7 @@ function intakeCard(id, n) {
     ${net == null ? '' : net < 0
       ? `<div class="tdee-line">สุทธิต่ำกว่า TDEE <b class="good">${fmt(-net)} kcal</b> · ≈ ไขมัน ${num(Math.round(-net / KCAL_PER_KG * 100) / 100)} กก.${realN ? ` · ⌚ จริง ${realN} วัน` : ''}</div>`
       : `<div class="tdee-line">สุทธิเหนือ TDEE ${fmt(net)} kcal${realN ? ` · ⌚ จริง ${realN} วัน` : ''}</div>`}
+    ${legendHtml([['line', 'var(--fat)', 'TDEE ของวันนั้น'], ['band', 'var(--text)', `เป้า = TDEE − แผนลด (±${+P.tol || 50})`], ['box', 'var(--good)', 'ในช่วงเป้า'], ['box', 'var(--warn)', 'ไม่ถึง'], ['box', 'var(--danger)', 'เกินช่วง']])}
     <div class="chart-box short"><canvas id="intakeChart${n}"></canvas></div>
   </div>`;
 }
@@ -2034,8 +2045,8 @@ function workoutPage(id) {
       </div>
       <div class="breakdown">ข้อมูล ${have.length} วันใน 30 วัน · TDEE จริง = Resting + Active × ${p.exPct ?? 75}%${est ? ` · สูตรเดิมประมาณ ${fmt(est)}` : ''}</div>
     </div>
-    <div class="card"><h2>🔥 พลังงานรายวัน · 30 วัน</h2><div class="chart-box short"><canvas id="hEnergy"></canvas></div></div>
-    <div class="card"><h2>📈 แนวโน้ม Active (เฉลี่ย 7 วัน)</h2><div class="chart-box short"><canvas id="hTrend"></canvas></div></div>
+    <div class="card"><h2>🔥 พลังงานรายวัน · 30 วัน</h2>${legendHtml([['box', 'var(--surface-2)', 'Resting (ขณะพัก)'], ['box', 'var(--warn)', 'Active (เคลื่อนไหว)']])}<div class="chart-box short"><canvas id="hEnergy"></canvas></div></div>
+    <div class="card"><h2>📈 แนวโน้ม Active (เฉลี่ย 7 วัน)</h2>${legendHtml([['dot', 'var(--warn)', 'Active รายวัน'], ['line', 'var(--warn)', 'เฉลี่ย 7 วัน']])}<div class="chart-box short"><canvas id="hTrend"></canvas></div></div>
     <div class="card"><h2>🏷️ ตามประเภทวัน</h2>
       <table class="log"><thead><tr><th>วัน</th><th class="num">จำนวน</th><th class="num">Active</th><th class="num">TDEE จริง</th><th class="num">ที่ตั้งไว้</th></tr></thead><tbody>${types}</tbody></table>
     </div>
@@ -2088,6 +2099,7 @@ function proteinCard(id, n) {
       <div><span class="l">เฉลี่ยต่อวัน</span>${avg == null ? '<b class="muted">–</b>' : `<b>${fmt(avg)}</b><small>ก.</small>`}</div>
       <div><span class="l">┄ เป้าต่อวัน</span><b class="lim">${fmt(goal)}</b><small>ก.</small></div>
     </div>
+    ${legendHtml([['dash', 'var(--text)', `เป้าโปรตีน ${fmt(goal)} ก.`], ['box', 'var(--prot)', 'ถึงเป้า'], ['box faint', 'var(--prot)', 'ยังไม่ถึง']])}
     <div class="chart-box short"><canvas id="protChart${n}"></canvas></div>
   </div>`;
 }
@@ -2217,19 +2229,28 @@ function drawIntake(id, n) {
       ctx.restore();
     }
   };
-  // Shaded TDEE ±5% band per day: inside it the day is roughly maintenance.
+  // TDEE of each day (real from Health when available), solid and stepped like the target; no band.
+  const tdeeCol = css('--fat');
   const band = {
-    id: 'tdeeBand',
-    beforeDatasetsDraw(chart) {
+    id: 'tdeeLine',
+    afterDatasetsDraw(chart) {
       const { ctx, chartArea: a, scales: { x: xs, y: ys } } = chart, half = (xs.getPixelForValue(1) - xs.getPixelForValue(0)) / 2 || (a.right - a.left) / 2;
-      ctx.save();
+      ctx.save(); ctx.strokeStyle = tdeeCol; ctx.lineWidth = 2; ctx.beginPath();
       days.forEach((x, i) => {
-        const t = x.kcal != null && tdeeX(x);
-        if (!t) return;
-        const cx = xs.getPixelForValue(i), hi = ys.getPixelForValue(t * (1 + TDEE_BAND)), lo = ys.getPixelForValue(t * (1 - TDEE_BAND)), mid = ys.getPixelForValue(t);
-        ctx.globalAlpha = .08; ctx.fillStyle = strong; ctx.fillRect(cx - half, hi, half * 2, lo - hi);
-        ctx.globalAlpha = .3; ctx.strokeStyle = strong; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(cx - half, mid); ctx.lineTo(cx + half, mid); ctx.stroke();
+        const cx = xs.getPixelForValue(i), py = ys.getPixelForValue(tdeeX(x));
+        if (i === 0) ctx.moveTo(cx - half, py); else ctx.lineTo(cx - half, py);
+        ctx.lineTo(cx + half, py);
       });
+      ctx.stroke();
+      // Names in front of the lines, at the left edge.
+      // Names sit in the left padding, in front of where each line starts (values are in the tooltip).
+      const x0 = days[0], yT = ys.getPixelForValue(tdeeX(x0)), yG = ys.getPixelForValue(tgt(x0));
+      const gap = Math.max(0, 13 - Math.abs(yT - yG)) / 2, tag = (txt, y, col) => {
+        ctx.font = '600 10.5px "IBM Plex Sans Thai", sans-serif';
+        ctx.fillStyle = col; ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillText(txt, a.left - 4, y);
+      };
+      tag('TDEE', yT - (yT <= yG ? gap : -gap), tdeeCol);
+      tag('เป้า', yG + (yT <= yG ? gap : -gap), strong);
       ctx.restore();
     }
   };
@@ -2253,7 +2274,7 @@ function drawIntake(id, n) {
   const common = { grouped: false, borderSkipped: false, borderRadius: n === 7 ? 10 : 5, barPercentage: n === 7 ? .62 : .78, categoryPercentage: .92, maxBarThickness: 36 };
   charts.push(new Chart(el, {
     type: 'bar',
-    plugins: [band, limit, labels],
+    plugins: [limit, band, labels],
     data: {
       labels: days.map(x => label(x.d)),
       datasets: [
@@ -2265,7 +2286,7 @@ function drawIntake(id, n) {
     },
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-      layout: { padding: { top: n === 7 ? 20 : 6 } },
+      layout: { padding: { top: n === 7 ? 20 : 6, left: 34 } },
       onClick: (_, els) => {
         if (!els.length) return;
         const d = days[els[0].index].d;
@@ -2283,7 +2304,7 @@ function drawIntake(id, n) {
           callbacks: {
             title: it => new Date(dayMs(days[it[0].dataIndex].d)).toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'UTC' }),
             label: it => { const x = days[it.dataIndex], d = x.kcal - tgt(x), ty = typeLabel(dayTypeOf(p, x.d));
-              return [`${fmt(x.kcal)} kcal${ty ? ` · ${ty}` : ''}`, `${d > 0 ? '+' : 'ขาด '}${fmt(Math.abs(d))} จากเป้า ${fmt(tgt(x))}`, ...(d > 0 ? [`TDEE ${fmt(tdeeX(x))} ±5% · ${STATE_WORD[kcalState(x.kcal, tgt(x), tdeeX(x), 0)]}`] : []), ...(x.est ? [`⌚ เป้าจาก Health · ตอนวางแผน ${fmt(x.est)}`] : [])]; }
+              return [`${fmt(x.kcal)} kcal${ty ? ` · ${ty}` : ''}`, `${d > 0 ? '+' : 'ขาด '}${fmt(Math.abs(d))} จากเป้า ${fmt(tgt(x))}`, `TDEE ${fmt(tdeeX(x))} − แผนลด ${fmt(Math.max(0, tdeeX(x) - tgt(x)))}`, ...(d > 0 ? [STATE_WORD[kcalState(x.kcal, tgt(x), tdeeX(x), 0)]] : []), ...(x.est ? [`⌚ เป้าจาก Health · ตอนวางแผน ${fmt(x.est)}`] : [])]; }
           }
         }
       },
@@ -2328,6 +2349,7 @@ function personPage(id) {
       <div class="card">
         <h2 style="margin-bottom:2px">⚖️ น้ำหนัก</h2>
         <div class="plan-note">${planStatus(p)}</div>
+        ${legendHtml([['line', `var(--${id})`, 'น้ำหนักจริง'], ['dash', `color-mix(in srgb,var(--${id}) 50%,transparent)`, 'แผนลด'], ['dash', `var(--${id})`, 'เป้าน้ำหนัก']])}
         <div class="chart-box"><canvas id="chartOne"></canvas></div>
         ${progress(id)}
         ${insight(id)}
@@ -2335,7 +2357,7 @@ function personPage(id) {
       <div class="card">
         <h2 style="margin-bottom:2px">🔥 % ไขมัน</h2>
         <div class="plan-note">${fatStatus(p)}</div>
-        ${fats.length ? '<div class="chart-box"><canvas id="fatChart"></canvas></div>' : '<div class="muted" style="display:grid;place-items:center;min-height:120px;text-align:center;font-size:13px">ยังไม่มีข้อมูล<br>ใส่ % ไขมันตอนบันทึกน้ำหนัก</div>'}
+        ${fats.length ? legendHtml([['line', `var(--${id})`, '% ไขมันจริง'], ['dash', `color-mix(in srgb,var(--${id}) 50%,transparent)`, 'แผน'], ['dash', `var(--${id})`, 'เป้า']]) + '<div class="chart-box"><canvas id="fatChart"></canvas></div>' : '<div class="muted" style="display:grid;place-items:center;min-height:120px;text-align:center;font-size:13px">ยังไม่มีข้อมูล<br>ใส่ % ไขมันตอนบันทึกน้ำหนัก</div>'}
         ${fatProgress(id)}
       </div>
     </div>
@@ -2375,6 +2397,8 @@ function personPage(id) {
 
 // Goal lines are drawn here (not as datasets) so they never catch hover/tap tooltips.
 // Also draws a name pill above each person's first weigh-in.
+// Legend row under a chart title: items are [kind, color, text]; kind = line | dash | band | box | box faint | dot.
+const legendHtml = items => `<div class="legend">${items.map(([k, c, t]) => `<span><i class="lg ${k}" style="--lc:${c}"></i>${t}</span>`).join('')}</div>`;
 const tagPlugin = {
   id: 'tags',
   beforeDatasetsDraw(chart, _, opts) {
