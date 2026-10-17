@@ -214,8 +214,6 @@ button.x:hover{color:var(--danger)}
 .ringtog{margin-left:auto;display:grid;place-items:center;width:32px;height:32px;border:0;border-radius:50%;background:var(--surface-2);color:var(--muted);cursor:pointer;padding:0}
 .ringtog i{width:8px;height:8px;border:solid currentColor;border-width:0 1.8px 1.8px 0;transform:rotate(-135deg);margin-top:4px;transition:transform .2s}
 .ringtog.min i{transform:rotate(45deg);margin:0 0 4px}
-.typeplan tr.on td{background:var(--surface-2)}
-.typeplan td,.typeplan th{padding:8px 6px}
 .legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--muted);margin:0 0 8px}
 .legend span{display:inline-flex;align-items:center;gap:6px}
 .lg{display:inline-block;width:18px;height:0;border-top:2px solid var(--lc)}
@@ -388,8 +386,6 @@ button.res-main:hover{background:var(--surface-2)}
 .empty{font-size:13px;color:var(--muted);padding:12px 6px 8px}
 .addnew{padding:0 6px}
 table.log td.num,table.log th.num{text-align:right}
-.breakdown{font-size:13px;color:var(--muted);line-height:1.8}
-.breakdown b{color:var(--text);font-variant-numeric:tabular-nums}
 .muted{color:var(--muted)} .good{color:var(--good)} .bad{color:var(--danger)} .warn{color:var(--warn)}
 .note{font-size:13px;color:var(--muted);margin-top:8px}
 .alert{background:var(--surface-2);border-left:3px solid var(--warn);padding:8px 12px;border-radius:6px;font-size:13px;margin-top:10px}
@@ -509,7 +505,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.10.2', APP_BUILD = '2026-10-17 15:05'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.10.3', APP_BUILD = '2026-10-17 19:02'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -1309,7 +1305,7 @@ function render() {
   } else {
     app.innerHTML = personPage(S.tab);
     drawChart('chartOne', [S.tab]);
-    drawIntake(S.tab, 7); drawIntake(S.tab, 30); drawProtein(S.tab, 7); drawProtein(S.tab, 30); drawWorkout(S.tab);
+    drawIntake(S.tab, 7); drawIntake(S.tab, 30); drawProtein(S.tab, 7); drawProtein(S.tab, 30);
     drawFat(S.tab);
   }
   bind();
@@ -1985,7 +1981,6 @@ function goalCard(id) {
       <label>ช่วงถึงเป้า (± kcal)${chips('tol', [50, 100, 150], p.tol ?? TOL_DEFAULT)}</label>
       <label>นับแคลจากการออกกำลังกาย
         <select data-f="exPct">${[[100, '100% (นับเต็ม)'], [75, '75% (แนะนำ)'], [50, '50% (เผื่อเยอะ)'], [0, '0% (ไม่นับเลย)']].map(([v, l]) => `<option value="${v}" ${exPct == v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-      ${(DAY_TYPE_IDS.includes(id) ? DAY_TYPES : []).map(([k, ic, n]) => { const t = typeTdee(p, k); return `<label>${ic} วัน${n} ออกกำลัง (kcal)<input type="number" data-tk="${k}" step="50" min="0" max="3000" value="${esc(p.typeKcal?.[k] ?? TYPE_KCAL[k])}">${t?.learned ? `<small class="muted">⌚ TDEE จริงเฉลี่ย ${fmt(t.tdee)} (${t.learned} วัน)</small>` : ''}</label>`; }).join('')}
     </div>
     <div class="note">${eta || 'ตั้งน้ำหนักเป้าหมาย + ข้อมูลส่วนตัว + บันทึกน้ำหนัก เพื่อดูว่าจะถึงเป้าเมื่อไหร่'}</div>
   </div>`;
@@ -2078,78 +2073,6 @@ function drawFat(id) {
 // break through it. Gradient fills, kcal labels on top (7-day view), and the selected day's label emphasised.
 // Protein tracking: grams eaten per logged day against today's protein goal (days with no food list are left out).
 const proteinDays = (p, n) => lastDays(p, n).map(x => ({ d: x.d, g: dayItems(p, x.d).length ? Math.round(daySum(p, x.d, 'p')) : null }));
-// Health days for the "กินตามวัน" tab: active + resting energy per day (today = so far), real TDEE for past days, day type.
-function healthDays(id, n) {
-  const p = S.people[id], r = calc(p), t0 = dayMs(todayStr());
-  return Array.from({ length: n }, (_, i) => {
-    const d = new Date(t0 - (n - 1 - i) * 864e5).toISOString().slice(0, 10), h = S.health?.[id]?.days?.[d];
-    return { d, active: h ? +h.active || 0 : null, resting: h ? +h.resting || 0 : null, real: h ? realTdee(p, d, r) : null, type: dayTypeOf(p, d) };
-  });
-}
-const avgOf = xs => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
-// "กินตามวัน (Beta)": per day type, what the watch says you burn and what you should eat, next to what you actually ate.
-const TYPE_GROUPS = ['rest', 'weights', 'badminton', 'badminton+weights'];
-function workoutPage(id) {
-  const p = S.people[id], r = calc(p), days = healthDays(id, 60), full = days.filter(x => x.real != null);
-  const def = +p.deficit || 0, eatOn = ds => avgOf(ds.map(x => p.days?.[x.d]?.kcal).filter(v => v > 0));
-  const today = dayTypeOf(p, todayStr());
-  const rows = TYPE_GROUPS.map(g => {
-    // Same number the morning estimate uses: the watch average once there are 2+ days of that type, else the estimate.
-    const xs = full.filter(x => x.type === g), t = typeTdee(p, g, r), burn = t?.tdee, ate = eatOn(xs);
-    if (!burn) return '';
-    const should = Math.max(burn - def, r.floor);
-    return `<tr class="${g === today ? 'on' : ''}"><td>${typeLabel(g)}</td><td class="num">${t.learned ? '⌚' : '≈'} ${fmt(burn)}</td><td class="num"><b>${fmt(should)}</b></td>
-      <td class="num ${ate == null ? 'muted' : Math.abs(ate - should) <= (+p.tol || TOL_DEFAULT) ? 'good' : ate > burn ? 'warn' : ''}">${ate == null ? '–' : fmt(ate)}</td><td class="num muted">${xs.length}</td></tr>`;
-  }).join('');
-  const past = days.slice(-8, -1).filter(x => x.active != null), prev = days.slice(-15, -8).filter(x => x.active != null);
-  const a7 = avgOf(past.map(x => x.active)), a7p = avgOf(prev.map(x => x.active)), chg = a7 != null && a7p ? (a7 - a7p) / a7p * 100 : null;
-  return `<div class="grid">
-    <div class="card">
-      <h2>🍽️ กินตามวัน (Beta)</h2>
-      <table class="log typeplan"><thead><tr><th>วัน</th><th class="num">เผา/วัน</th><th class="num">ควรกิน</th><th class="num">กินจริง</th><th class="num">วัน</th></tr></thead><tbody>${rows}</tbody></table>
-      <div class="breakdown">⌚ เฉลี่ยจากนาฬิกา · ≈ ประมาณ (ยังมีข้อมูลไม่ถึง 2 วัน) · ควรกิน = เผา − แผนลด ${fmt(def)}${a7 != null ? ` · Active 7 วัน เฉลี่ย ${fmt(a7)}${chg != null ? ` (${chg >= 0 ? '▲' : '▼'} ${fmt(Math.abs(chg))}%)` : ''}` : ''}</div>
-    </div>
-    <div class="card"><h2>🔥 พลังงานรายวัน · 30 วัน</h2>${legendHtml([['box', 'var(--surface-2)', 'Resting (ขณะพัก)'], ['box', 'var(--warn)', 'Active (เคลื่อนไหว)']])}<div class="chart-box short"><canvas id="hEnergy"></canvas></div></div>
-    <div class="card"><h2>📈 แนวโน้ม Active (เฉลี่ย 7 วัน)</h2>${legendHtml([['dot', 'var(--warn)', 'Active รายวัน'], ['line', 'var(--warn)', 'เฉลี่ย 7 วัน']])}<div class="chart-box short"><canvas id="hTrend"></canvas></div></div>
-  </div>`;
-}
-function drawWorkout(id) {
-  const e1 = document.getElementById('hEnergy'), e2 = document.getElementById('hTrend');
-  if (!e1 || !window.Chart) return;
-  const days = healthDays(id, 30), muted = css('--muted'), strong = css('--text'), warn = css('--warn'), track = css('--surface-2'), grid = css('--border'), surface = css('--surface');
-  const labels = days.map(x => String(new Date(dayMs(x.d)).getUTCDate()));
-  const tip = { backgroundColor: surface, titleColor: strong, bodyColor: strong, borderColor: grid, borderWidth: 1, padding: 10, cornerRadius: 10, displayColors: false,
-    titleFont: { family: 'IBM Plex Sans Thai', weight: '600' }, bodyFont: { family: 'IBM Plex Sans Thai' } };
-  const title = it => new Date(dayMs(days[it[0].dataIndex].d)).toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
-  charts.push(new Chart(e1, {
-    type: 'bar',
-    data: { labels, datasets: [
-      { label: 'Resting', data: days.map(x => x.resting), backgroundColor: track, stack: 's', borderRadius: 4, barPercentage: .78 },
-      { label: 'Active', data: days.map(x => x.active), backgroundColor: warn, stack: 's', borderRadius: 4, barPercentage: .78 }
-    ] },
-    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-      scales: { x: { stacked: true, grid: { display: false }, ticks: { color: muted, maxRotation: 0, autoSkip: true, maxTicksLimit: 10 } },
-        y: { stacked: true, beginAtZero: true, grid: { color: grid }, border: { display: false }, ticks: { color: muted, maxTicksLimit: 5 } } },
-      plugins: { legend: { display: false }, tooltip: { ...tip, filter: it => it.datasetIndex === 1 && it.raw != null, callbacks: { title,
-        label: it => { const x = days[it.dataIndex], ty = typeLabel(x.type);
-          return [`Active ${fmt(x.active)} · Resting ${fmt(x.resting)}`, x.d === todayStr() ? `ถึงตอนนี้${ty ? ` · ${ty}` : ''}` : `TDEE จริง ${fmt(x.real)}${ty ? ` · ${ty}` : ''}`]; } } } } }
-  }));
-  // 7-day rolling average of active energy over the days that have data.
-  const roll = days.map((_, i) => avgOf(days.slice(Math.max(0, i - 6), i + 1).filter(x => x.active != null).map(x => x.active)));
-  charts.push(new Chart(e2, {
-    type: 'line',
-    data: { labels, datasets: [
-      { data: days.map(x => x.active), showLine: false, pointRadius: 3, pointBackgroundColor: warn + '80', pointBorderWidth: 0 },
-      { data: roll.map(v => v == null ? null : Math.round(v)), borderColor: warn, borderWidth: 2.5, pointRadius: 0, tension: .35, spanGaps: true }
-    ] },
-    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-      scales: { x: { grid: { display: false }, ticks: { color: muted, maxRotation: 0, autoSkip: true, maxTicksLimit: 10 } },
-        y: { beginAtZero: true, grid: { color: grid }, border: { display: false }, ticks: { color: muted, maxTicksLimit: 5 } } },
-      plugins: { legend: { display: false }, tooltip: { ...tip, filter: it => it.raw != null, callbacks: { title,
-        label: it => it.datasetIndex ? `เฉลี่ย 7 วัน ${fmt(it.raw)}` : `Active ${fmt(it.raw)}` } } } }
-  }));
-}
-
 // Protein counts as reached from 80% of the goal (±20% band around the goal line).
 const PROT_BUF = .2;
 function proteinCard(id, n) {
@@ -2362,13 +2285,13 @@ function drawIntake(id, n) {
   }));
 }
 
-const SUBS = [['today', 'TDEE วันนี้'], ['stats', 'สถิติ TDEE'], ['workout', 'กินตามวัน (Beta)'], ['weight', 'น้ำหนัก'], ['goals', 'เป้าหมาย'], ['profile', 'ข้อมูลส่วนตัว']];
+const SUBS = [['today', 'TDEE วันนี้'], ['stats', 'สถิติ TDEE'], ['weight', 'น้ำหนัก'], ['goals', 'เป้าหมาย'], ['profile', 'ข้อมูลส่วนตัว']];
 let sub = 'today';
 
 function personPage(id) {
   const p = S.people[id], e = sorted(p).reverse(), r = calc(p);
-  if (sub === 'workout' && !DAY_TYPE_IDS.includes(id)) sub = 'today';
-  const nav = `<nav class="subtabs">${SUBS.filter(([k]) => k !== 'workout' || DAY_TYPE_IDS.includes(id)).map(([k, l]) => `<button data-sub="${k}" class="${sub === k ? 'on' : ''}">${l}</button>`).join('')}</nav>`;
+  if (sub === 'workout') sub = 'today';
+  const nav = `<nav class="subtabs">${SUBS.map(([k, l]) => `<button data-sub="${k}" class="${sub === k ? 'on' : ''}">${l}</button>`).join('')}</nav>`;
   let body;
   if (sub === 'today') body = `
     <div class="today-grid">
@@ -2376,7 +2299,6 @@ function personPage(id) {
       <div class="card ta-eaten"><h2>🥗 ${viewDay() === todayStr() ? 'วันนี้กินไปแล้ว' : 'กินไปแล้ว'}</h2>${eatenBlock(id)}</div>
     </div>`;
   else if (sub === 'stats') body = `<div class="grid">${intakeCard(id, 7)}${intakeCard(id, 30)}${proteinCard(id, 7)}${proteinCard(id, 30)}</div>`;
-  else if (sub === 'workout') body = workoutPage(id);
   else if (sub === 'weight') {
     const rows = e.map((x, i) => {
       const prev = e[i + 1], d = prev ? x.weight - prev.weight : null;
@@ -2564,7 +2486,6 @@ function bind() {
     if (ev.target.closest('button')) return;
     const k = h.dataset.mfold; mealFold[k] = !mealFold[k]; lsSet('tdee-mealfold', mealFold); render();
   });
-  document.querySelectorAll('[data-tk]').forEach(inp => inp.onchange = () => { p.typeKcal = { ...(p.typeKcal || {}), [inp.dataset.tk]: Math.max(0, +inp.value || 0) }; save(); render(); });
   document.querySelectorAll('[data-ringtoggle]').forEach(b => b.onclick = () => { ringMin = !ringMin; lsSet('tdee-ringfold', ringMin); render(); });
   // Plate icon: pick some of a meal's lines, name them, and they become one 🍱 line (also saved as a My Meal).
   // The line keeps its original lines in `parts`, so "แยกรายการ" restores them exactly.
