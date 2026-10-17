@@ -509,7 +509,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.10.1', APP_BUILD = '2026-10-17 00:54'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.10.2', APP_BUILD = '2026-10-17 15:05'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -851,7 +851,7 @@ function soFarTdee(p, d, r = calc(p)) {
 // real TDEE. Half the gap to what the app predicted for those days (clamped ±200) corrects today's TDEE, so it moves slowly.
 // Skips the first 14 days after the first weigh-in (early water loss). Needs 14+ logged days and 4+ weigh-ins over 21+ days
 // inside the window. Past days keep their own numbers. Cached per render.
-let calibCache = new Map();
+let calibCache = new Map(), dragAbort = null;
 function calibration(p) {
   const id = idOf(p);
   if (calibCache.has(id)) return calibCache.get(id);
@@ -1272,6 +1272,7 @@ function gate() {
 
 function render() {
   calibCache = new Map();
+  dragAbort?.(); document.querySelectorAll('.it.lifted').forEach(g => g.remove());
   const blocked = gate();
   document.getElementById('tabs').classList.toggle('hidden', !!blocked);
   document.getElementById('footer').classList.toggle('hidden', !!blocked);
@@ -2737,19 +2738,19 @@ function bind() {
     if (it) it.meal = b.dataset.tomeal;
     changed();
   });
-  // Long-press anywhere on a card (not its inputs or ✕) to lift it, then drag onto another meal.
-  // A quick swipe still scrolls: moving before the press timer fires cancels the drag.
+  // Long-press a card's top line (not its buttons or ✕) to lift it, then drag onto another meal; the open editor below it
+  // never starts a drag. A quick swipe still scrolls: moving before the press timer fires cancels the drag.
   document.querySelectorAll('.eaten .it[data-row]').forEach(row => {
     row.addEventListener('touchmove', e => { if (row.dataset.dragging) e.preventDefault(); }, { passive: false });
     row.onpointerdown = ev => {
-      if (ev.button > 0 || ev.target.closest('input,select,.x')) return;
+      if (ev.button > 0 || !ev.target.closest('.l1') || ev.target.closest('input,select,.x,button:not(.nm)')) return;
       const it = list().find(x => x.id === row.dataset.row);
       if (!it) return;
       const sx = ev.clientX, sy = ev.clientY;
       const off = () => { clearTimeout(timer); row.removeEventListener('pointermove', pre); row.removeEventListener('pointerup', off); row.removeEventListener('pointercancel', off); };
       const pre = e => { if (Math.hypot(e.clientX - sx, e.clientY - sy) > 8) off(); };
       row.addEventListener('pointermove', pre); row.addEventListener('pointerup', off); row.addEventListener('pointercancel', off);
-      const timer = setTimeout(() => { off(); dragRow(row, it, ev.pointerId, sy); }, ev.pointerType === 'mouse' ? 150 : 380);
+      const timer = setTimeout(() => { off(); dragRow(row, it, ev.pointerId, sy); }, ev.pointerType === 'mouse' ? 300 : 380);
     };
   });
   const dragRow = (row, it, pid, y0) => {
@@ -2779,13 +2780,19 @@ function bind() {
       const t = slotAt(y);
       if (t !== target) { target?.classList.remove('drop'); target = t; target?.classList.add('drop'); }
     };
-    const end = () => {
-      alive = false; dragEnded = Date.now();
-      row.removeEventListener('pointermove', move); row.removeEventListener('pointerup', end); row.removeEventListener('pointercancel', end);
+    // Listen on window, not the row: a re-render mid-drag (e.g. a data update) replaces the row, and the lifted copy must
+    // still go away. render() calls dragAbort to drop a drag whose list was redrawn.
+    const stop = () => {
+      alive = false; dragEnded = Date.now(); dragAbort = null;
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', end); window.removeEventListener('pointercancel', stop);
       delete row.dataset.dragging; ghost.remove(); row.classList.remove('dragging'); target?.classList.remove('drop');
+    };
+    const end = () => {
+      stop();
       if (target && target.dataset.mealslot !== it.meal) { it.meal = target.dataset.mealslot; changed(); }
     };
-    row.addEventListener('pointermove', move); row.addEventListener('pointerup', end); row.addEventListener('pointercancel', end);
+    dragAbort = stop;
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', end); window.addEventListener('pointercancel', stop);
   };
   on('[data-sheetscan]', () => { const root = document.querySelector(`[data-search="eat-${id}"]`); if (root) scanInto(root, 'eat-' + id, eatPick); });
   const eatFood = (fid, f, o) => {
