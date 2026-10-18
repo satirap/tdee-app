@@ -26,7 +26,7 @@ Fat-loss tracker for two people. Static web app on GitHub Pages: https://satirap
 - **Never delete or overwrite stored data.** Use the `data-safety` skill: back up → change → compare counts, for every deploy and any data write. Field-level writes only (`updateDoc` / REST `updateMask`).
 - **Diagnose before fixing** reported problems (`diagnose-before-fix` skill).
 - Keep the UI minimal (no hint texts, search-first). Phone = native-app feel (bottom tab bar, sheets); desktop = standard web layout.
-- Wording: above target but under TDEE = "ยังลดอยู่", above TDEE = "พักลด"; amber, not red. Never "เกิน" for kcal. Exception (user, 2026-10-16): calorie chart bars are green inside target ±tol, orange below, red above, light purple above that day's TDEE (TDEE line = solid purple, drawn on top).
+- Wording: above target but under TDEE = "ยังลดอยู่", above TDEE = "พักลด"; amber, not red. Never "เกิน" for kcal. Exception (user, 2026-10-16): calorie chart bars are green inside target ±tol, orange below, sky blue above (still losing, 2026-10-18), light purple above that day's TDEE (TDEE line = solid purple, drawn on top).
 
 ## Test → deploy
 Use the `deploy` skill (`.claude/skills/deploy/`) for every test/deploy.

@@ -21,7 +21,7 @@
   --bg:#f6f5f2; --surface:#ffffff; --surface-2:#f0eee9; --text:#1d1c1a; --muted:#6b6862;
   --border:#e2dfd8; --ton:#2f6fdb; --patt:#e0613f; --good:#1f8a5b; --warn:#b7791f; --danger:#c43d3d;
   --ton-soft:rgba(47,111,219,.12); --patt-soft:rgba(224,97,63,.12);
-  --prot:#1f8a5b; --carb:#c9941a; --fat:#8a63d2; --on-macro:#fff; --over-tdee:#c3a9f2;
+  --prot:#1f8a5b; --carb:#c9941a; --fat:#8a63d2; --on-macro:#fff; --over-tdee:#c3a9f2; --losing:#4aa8e8;
   --radius:14px;
 }
 @media (prefers-color-scheme: dark){
@@ -29,14 +29,14 @@
     --bg:#141413; --surface:#1e1d1b; --surface-2:#282724; --text:#eceae4; --muted:#9d9a92;
     --border:#34322e; --ton:#6b9bf0; --patt:#f08766; --good:#4cc38a; --warn:#e0a84a; --danger:#ef6b6b;
     --ton-soft:rgba(107,155,240,.16); --patt-soft:rgba(240,135,102,.16);
-    --prot:#4cc38a; --carb:#e6b949; --fat:#a98bf0; --on-macro:#141413; --over-tdee:#6b559e;
+    --prot:#4cc38a; --carb:#e6b949; --fat:#a98bf0; --on-macro:#141413; --over-tdee:#6b559e; --losing:#5cb8f0;
   }
 }
 :root[data-theme="dark"]{
   --bg:#141413; --surface:#1e1d1b; --surface-2:#282724; --text:#eceae4; --muted:#9d9a92;
   --border:#34322e; --ton:#6b9bf0; --patt:#f08766; --good:#4cc38a; --warn:#e0a84a; --danger:#ef6b6b;
   --ton-soft:rgba(107,155,240,.16); --patt-soft:rgba(240,135,102,.16);
-  --prot:#4cc38a; --carb:#e6b949; --fat:#a98bf0; --on-macro:#141413; --over-tdee:#6b559e;
+  --prot:#4cc38a; --carb:#e6b949; --fat:#a98bf0; --on-macro:#141413; --over-tdee:#6b559e; --losing:#5cb8f0;
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font-family:"IBM Plex Sans Thai",system-ui,sans-serif;font-size:15px;line-height:1.55}
@@ -505,7 +505,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.10.3', APP_BUILD = '2026-10-17 19:02'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.10.4', APP_BUILD = '2026-10-18 23:42'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -2175,7 +2175,7 @@ function drawIntake(id, n) {
   const el = document.getElementById('intakeChart' + n);
   if (!el || !window.Chart) return;
   const p = S.people[id], days = lastDays(p, n), sel = viewDay();
-  const muted = css('--muted'), strong = css('--text'), track = css('--surface-2'), good = css('--good'), bad = css('--warn'), red = css('--danger'), surface = css('--surface'), border = css('--border');
+  const muted = css('--muted'), strong = css('--text'), track = css('--surface-2'), good = css('--good'), bad = css('--warn'), losing = css('--losing'), surface = css('--surface'), border = css('--border');
   const nowTarget = Math.round(macros(p)?.kcal || 0);
   const tgt = x => x.target || nowTarget || 0;
   const WD = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
@@ -2189,11 +2189,11 @@ function drawIntake(id, n) {
     g.addColorStop(0, base); g.addColorStop(1, base + '59');
     return g;
   };
-  // Bars: inside target ±tol = green, short of it = orange, above it = red.
+  // Bars: inside target ±tol = green, short of it = orange, above it but under TDEE = sky blue (still losing).
   const tol = +p.tol || TOL_DEFAULT;
   // Above that day's TDEE = light purple (a lighter tone than the TDEE line, which is drawn on top with a halo).
   const overT = css('--over-tdee');
-  const barColor = x => x.kcal == null ? good : x.kcal > tdeeX(x) ? overT : x.kcal > tgt(x) + tol ? red : x.kcal < tgt(x) - tol ? bad : good;
+  const barColor = x => x.kcal == null ? good : x.kcal > tdeeX(x) ? overT : x.kcal > tgt(x) + tol ? losing : x.kcal < tgt(x) - tol ? bad : good;
   // Dashed limit line at each day's target, stepping where the target changed.
   const limit = {
     id: 'kcalLimit',
