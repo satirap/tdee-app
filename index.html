@@ -530,7 +530,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.12.2', APP_BUILD = '2026-10-19 22:08'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.12.3', APP_BUILD = '2026-10-19 22:21'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -1502,15 +1502,8 @@ const tdeeGap = p => { const pl = dayPlan(p); return pl ? Math.max(0, pl.tdee - 
 function energyBlock(id, d = todayStr()) {
   const p = S.people[id], r = calc(p), m0 = macros(p);
   if (!r) return `<div class="alert">${!profileReady(p) ? 'กรอก <b>เพศ อายุ ส่วนสูง</b> ในแท็บ “ข้อมูลส่วนตัว” ก่อน' : 'บันทึกน้ำหนักอย่างน้อย 1 ครั้ง'} เพื่อคำนวณ TDEE</div>`;
-  const pl = dayPlan(p, d), h = healthDay(p, d);
+  const pl = dayPlan(p, d);
   const m = d === todayStr() || pl.type || pl.real ? macros(p, d) : { ...m0, kcal: p.days?.[d]?.target || m0.kcal };
-  // Watch / weight-check details live inside "ดูรายละเอียด" so the main view is just the rings.
-  const cal = d === todayStr() && calibration(p);
-  const hl = `${pl.wk > 0 ? `<div class="hline">🏃 Workout: ${dayWorkouts(p, d).map(w => `${esc(WORKOUT_EN[w.type] || w.type || 'Workout')} ${fmt(+w.kcal || 0)}`).join(' + ')} × ${p.exPct ?? 75}% = <b>+${fmt(pl.wkAdd)}</b></div>` : ''}
-    ${pl.real ? `<div class="hline">⌚ Watch (full day): TDEE ${fmt(pl.real)} · Active ${fmt(h.active)} · Resting ${fmt(h.resting)}</div>`
-      : pl.sofar != null ? `<div class="hline">⌚ Watch: Active ${fmt(h.active)}${h.at && h.at.length > 10 ? ` (${esc(h.at.slice(11, 16))})` : ''} → burn ${fmt(pl.sofar)} · ${pl.src === 'live' ? `using watch <b>+${fmt(pl.kcal - pl.estKcal)}</b>` : `using ${pl.wk > 0 ? 'Workout' : 'estimate'} ${fmt(pl.est)}`}</div>` : ''}
-    ${h && !pl.real && d < todayStr() ? `<div class="hline">⌚ Watch data incomplete · using estimate</div>` : ''}
-    ${cal ? `<div class="hline">⚖️ Weight check (${cal.days} days): real TDEE ${fmt(cal.real)} · app ${fmt(cal.pred)} · ${cal.off ? `adjust ${cal.off > 0 ? '+' : ''}${fmt(cal.off)}` : 'on track ✓'}</div>` : ''}`;
   const kcal = dayItems(p, d).length ? daySum(p, d, 'kcal') : p.days?.[d]?.kcal || 0, prot = daySum(p, d, 'p'), over = Math.round(kcal - m.kcal), protLeft = m.prot.g - prot;
   const tol = +p.tol || TOL_DEFAULT, hit = Math.abs(over) <= tol, tdee = Math.max(pl.tdee, m.kcal), plan = Math.round(planKcal(p, d)), after = Math.round(m.kcal - kcal - plan);
   const st = kcalState(kcal, m.kcal, tdee, tol), kStatus = hit ? 'ถึงเป้า ✓' : over < 0 ? `เหลือ ${fmt(-over)}` : `+${fmt(over)} · ${STATE_WORD[st]}`;
@@ -1541,7 +1534,6 @@ function energyBlock(id, d = todayStr()) {
         <span class="${left < 0 ? 'warn' : 'muted'}">${left < 0 ? `+${fmt(-left)} ก.` : left === 0 ? 'พอดี' : `เหลือ ${fmt(left)} ก.`}</span></div>`;
     }).join('')}</div>
     ${mealSplit(dayItems(p, d).filter(isEaten))}
-    ${hl}
     </details>
     ${r.target < r.floor ? `<div class="alert">เป้าคำนวณได้ ${fmt(r.target)} kcal ต่ำกว่าขั้นต่ำที่แนะนำ (${r.floor}) จึงแสดงเป็น ${r.floor} แทน · ลองลด “ลดวันละ” ลง</div>` : ''}`;
 }
@@ -2367,6 +2359,21 @@ function bodyMap(p) {
     <div class="mlegend"><span><i class="m-ready"></i>พร้อม</span><span><i class="m-rec"></i>กำลังฟื้น</span><span><i class="m-today"></i>เล่นวันนี้</span>${rows.some(([, x]) => x.s === 'light') ? '<span><i class="m-light"></i>แบดหนัก</span>' : ''}</div>
     ${rows.length ? `<div class="mrows">${rows.map(([m, x]) => `<div><span><i class="m-${x.s}"></i>${MUSCLES[m]}${DAILY_MUSCLES.includes(m) ? ' <small class="muted">เล่นได้ทุกวัน</small>' : ''}</span><span class="muted">${txt(x)}</span></div>`).join('')}</div>` : ''}`;
 }
+// Watch check (Apple Health via the Shortcut): resting (at least BMR) + active × exPct = what the watch says so far.
+// The target uses whichever is higher: that, or TDEE + logged workouts × exPct.
+function watchBlock(p, d, pl, r, pct) {
+  const h = healthDay(p, d), cal = calibration(p);
+  const calRow = cal ? `<div><span class="muted">⚖️ Weight check (${cal.days} days)</span><span>${cal.off ? `${cal.off > 0 ? '+' : ''}${fmt(cal.off)}` : 'on track ✓'}</span></div>` : '';
+  if (!h || pl.sofar == null) return calRow ? `<div class="wlist wsum">${calRow}</div>` : '';
+  const rest = Math.max(+h.resting || 0, r.bmr), act = Math.round((+h.active || 0) * pct / 100), useWatch = pl.src === 'live';
+  return `<div class="wlist wsum"><h3 class="wh">⌚ Watch${h.at && h.at.length > 10 ? ` · ${esc(h.at.slice(11, 16))}` : ''}</h3>
+    <div><span class="muted">Resting${+h.resting < r.bmr ? ' (min BMR)' : ''}</span><span>${fmt(rest)}</span></div>
+    <div><span class="muted">Active ${fmt(h.active)} × ${pct}%</span><span>+${fmt(act)}</span></div>
+    <div class="tot"><span>Watch total</span><b>${fmt(pl.sofar)}</b></div>
+    <div><span class="muted">TDEE + Workout</span><span>${fmt(pl.est)}</span></div>
+    <div><span class="muted">Using</span><span class="good">${useWatch ? `Watch ${fmt(pl.sofar)}` : `TDEE + Workout ${fmt(pl.est)}`} ✓</span></div>
+    ${calRow}</div>`;
+}
 function workoutPage(id) {
   const p = S.people[id], r = calc(p), d = todayStr(), pl = dayPlan(p, d), ws = manualWorkouts(p, d), pct = p.exPct ?? 75;
   if (!r || !pl) return `<div class="card"><div class="alert">กรอกข้อมูลส่วนตัวและน้ำหนักก่อน เพื่อคำนวณเป้า</div></div>`;
@@ -2388,6 +2395,7 @@ function workoutPage(id) {
         <div><span class="muted">กินไปแล้ว</span><span>${fmt(eaten)}</span></div>
         <div class="tot"><span>${st !== 'hit' && left < 0 ? 'มากกว่าเป้า' : 'เหลือกินได้'}</span><b class="${st === 'hit' || left >= 0 ? 'good' : 'warn'} big">${leftTxt}</b></div>
       </div>
+      ${watchBlock(p, d, pl, r, pct)}
       ${ws.length ? `<div class="wlist"><h3 class="wh">ออกกำลังกายวันนี้</h3>${ws.map(w => `<div><span>${WORKOUT_PRESETS.find(x => x[0] === w.type)?.[1] || '➕'} ${esc(w.type)} <small class="muted">${esc(w.at || '')}</small></span>
         <span>${fmt(w.kcal)} <small class="muted">→ +${fmt(Math.round(w.kcal * pct / 100))}</small><button class="x" data-wdel="${w.id}" aria-label="ลบ">✕</button></span></div>`).join('')}</div>` : ''}
       <div class="wadd">

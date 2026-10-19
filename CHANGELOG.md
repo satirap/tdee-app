@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.12.3 — 2026-10-19
+- เอาบรรทัด Workout / Watch ออกจากหน้าแรกและการ์ด TDEE วันนี้
+- แท็บ Workout มีส่วน "⌚ Watch" แยกให้เห็นทีละบรรทัด: Resting + Active × 50% = Watch total · เทียบกับ TDEE + Workout · บอกว่าใช้ตัวไหน
+
 ## 1.12.2 — 2026-10-19
 - บรรทัดรายละเอียดนาฬิกา/Workout เป็นภาษาอังกฤษ อ่านง่ายขึ้น: "🏃 Workout: Badminton 900 × 50% = +450", "⌚ Watch: Active 1,245 → burn 2,206 · using Workout 2,489"
 
