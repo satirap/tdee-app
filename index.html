@@ -157,11 +157,12 @@ button.btn{font:inherit;font-weight:600;border:0;border-radius:9px;padding:8px 1
 .bmap polygon{stroke:var(--surface);stroke-width:.4}
 .bmap polygon[data-muscle]{cursor:pointer}
 .m-body{fill:var(--border)} .m-none{fill:var(--surface-2);fill:color-mix(in srgb,var(--muted) 32%,var(--surface))}
-.m-ready{fill:var(--good)} .m-rec{fill:var(--warn)} .m-today{fill:var(--patt)}
+.m-ready{fill:var(--good)} .m-rec{fill:var(--warn)} .m-today{fill:var(--patt)} .m-light{fill:color-mix(in srgb,var(--warn) 45%,var(--surface))}
 .mlegend{display:flex;justify-content:center;gap:14px;font-size:12px;color:var(--muted);margin:8px 0}
 .mlegend i,.mrows i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
-.mlegend i.m-ready,.mrows i.m-ready{background:var(--good)} .mlegend i.m-rec,.mrows i.m-rec{background:var(--warn)} .mlegend i.m-today,.mrows i.m-today{background:var(--patt)}
+.mlegend i.m-ready,.mrows i.m-ready{background:var(--good)} .mlegend i.m-rec,.mrows i.m-rec{background:var(--warn)} .mlegend i.m-today,.mrows i.m-today{background:var(--patt)} .mlegend i.m-light,.mrows i.m-light{background:color-mix(in srgb,var(--warn) 45%,var(--surface))}
 .mrows{border-top:1px solid var(--border);margin-top:6px}
+.rate-note{font-size:13px;margin-top:6px;line-height:1.6}
 button.ghost{font:inherit;border:1px solid var(--border);background:transparent;color:var(--text);border-radius:9px;padding:6px 12px;cursor:pointer}
 button.x{border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:16px;padding:2px 6px}
 button.x:hover{color:var(--danger)}
@@ -528,7 +529,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.11.1', APP_BUILD = '2026-10-19 21:17'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.12.0', APP_BUILD = '2026-10-19 21:51'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -676,7 +677,7 @@ function retargetDays() {
   for (const id of IDS) {
     const p = S.people[id];
     if (!p) continue;
-    const ds = new Set([...Object.keys(p.dayType || {}), ...Object.keys(S.health?.[id]?.days || {}), ...Object.keys(S.health?.[id]?.workouts || {}), ...Object.keys(p.workouts || {})]);
+    const ds = new Set([...Object.keys(p.dayType || {}), ...Object.keys(S.health?.[id]?.days || {}), ...Object.keys(p.workouts || {})]);
     for (const d of ds) if (p.days?.[d] || dayItems(p, d).length) recordDay(p, d, false);
   }
 }
@@ -820,21 +821,11 @@ const DAY_TYPES = [['badminton', '🏸', 'แบด'], ['weights', '🏋️', '�
 // A day may combine badminton and weights: stored as 'badminton+weights' (its own group for learning; kcal = sum of parts).
 // For trial people a day with no type chosen counts as rest (from DEFAULT_REST_FROM on; older days stay untyped).
 const DEFAULT_REST_FROM = '2026-10-16';
-// Each Apple Watch workout: a second Shortcut (workout-end automation) writes health/{id}.workouts[date][start] =
-// {type, kcal, min} (REST PATCH, updateMask workouts.`date`.`start`), so every workout is kept on its own.
-// Badminton / strength workouts set the day type automatically (a type picked by hand always wins).
-// Older Shortcut versions may send the names as text in days[d].workouts instead.
-const WORKOUT_TYPES = [['badminton', /badminton|แบด/i], ['weights', /strength|weight|core|ความแข็งแรง|เวท|แกนกลาง/i]];
-const workoutsOf = (p, d) => Object.entries(S.health?.[idOf(p)]?.workouts?.[d] || {}).map(([k, w]) => ({ start: k, ...w })).sort((a, b) => a.start < b.start ? -1 : 1);
-// Workouts logged by hand in the Workout tab (people/{id}.workouts[date] = [{id, type, kcal, at}]) take precedence.
+// Workouts are logged by hand in the Workout tab: people/{id}.workouts[date] = [{id, type, kcal, at}].
 const manualWorkouts = (p, d) => p.workouts?.[d] || [];
-const dayWorkouts = (p, d) => manualWorkouts(p, d).length ? manualWorkouts(p, d) : workoutsOf(p, d);
+const dayWorkouts = manualWorkouts;
 const workoutKcal = (p, d) => Math.round(dayWorkouts(p, d).reduce((s, w) => s + (+w.kcal || 0), 0));
-function watchTypeOf(p, d) {
-  const w = healthDay(p, d)?.workouts, txt = [...workoutsOf(p, d).map(x => x.type), ...(Array.isArray(w) ? w : [w || ''])].join(',');
-  return WORKOUT_TYPES.filter(([, re]) => re.test(txt)).map(([k]) => k).join('+') || undefined;
-}
-const dayTypeOf = (p, d) => p.dayType?.[d] || (DAY_TYPE_IDS.includes(idOf(p)) && d >= DEFAULT_REST_FROM ? watchTypeOf(p, d) || 'rest' : undefined);
+const dayTypeOf = (p, d) => p.dayType?.[d] || (DAY_TYPE_IDS.includes(idOf(p)) && d >= DEFAULT_REST_FROM ? 'rest' : undefined);
 const typeParts = t => (t || '').split('+').filter(Boolean);
 const typeKcalOf = (p, t) => typeParts(t).reduce((s, k) => s + (+(p.typeKcal?.[k] ?? TYPE_KCAL[k]) || 0), 0);
 const typeLabel = t => { const xs = typeParts(t).map(k => DAY_TYPES.find(y => y[0] === k)).filter(Boolean); return xs.length ? `${xs.map(y => y[1]).join('')} ${xs.map(y => y[2]).join(' + ')}` : ''; };
@@ -865,7 +856,7 @@ function soFarTdee(p, d, r = calc(p)) {
   return Math.round(Math.max(+h.resting || 0, r.bmr) + (+h.active || 0) * (p.exPct ?? 75) / 100);
 }
 // The day's TDEE and kcal target, and where it came from: health | live | workout | type | avg.
-// With watch workouts recorded, the estimate is a rest day's TDEE + the workouts' kcal × exPct (more exact than the type's
+// With workouts logged, the estimate is a rest day's TDEE + the workouts' kcal × exPct (more exact than the type's
 // average); the day's running Active total from the other Shortcut still raises it when higher.
 // Past days use the real full-day TDEE. Today starts from the estimate and only goes up when the watch shows more burned
 // than estimated (like MyFitnessPal's exercise adjustment; never lowered during the day).
@@ -910,7 +901,7 @@ function macros(p, d = todayStr()) {
   const r = calc(p);
   if (!r) return null;
   const kcal = dayPlan(p, d).kcal;
-  const perKg = +(p.proteinPerKg ?? 1), fatPct = +(p.fatPct ?? 30);
+  const perKg = +(p.proteinPerKg ?? 2), fatPct = +(p.fatPct ?? 30);
   const protG = r.w * perKg, protK = protG * 4;
   const fatK = kcal * fatPct / 100, fatG = fatK / 9;
   const carbK = Math.max(0, kcal - protK - fatK), carbG = carbK / 4;
@@ -1350,6 +1341,23 @@ function plan(p) {
   return { d0, w0, goal, rate, end: d0 + (w0 - goal) / perDay * 864e5, at: t => Math.max(goal, w0 - perDay * (t - d0) / 864e5) };
 }
 
+// Rate check (coach standard): weekly loss of 0.5–1 % of bodyweight. Trend = least-squares slope of the weigh-ins in the
+// last 28 days (2+ weigh-ins, 7+ days apart); level = average of the last 7 days' weigh-ins.
+function rateLine(p) {
+  const t = dayMs(todayStr()), from = new Date(t - 28 * 864e5).toISOString().slice(0, 10);
+  const ws = sorted(p).filter(x => x.date >= from && +x.weight > 0);
+  if (ws.length < 2 || dayMs(ws.at(-1).date) - dayMs(ws[0].date) < 7 * 864e5) return '';
+  const xs = ws.map(x => dayMs(x.date) / 864e5), ys = ws.map(x => +x.weight), n = xs.length;
+  const mx = xs.reduce((a, b) => a + b) / n, my = ys.reduce((a, b) => a + b) / n;
+  const perWeek = -7 * xs.reduce((a, x, i) => a + (x - mx) * (ys[i] - my), 0) / xs.reduce((a, x) => a + (x - mx) ** 2, 0);
+  const last7 = ws.filter(x => dayMs(x.date) > dayMs(ws.at(-1).date) - 7 * 864e5), avg = last7.reduce((a, x) => a + +x.weight, 0) / last7.length;
+  const pct = perWeek / avg * 100, lo = avg * .005, hi = avg * .01;
+  const early = dayMs(ws.at(-1).date) - dayMs(sorted(p)[0].date) < 21 * 864e5 ? ' <small class="muted">(ช่วงแรกส่วนหนึ่งเป็นน้ำหนักน้ำ)</small>' : '';
+  const st = pct > 1 ? `<span class="warn">ลดเร็วกว่าที่แนะนำ · กินเพิ่มได้</span>` : pct >= .5 ? '<span class="good">อยู่ในช่วงแนะนำ ✓</span>'
+    : pct > .1 ? '<span class="warn">ลดช้ากว่าที่แนะนำ</span>' : '<span class="muted">ยังไม่ลด</span>';
+  return `<div class="rate-note">เฉลี่ย ${fmt(avg, 1)} กก. · ${perWeek >= 0 ? 'ลด' : 'เพิ่ม'} ${fmt(Math.abs(perWeek), 2)} กก./สัปดาห์ (${fmt(Math.abs(pct), 1)}%) · ${st}${early}
+    <br><small class="muted">แนะนำ ${fmt(lo, 2)}–${fmt(hi, 2)} กก./สัปดาห์ (0.5–1% ของน้ำหนักตัว)</small></div>`;
+}
 function planStatus(p) {
   const pl = plan(p), e = sorted(p);
   if (!pl) return '';
@@ -1499,7 +1507,7 @@ function energyBlock(id, d = todayStr()) {
   const cal = d === todayStr() && calibration(p);
   const hl = `${pl.wk > 0 ? `<div class="hline">⌚ ${dayWorkouts(p, d).map(w => `${esc(w.type || 'Workout')} ${fmt(+w.kcal || 0)}${+w.min ? ` (${fmt(+w.min)} นาที)` : ''}`).join(' · ')} · × ${p.exPct ?? 75}% = <b>+${fmt(pl.wkAdd)}</b></div>` : ''}
     ${pl.real ? `<div class="hline">⌚ TDEE จริงจาก Health ${fmt(pl.real)} · Active ${fmt(h.active)} · Resting ${fmt(h.resting)}</div>`
-      : pl.sofar != null ? `<div class="hline">⌚ ถึงตอนนี้ Active ${fmt(h.active)}${h.at && h.at.length > 10 ? ` (${esc(h.at.slice(11, 16))})` : ''} · ${pl.src === 'live' ? `<b>เป้าเพิ่ม +${fmt(pl.kcal - pl.estKcal)}</b>` : `ยังไม่เกินที่ประมาณไว้ ${fmt(pl.est)}`}</div>` : ''}
+      : pl.sofar != null ? `<div class="hline">⌚ นาฬิกา: Active ${fmt(h.active)}${h.at && h.at.length > 10 ? ` (${esc(h.at.slice(11, 16))})` : ''} → เผา ${fmt(pl.sofar)} · ${pl.src === 'live' ? `ใช้ค่านาฬิกา <b>เป้าเพิ่ม +${fmt(pl.kcal - pl.estKcal)}</b>` : `ใช้ค่าจาก${pl.wk > 0 ? ' Workout' : 'การคำนวณ'} ${fmt(pl.est)}`}</div>` : ''}
     ${h && !pl.real && d < todayStr() ? `<div class="hline">⌚ ข้อมูลนาฬิกาไม่ครบวัน · ใช้ค่าประมาณ</div>` : ''}
     ${cal ? `<div class="hline">⚖️ เทียบน้ำหนักจริง ${cal.days} วัน: TDEE จริง ${fmt(cal.real)} · แอปคาด ${fmt(cal.pred)} · ${cal.off ? `ปรับ ${cal.off > 0 ? '+' : ''}${fmt(cal.off)}` : 'ตรงแล้ว ✓'}</div>` : ''}`;
   const kcal = dayItems(p, d).length ? daySum(p, d, 'kcal') : p.days?.[d]?.kcal || 0, prot = daySum(p, d, 'p'), over = Math.round(kcal - m.kcal), protLeft = m.prot.g - prot;
@@ -1543,10 +1551,10 @@ function macroSettings(id) {
   const chips = (field, opts, val, unit) => `<div class="chips">${opts.map(v => `<button data-chip="${field}" data-v="${v}" class="${+val === v ? 'on' : ''}">${v}${unit}</button>`).join('')}</div>`;
   return `
     <div class="goal-grid">
-      <label>โปรตีน (ก. ต่อ กก. น้ำหนักตัว)${chips('proteinPerKg', [1, 1.2, 1.6], m.perKg, '')}</label>
+      <label>โปรตีน (ก. ต่อ กก. น้ำหนักตัว · ช่วงลดน้ำหนักแนะนำ 1.6–2.2)${chips('proteinPerKg', [1.2, 1.6, 1.8, 2, 2.2], m.perKg, '')}</label>
       <label>ไขมัน (% ของแคล)${chips('fatPct', [25, 30, 35], m.fatPct, '%')}</label>
     </div>
-    ${m.carb.pct < 40 ? `<div class="alert">คาร์บเหลือแค่ ${fmt(m.carb.pct)}% (แนะนำ 45–65%) ลองลดไขมันเป็น 25%</div>` : ''}`;
+    ${m.carb.pct < 30 ? `<div class="alert">คาร์บเหลือแค่ ${fmt(m.carb.pct)}% (ช่วงลดน้ำหนักควรมี 30% ขึ้นไป) ลองลดไขมันเป็น 25%</div>` : ''}`;
 }
 
 // One logged/meal line: name, free amount, and a unit picker that converts between the food's units.
@@ -2324,8 +2332,19 @@ const MUSCLE_ALIAS = { 'left-soleus': 'calves', 'right-soleus': 'calves' };
 const DAILY_MUSCLES = ['abs', 'obliques', 'calves', 'forearm'];
 const REST_H = 48;
 const localDate = ms => { const d = new Date(ms); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+// A hard badminton session (700+ kcal) in the last 24 h counts as light leg work: quads and glutes show "light".
+const HEAVY_LEGS = ['quadriceps', 'gluteal'];
+function heavyBadminton(p) {
+  const now = Date.now(), y = localDate(now - 864e5);
+  for (const d of [todayStr(), y]) for (const w of manualWorkouts(p, d)) {
+    const at = new Date(`${d}T${w.at || '12:00'}`).getTime();
+    if (w.type === 'แบดมินตัน' && +w.kcal >= 700 && now - at < 864e5) return { h: (now - at) / 36e5 };
+  }
+  return null;
+}
 function muscleState(p, m) {
-  const last = p.trained?.[m]?.at(-1);
+  const last = p.trained?.[m]?.at(-1), hb = HEAVY_LEGS.includes(m) && heavyBadminton(p);
+  if (hb && !(last && localDate(last) === todayStr())) return { s: 'light', h: hb.h, left: Math.max(1, Math.round(24 - hb.h)) };
   if (!last) return { s: 'none' };
   const h = (Date.now() - last) / 36e5;
   if (localDate(last) === todayStr()) return { s: 'today', h };
@@ -2339,11 +2358,11 @@ function bodyMap(p) {
     const m = MUSCLE_ALIAS[k] || k, name = MUSCLES[m];
     return ps.map(pt => name ? `<polygon points="${pt}" class="m-${muscleState(p, m).s}" data-muscle="${m}"><title>${name}</title></polygon>` : `<polygon points="${pt}" class="m-body"></polygon>`).join('');
   }).join('')}</svg><figcaption>${label}</figcaption></figure>`;
-  const order = { today: 0, rec: 1, ready: 2 };
+  const order = { today: 0, rec: 1, light: 2, ready: 3 };
   const rows = Object.keys(MUSCLES).map(m => [m, muscleState(p, m)]).filter(([, x]) => x.s !== 'none').sort((a, b) => order[a[1].s] - order[b[1].s] || a[1].h - b[1].h);
-  const txt = x => x.s === 'today' ? 'เล่นวันนี้' : x.s === 'rec' ? `พัก ${fmt(Math.floor(x.h))} ชม. · อีก ${fmt(x.left)} ชม.` : `พักครบแล้ว · ${fmt(Math.floor(x.h / 24))} วันก่อน`;
+  const txt = x => x.s === 'light' ? `แบดหนัก · วันนี้เล่นขาเบา ๆ (อีก ${fmt(x.left)} ชม.)` : x.s === 'today' ? 'เล่นวันนี้' : x.s === 'rec' ? `พัก ${fmt(Math.floor(x.h))} ชม. · อีก ${fmt(x.left)} ชม.` : `พักครบแล้ว · ${fmt(Math.floor(x.h / 24))} วันก่อน`;
   return `<div class="bmaps">${fig('anterior', 'ด้านหน้า')}${fig('posterior', 'ด้านหลัง')}</div>
-    <div class="mlegend"><span><i class="m-ready"></i>พร้อม</span><span><i class="m-rec"></i>กำลังฟื้น</span><span><i class="m-today"></i>เล่นวันนี้</span></div>
+    <div class="mlegend"><span><i class="m-ready"></i>พร้อม</span><span><i class="m-rec"></i>กำลังฟื้น</span><span><i class="m-today"></i>เล่นวันนี้</span>${rows.some(([, x]) => x.s === 'light') ? '<span><i class="m-light"></i>แบดหนัก</span>' : ''}</div>
     ${rows.length ? `<div class="mrows">${rows.map(([m, x]) => `<div><span><i class="m-${x.s}"></i>${MUSCLES[m]}${DAILY_MUSCLES.includes(m) ? ' <small class="muted">เล่นได้ทุกวัน</small>' : ''}</span><span class="muted">${txt(x)}</span></div>`).join('')}</div>` : ''}`;
 }
 function workoutPage(id) {
@@ -2407,7 +2426,7 @@ function personPage(id) {
     <div class="grid g2">
       <div class="card">
         <h2 style="margin-bottom:2px">⚖️ น้ำหนัก</h2>
-        <div class="plan-note">${planStatus(p)}</div>
+        <div class="plan-note">${planStatus(p)}</div>${rateLine(p)}
         ${legendHtml([['line', `var(--${id})`, 'น้ำหนักจริง'], ['dash', `color-mix(in srgb,var(--${id}) 50%,transparent)`, 'แผนลด'], ['dash', `var(--${id})`, 'เป้าน้ำหนัก']])}
         <div class="chart-box"><canvas id="chartOne"></canvas></div>
         ${progress(id)}
