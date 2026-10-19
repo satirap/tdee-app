@@ -143,7 +143,8 @@ button.btn{font:inherit;font-weight:600;border:0;border-radius:9px;padding:8px 1
 .wsum > div,.wlist > div,.mrows > div{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;font-size:14px}
 .wsum .tot{border-top:1px solid var(--border);margin-top:4px;padding-top:9px}
 .wsum .big{font-size:20px} .wsum .mid{font-size:17px} .wsum small{font-size:12px;margin-left:4px}
-.wlist{margin-top:10px;border-top:1px solid var(--border);padding-top:4px}
+.wlist{margin-top:10px;border-top:1px solid var(--border);padding-top:10px}
+.wh{font-size:13px;font-weight:600;color:var(--muted);margin:0 0 6px}
 .wlist .x{margin-left:8px}
 .wadd{margin-top:12px;border-top:1px solid var(--border);padding-top:12px}
 .wpre{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
@@ -529,7 +530,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.12.0', APP_BUILD = '2026-10-19 21:51'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.12.1', APP_BUILD = '2026-10-19 21:54'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -2386,9 +2387,10 @@ function workoutPage(id) {
         <div><span class="muted">กินไปแล้ว</span><span>${fmt(eaten)}</span></div>
         <div class="tot"><span>${st !== 'hit' && left < 0 ? 'มากกว่าเป้า' : 'เหลือกินได้'}</span><b class="${st === 'hit' || left >= 0 ? 'good' : 'warn'} big">${leftTxt}</b></div>
       </div>
-      ${ws.length ? `<div class="wlist">${ws.map(w => `<div><span>${WORKOUT_PRESETS.find(x => x[0] === w.type)?.[1] || '➕'} ${esc(w.type)} <small class="muted">${esc(w.at || '')}</small></span>
+      ${ws.length ? `<div class="wlist"><h3 class="wh">ออกกำลังกายวันนี้</h3>${ws.map(w => `<div><span>${WORKOUT_PRESETS.find(x => x[0] === w.type)?.[1] || '➕'} ${esc(w.type)} <small class="muted">${esc(w.at || '')}</small></span>
         <span>${fmt(w.kcal)} <small class="muted">→ +${fmt(Math.round(w.kcal * pct / 100))}</small><button class="x" data-wdel="${w.id}" aria-label="ลบ">✕</button></span></div>`).join('')}</div>` : ''}
       <div class="wadd">
+        <h3 class="wh">+ เพิ่มออกกำลังกาย</h3>
         <div class="wpre">${WORKOUT_PRESETS.map(([n, ic]) => `<button data-wtype="${n}" class="${wPick === n ? 'on' : ''}">${ic} ${n}</button>`).join('')}</div>
         <div class="row"><input id="wkcal" type="number" inputmode="numeric" min="1" step="10" placeholder="kcal จากนาฬิกา" value="${wPick ? lastKcal(p, wPick) : ''}"><button class="btn" data-wadd>บันทึก</button></div>
         <div class="werr" id="werr"></div>
