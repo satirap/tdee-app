@@ -142,7 +142,7 @@ button.btn{font:inherit;font-weight:600;border:0;border-radius:9px;padding:8px 1
 /* Workout tab: summary rows, today's workouts, quick types, body map (muscle recovery colours). */
 .wsum > div,.wlist > div,.mrows > div{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;font-size:14px}
 .wsum .tot{border-top:1px solid var(--border);margin-top:4px;padding-top:9px}
-.wsum .big{font-size:20px}
+.wsum .big{font-size:20px} .wsum .mid{font-size:17px} .wsum small{font-size:12px;margin-left:4px}
 .wlist{margin-top:10px;border-top:1px solid var(--border);padding-top:4px}
 .wlist .x{margin-left:8px}
 .wadd{margin-top:12px;border-top:1px solid var(--border);padding-top:12px}
@@ -528,7 +528,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.11.0', APP_BUILD = '2026-10-19 20:50'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.11.1', APP_BUILD = '2026-10-19 21:17'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -2349,7 +2349,8 @@ function bodyMap(p) {
 function workoutPage(id) {
   const p = S.people[id], r = calc(p), d = todayStr(), pl = dayPlan(p, d), ws = manualWorkouts(p, d), pct = p.exPct ?? 75;
   if (!r || !pl) return `<div class="card"><div class="alert">กรอกข้อมูลส่วนตัวและน้ำหนักก่อน เพื่อคำนวณเป้า</div></div>`;
-  const def = +p.deficit || 0, restKcal = Math.max(typeTdee(p, 'rest', r).tdee + (pl.off || 0) - def, r.floor);
+  const def = +p.deficit || 0, baseTdee = typeTdee(p, 'rest', r).tdee + (pl.off || 0), restKcal = Math.max(baseTdee - def, r.floor);
+  const wkNames = ws.map(w => `${WORKOUT_PRESETS.find(x => x[0] === w.type) ? (w.type === 'แบดมินตัน' ? 'แบด' : w.type) : esc(w.type)} ${fmt(w.kcal)}`).join(' + ');
   const add = Math.round(ws.reduce((s, w) => s + (+w.kcal || 0), 0) * pct / 100), watch = Math.round(pl.kcal - restKcal - add);
   const eaten = Math.round(daySum(p, d, 'kcal')), left = Math.round(pl.kcal - eaten), tol = +p.tol || TOL_DEFAULT;
   const st = kcalState(eaten, pl.kcal, pl.tdee, tol), leftTxt = st === 'hit' ? 'ถึงเป้า ✓' : left >= 0 ? fmt(left) : `+${fmt(-left)} · ${STATE_WORD[st]}`;
@@ -2357,10 +2358,12 @@ function workoutPage(id) {
     <div class="card wcard">
       <h2>🏃 Workout วันนี้</h2>
       <div class="wsum">
-        <div><span class="muted">เป้าวันพัก</span><span>${fmt(restKcal)}</span></div>
-        <div><span class="muted">ออกกำลังกาย × ${pct}%</span><span class="good">+${fmt(add)}</span></div>
+        <div><span class="muted">TDEE</span><span>${fmt(baseTdee)}</span></div>
+        <div><span class="muted">ลดวันละ</span><span>−${fmt(def)}</span></div>
+        <div class="tot"><span>TDEE − ${fmt(def)}</span><b>${fmt(restKcal)}</b></div>
+        <div><span class="muted">+ Workout${ws.length ? ` <small>${wkNames} × ${pct}%</small>` : ''}</span><span class="good">+${fmt(add)}</span></div>
         ${watch > 0 ? `<div><span class="muted">⌚ นาฬิกาเผามากกว่า</span><span class="good">+${fmt(watch)}</span></div>` : ''}
-        <div class="tot"><span>เป้าวันนี้</span><b>${fmt(pl.kcal)}</b></div>
+        <div class="tot"><span><b>เป้าวันนี้</b></span><b class="mid">${fmt(pl.kcal)}</b></div>
         <div><span class="muted">กินไปแล้ว</span><span>${fmt(eaten)}</span></div>
         <div class="tot"><span>${st !== 'hit' && left < 0 ? 'มากกว่าเป้า' : 'เหลือกินได้'}</span><b class="${st === 'hit' || left >= 0 ? 'good' : 'warn'} big">${leftTxt}</b></div>
       </div>
