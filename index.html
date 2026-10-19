@@ -141,6 +141,7 @@ input:focus,select:focus{outline:2px solid var(--c,var(--ton));outline-offset:-1
 button.btn{font:inherit;font-weight:600;border:0;border-radius:9px;padding:8px 16px;cursor:pointer;background:var(--c,var(--ton));color:#fff}
 /* Workout tab: summary rows, today's workouts, quick types, body map (muscle recovery colours). */
 .wsum > div,.wlist > div,.mrows > div{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;font-size:14px}
+.wtop > div:first-child{font-size:15px}
 .wsum .tot{border-top:1px solid var(--border);margin-top:4px;padding-top:9px}
 .wsum .big{font-size:20px} .wsum .mid{font-size:17px} .wsum small{font-size:12px;margin-left:4px}
 .wlist{margin-top:10px;border-top:1px solid var(--border);padding-top:10px}
@@ -536,7 +537,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.13.0', APP_BUILD = '2026-10-19 22:27'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.14.0', APP_BUILD = '2026-10-19 23:53'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -2391,23 +2392,15 @@ function workoutPage(id) {
   if (!r || !pl) return `<div class="card"><div class="alert">กรอกข้อมูลส่วนตัวและน้ำหนักก่อน เพื่อคำนวณเป้า</div></div>`;
   const def = +p.deficit || 0, baseTdee = typeTdee(p, 'rest', r).tdee + (pl.off || 0), restKcal = Math.max(baseTdee - def, r.floor);
   const wkNames = ws.map(w => `${WORKOUT_PRESETS.find(x => x[0] === w.type) ? (w.type === 'แบดมินตัน' ? 'แบด' : w.type) : esc(w.type)} ${fmt(w.kcal)}`).join(' + ');
-  const add = Math.round(ws.reduce((s, w) => s + (+w.kcal || 0), 0) * pct / 100), watch = Math.round(pl.kcal - restKcal - add);
-  const eaten = Math.round(daySum(p, d, 'kcal')), left = Math.round(pl.kcal - eaten), tol = +p.tol || TOL_DEFAULT;
-  const st = kcalState(eaten, pl.kcal, pl.tdee, tol), leftTxt = st === 'hit' ? 'ถึงเป้า ✓' : left >= 0 ? fmt(left) : `+${fmt(-left)} · ${STATE_WORD[st]}`;
+  const burned = Math.round(ws.reduce((s, w) => s + (+w.kcal || 0), 0)), add = Math.round(burned * pct / 100);
+  // Cal out: what was burned and what it adds to today's target; how the target is built and the watch check stay folded.
   return `<div class="grid g2">
     <div class="card wcard">
-      <h2>🏃 Workout วันนี้</h2>
-      <div class="wsum">
-        <div><span class="muted">TDEE</span><span>${fmt(baseTdee)}</span></div>
-        <div><span class="muted">ลดวันละ</span><span>−${fmt(def)}</span></div>
-        <div class="tot"><span>TDEE − ${fmt(def)}</span><b>${fmt(restKcal)}</b></div>
-        <div><span class="muted">+ Workout${ws.length ? ` <small>${wkNames} × ${pct}%</small>` : ''}</span><span class="good">+${fmt(add)}</span></div>
-        ${watch > 0 ? `<div><span class="muted">⌚ นาฬิกาเผามากกว่า</span><span class="good">+${fmt(watch)}</span></div>` : ''}
-        <div class="tot"><span><b>เป้าวันนี้</b></span><b class="mid">${fmt(pl.kcal)}</b></div>
-        <div><span class="muted">กินไปแล้ว</span><span>${fmt(eaten)}</span></div>
-        <div class="tot"><span>${st !== 'hit' && left < 0 ? 'มากกว่าเป้า' : 'เหลือกินได้'}</span><b class="${st === 'hit' || left >= 0 ? 'good' : 'warn'} big">${leftTxt}</b></div>
+      <h2>🔥 Cal out วันนี้</h2>
+      <div class="wsum wtop">
+        <div><span>${burned ? `เผาเพิ่ม <b>${fmt(burned)}</b> kcal → เป้ากิน <b class="good">+${fmt(add)}</b>` : '<span class="muted">ยังไม่ได้บันทึกออกกำลังกาย</span>'}</span></div>
+        <div class="tot"><span>เป้าวันนี้</span><b class="mid">${fmt(pl.kcal)}</b></div>
       </div>
-      ${watchBlock(p, d, pl, r, pct)}
       ${ws.length ? `<div class="wlist"><h3 class="wh">ออกกำลังกายวันนี้</h3>${ws.map(w => `<div><span>${WORKOUT_PRESETS.find(x => x[0] === w.type)?.[1] || '➕'} ${esc(w.type)} <small class="muted">${esc(w.at || '')}</small></span>
         <span>${fmt(w.kcal)} <small class="muted">→ +${fmt(Math.round(w.kcal * pct / 100))}</small><button class="x" data-wdel="${w.id}" aria-label="ลบ">✕</button></span></div>`).join('')}</div>` : ''}
       <div class="wadd">
@@ -2416,17 +2409,25 @@ function workoutPage(id) {
         <div class="row"><input id="wkcal" type="number" inputmode="numeric" min="1" step="10" placeholder="kcal จากนาฬิกา" value="${wPick ? lastKcal(p, wPick) : ''}"><button class="btn" data-wadd>บันทึก</button></div>
         <div class="werr" id="werr"></div>
       </div>
+      <details class="wlist wsum wwatch"><summary><span class="wh">ที่มาของเป้า</span><span class="muted">${fmt(pl.kcal)}</span></summary>
+        <div><span class="muted">TDEE</span><span>${fmt(baseTdee)}</span></div>
+        <div><span class="muted">ลดวันละ</span><span>−${fmt(def)}</span></div>
+        <div class="tot"><span>TDEE − ${fmt(def)}</span><b>${fmt(restKcal)}</b></div>
+        <div><span class="muted">+ Workout${ws.length ? ` <small>${wkNames} × ${pct}%</small>` : ''}</span><span class="good">+${fmt(add)}</span></div>
+        <div class="tot"><span>เป้าวันนี้</span><b>${fmt(pl.kcal)}</b></div>
+      </details>
+      ${watchBlock(p, d, pl, r, pct)}
     </div>
     <div class="card"><h2>💪 กล้ามเนื้อ · พัก ${REST_H} ชม.</h2>${bodyMap(p)}</div>
   </div>`;
 }
-const SUBS = [['today', 'TDEE วันนี้'], ['workout', 'Workout'], ['stats', 'สถิติ TDEE'], ['weight', 'น้ำหนัก'], ['goals', 'เป้าหมาย'], ['profile', 'ข้อมูลส่วนตัว']];
+const SUBS = [['today', 'TDEE วันนี้'], ['workout', 'Cal out'], ['stats', 'สถิติ TDEE'], ['weight', 'น้ำหนัก'], ['goals', 'เป้าหมาย'], ['profile', 'ข้อมูลส่วนตัว']];
 let sub = 'today';
 
 function personPage(id) {
   const p = S.people[id], e = sorted(p).reverse(), r = calc(p);
   if (sub === 'workout' && !WORKOUT_IDS.includes(id)) sub = 'today';
-  const nav = `<nav class="subtabs">${SUBS.filter(([k]) => k !== 'workout' || WORKOUT_IDS.includes(id)).map(([k, l]) => `<button data-sub="${k}" class="${sub === k ? 'on' : ''}">${l}</button>`).join('')}</nav>`;
+  const nav = `<nav class="subtabs">${SUBS.filter(([k]) => k !== 'workout' || WORKOUT_IDS.includes(id)).map(([k, l]) => [k, k === 'today' && WORKOUT_IDS.includes(id) ? 'Cal in' : l]).map(([k, l]) => `<button data-sub="${k}" class="${sub === k ? 'on' : ''}">${l}</button>`).join('')}</nav>`;
   let body;
   if (sub === 'today') body = `
     <div class="today-grid">
