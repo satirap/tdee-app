@@ -537,7 +537,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.15.0', APP_BUILD = '2026-10-22 00:12'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.16.0', APP_BUILD = '2026-10-24 12:53'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -805,7 +805,10 @@ function dropMet(p) {
 function calc(p, weight) {
   const w = weight ?? latest(p)?.weight;
   if (!w || !profileReady(p)) return null;
-  const bmr = 10 * w + 6.25 * +p.height - 5 * +p.age + (p.sex === 'm' ? 5 : -161);
+  const sc = latestScan(p);
+  // Measured BMR (Boditrax, kJ → kcal) replaces the formula; kept moving with weight at 10 kcal/kg like the formula.
+  const bmr = sc ? sc.BasalMetabolicRatekJ / 4.184 + 10 * (w - sc.BodyWeight)
+    : 10 * w + 6.25 * +p.height - 5 * +p.age + (p.sex === 'm' ? 5 : -161);
   const base = bmr * JOBS[p.job].f;
   const acts = p.activities.map(a => ({ ...a, burn: actKcal(a), perWeek: +a.perWeek || 0 }));
   const weekly = acts.reduce((s, a) => s + a.burn * a.perWeek, 0);
@@ -1335,6 +1338,7 @@ function render() {
     drawChart('chartOne', [S.tab]);
     drawIntake(S.tab, 7); drawIntake(S.tab, 30); drawProtein(S.tab, 7); drawProtein(S.tab, 30);
     drawFat(S.tab);
+    if (sub === 'scan') drawScan(S.tab);
   }
   bind();
   rememberPage();
@@ -2427,13 +2431,122 @@ function workoutPage(id) {
     <div class="card"><h2>💪 กล้ามเนื้อ · พัก ${REST_H} ชม.</h2>${bodyMap(p)}</div>
   </div>`;
 }
-const SUBS = [['today', 'TDEE วันนี้'], ['workout', 'Cal out'], ['stats', 'สถิติ TDEE'], ['weight', 'น้ำหนัก'], ['goals', 'เป้าหมาย'], ['profile', 'ข้อมูลส่วนตัว']];
+// ---------- Boditrax scans (body composition from the scale; people/{id}.scans{date:{metric:value}}) ----------
+const SCAN_IDS = ['ton'];
+const scanDates = p => Object.keys(p.scans || {}).sort();
+const latestScan = p => { const k = scanDates(p).at(-1), s = k && p.scans[k]; return s && s.BasalMetabolicRatekJ > 0 && s.BodyWeight > 0 ? s : null; };
+let scanMsg = '';
+
+// "User Scan Details" block of the Boditrax export: Metric,Value,M/D/YYYY h:mm:ss AM  → { 'YYYY-MM-DD': {t, metric: value} }
+function parseBoditrax(text) {
+  const out = {};
+  for (const line of text.replace(/ /g, ' ').split(/\r?\n/)) {
+    const m = line.match(/^(\w+),(-?[\d.]+),(\d{1,2})\/(\d{1,2})\/(\d{4}) (\d{1,2}):(\d\d):\d\d (AM|PM)\s*$/);
+    if (!m) continue;
+    const d = `${m[5]}-${m[3].padStart(2, '0')}-${m[4].padStart(2, '0')}`;
+    const h = (+m[6] % 12) + (m[8] === 'PM' ? 12 : 0), t = `${String(h).padStart(2, '0')}:${m[7]}`;
+    const o = out[d] ||= { t };
+    if (t > o.t) o.t = t;
+    o[m[1]] = +m[2];
+  }
+  return Object.fromEntries(Object.entries(out).filter(([, o]) => o.BodyWeight > 0 && o.BasalMetabolicRatekJ > 0));
+}
+
+// Adds scans that are not stored yet; never overwrites an existing scan or weigh-in.
+function importScans(id, text) {
+  const p = S.people[id], found = parseBoditrax(text), keys = Object.keys(found);
+  if (!keys.length) { scanMsg = 'ไม่พบข้อมูลสแกนในไฟล์นี้'; return render(); }
+  p.scans ||= {};
+  let nScan = 0, nWeight = 0;
+  for (const d of keys.sort()) {
+    if (!p.scans[d]) { p.scans[d] = found[d]; nScan++; }
+    if (!p.entries.some(x => x.date === d)) {
+      const s = found[d];
+      p.entries.push({ id: uid(), date: d, weight: s.BodyWeight, ...(s.FatMass ? { fat: Math.round(s.FatMass / s.BodyWeight * 1000) / 10 } : {}) });
+      nWeight++;
+    }
+  }
+  scanMsg = `นำเข้า ${nScan} สแกนใหม่ · เพิ่มน้ำหนัก ${nWeight} วัน`;
+  save(); render();
+}
+
+const fatPct = s => s.FatMass && s.BodyWeight ? s.FatMass / s.BodyWeight * 100 : null;
+// [label, getter, digits, unit, lower-is-better]
+const SCAN_CORE = [
+  ['น้ำหนัก', s => s.BodyWeight, 1, 'กก.', true],
+  ['ไขมัน', fatPct, 1, '%', true],
+  ['มวลไขมัน', s => s.FatMass, 1, 'กก.', true],
+  ['กล้ามเนื้อ', s => s.MuscleMass, 1, 'กก.', false],
+  ['น้ำในร่างกาย', s => s.WaterMass, 1, 'กก.', false],
+  ['ไขมันช่องท้อง', s => s.VisceralFatRating, 0, '', true],
+  ['BMR', s => s.BasalMetabolicRatekJ / 4.184, 0, 'kcal', false]
+];
+const SCAN_MORE = [
+  ['กล้ามเนื้อลำตัว', 'TrunkMuscleMass', 1, 'กก.'], ['กล้ามเนื้อแขนซ้าย', 'LeftArmMuscleMass', 1, 'กก.'], ['กล้ามเนื้อแขนขวา', 'RightArmMuscleMass', 1, 'กก.'],
+  ['กล้ามเนื้อขาซ้าย', 'LeftLegMuscleMass', 1, 'กก.'], ['กล้ามเนื้อขาขวา', 'RightLegMuscleMass', 1, 'กก.'],
+  ['ไขมันลำตัว', 'TrunkFatMass', 1, 'กก.'], ['ไขมันแขนซ้าย', 'LeftArmFatMass', 1, 'กก.'], ['ไขมันแขนขวา', 'RightArmFatMass', 1, 'กก.'],
+  ['ไขมันขาซ้าย', 'LeftLegFatMass', 1, 'กก.'], ['ไขมันขาขวา', 'RightLegFatMass', 1, 'กก.'],
+  ['มวลไร้ไขมัน', 'FatFreeMass', 1, 'กก.'], ['มวลกระดูก', 'BoneMass', 1, 'กก.'], ['BMI', 'BodyMassIndex', 1, ''],
+  ['อายุเมตาบอลิก', 'MetabolicAge', 0, 'ปี'], ['Boditrax score', 'BoditraxScore', 0, ''], ['Muscle score', 'MuscleScore', 0, ''], ['BMR score', 'BmrScore', 0, '']
+];
+
+function scanPage(id) {
+  const p = S.people[id], ds = scanDates(p).reverse();
+  const upload = `<label style="cursor:pointer;display:inline-block;background:var(--${id});color:#fff;padding:9px 16px;border-radius:10px;font-size:14px;font-weight:600">นำเข้า CSV จาก Boditrax<input type="file" accept=".csv,text/csv" data-scan-file="${id}" hidden></label>${scanMsg ? `<div class="muted" style="margin-top:8px;font-size:13px">${scanMsg}</div>` : ''}`;
+  if (!ds.length) return `<div class="card"><h2>🧬 ผลสแกน</h2>${upload}</div>`;
+  const cur = p.scans[ds[0]], prev = p.scans[ds[1]];
+  const row = ([l, g, dg, u, lowGood]) => {
+    const v = g(cur), pv = prev ? g(prev) : null, d = v != null && pv != null ? v - pv : null;
+    const cls = d == null || Math.abs(d) < Math.pow(10, -dg) / 2 ? 'muted' : (d < 0) === lowGood ? 'good' : 'bad';
+    return `<div><span>${l}</span><span><b>${fmt(v, dg)}</b><small>${u}</small> <span class="${cls}" style="font-size:12px">${d == null ? '' : (d > 0 ? '+' : '') + fmt(d, dg)}</span></span></div>`;
+  };
+  const more = ([l, k, dg, u]) => cur[k] != null ? `<div><span class="muted">${l}</span><span>${fmt(cur[k], dg)}<small>${u}</small></span></div>` : '';
+  return `<div class="grid g2">
+    <div class="card"><h2>🧬 ผลสแกนล่าสุด <span class="muted" style="font-weight:400">${fmtDate(ds[0])} ${cur.t || ''}</span></h2>
+      <div class="wsum">${SCAN_CORE.map(row).join('')}</div>
+      <details class="wlist wsum wwatch"><summary><span class="wh">รายละเอียดทั้งหมด</span><span class="muted">${ds.length} สแกน</span></summary>${SCAN_MORE.map(more).join('')}</details>
+      <div style="margin-top:12px">${upload}</div>
+    </div>
+    <div class="card"><h2>📈 แนวโน้ม</h2>
+      ${legendHtml([['line', `var(--${id})`, 'ไขมัน %'], ['dash', 'var(--muted)', 'กล้ามเนื้อ กก.']])}
+      <div class="chart-box"><canvas id="scanChart"></canvas></div>
+    </div>
+  </div>`;
+}
+
+function drawScan(id) {
+  const el = document.getElementById('scanChart');
+  if (!el || !window.Chart) return;
+  const p = S.people[id], ds = scanDates(p), text = css('--muted'), grid = css('--border'), col = css('--' + id), surface = css('--surface');
+  const pt = g => ds.map(d => ({ x: dayMs(d), y: g(p.scans[d]) })).filter(q => q.y != null);
+  charts.push(new Chart(el, {
+    type: 'line', data: { datasets: [
+      { yAxisID: 'y', data: pt(fatPct), borderColor: col, backgroundColor: col, borderWidth: 2.5, tension: .3, pointRadius: 3.5, pointBackgroundColor: surface, pointBorderColor: col, pointBorderWidth: 2 },
+      { yAxisID: 'y2', data: pt(s => s.MuscleMass), borderColor: text, borderWidth: 1.8, borderDash: [4, 4], tension: .3, pointRadius: 2.5, pointBackgroundColor: text }
+    ] },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'nearest', intersect: false },
+      plugins: { legend: { display: false }, tooltip: { callbacks: {
+        title: it => new Date(it[0].parsed.x).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }),
+        label: it => it.datasetIndex ? `กล้ามเนื้อ ${fmt(it.parsed.y, 1)} กก.` : `ไขมัน ${fmt(it.parsed.y, 1)}%` } } },
+      scales: {
+        x: { type: 'linear', grid: { display: false }, border: { color: grid },
+          ticks: { color: text, maxTicksLimit: 6, callback: v => new Date(v).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', timeZone: 'UTC' }) } },
+        y: { position: 'left', grace: '15%', grid: { color: grid }, border: { display: false }, ticks: { color: text, maxTicksLimit: 6, callback: v => +v.toFixed(1) + '%' } },
+        y2: { position: 'right', grace: '15%', grid: { display: false }, border: { display: false }, ticks: { color: text, maxTicksLimit: 6 } }
+      }
+    }
+  }));
+}
+
+const SUBS = [['today', 'TDEE วันนี้'], ['workout', 'Cal out'], ['stats', 'สถิติ TDEE'], ['weight', 'น้ำหนัก'], ['scan', 'ผลสแกน'], ['goals', 'เป้าหมาย'], ['profile', 'ข้อมูลส่วนตัว']];
 let sub = 'today';
 
 function personPage(id) {
   const p = S.people[id], e = sorted(p).reverse(), r = calc(p);
   if (sub === 'workout' && !WORKOUT_IDS.includes(id)) sub = 'today';
-  const nav = `<nav class="subtabs">${SUBS.filter(([k]) => k !== 'workout' || WORKOUT_IDS.includes(id)).map(([k, l]) => [k, k === 'today' && WORKOUT_IDS.includes(id) ? 'Cal in' : l]).map(([k, l]) => `<button data-sub="${k}" class="${sub === k ? 'on' : ''}">${l}</button>`).join('')}</nav>`;
+  if (sub === 'scan' && !SCAN_IDS.includes(id)) sub = 'today';
+  const nav = `<nav class="subtabs">${SUBS.filter(([k]) => (k !== 'workout' || WORKOUT_IDS.includes(id)) && (k !== 'scan' || SCAN_IDS.includes(id))).map(([k, l]) => [k, k === 'today' && WORKOUT_IDS.includes(id) ? 'Cal in' : l]).map(([k, l]) => `<button data-sub="${k}" class="${sub === k ? 'on' : ''}">${l}</button>`).join('')}</nav>`;
   let body;
   if (sub === 'today') body = `
     <div class="today-grid">
@@ -2441,6 +2554,7 @@ function personPage(id) {
       <div class="card ta-eaten"><h2>🥗 ${viewDay() === todayStr() ? 'วันนี้กินไปแล้ว' : 'กินไปแล้ว'}</h2>${eatenBlock(id)}</div>
     </div>`;
   else if (sub === 'workout') body = workoutPage(id);
+  else if (sub === 'scan') body = scanPage(id);
   else if (sub === 'stats') body = `<div class="grid">${intakeCard(id, 7)}${intakeCard(id, 30)}${proteinCard(id, 7)}${proteinCard(id, 30)}</div>`;
   else if (sub === 'weight') {
     const rows = e.map((x, i) => {
@@ -2600,6 +2714,10 @@ function bind() {
     const i = p.entries.findIndex(x => x.date === entry.date);
     if (i >= 0) p.entries[i] = { ...p.entries[i], ...entry, id: p.entries[i].id }; else p.entries.push(entry);
     save(); render();
+  });
+  document.querySelectorAll('input[data-scan-file]').forEach(inp => inp.onchange = async () => {
+    const f = inp.files[0]; if (!f) return;
+    importScans(inp.dataset.scanFile, await f.text());
   });
   bindFoods();
   const id = S.tab, p = S.people[id];
