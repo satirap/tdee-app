@@ -543,7 +543,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.17.0', APP_BUILD = '2026-10-24 18:24'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.18.0', APP_BUILD = '2026-10-24 18:29'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -1287,6 +1287,15 @@ const C = id => id === 'ton' ? 'var(--ton)' : 'var(--patt)';
 const CS = id => id === 'ton' ? 'var(--ton-soft)' : 'var(--patt-soft)';
 // Draw charts in one go: mobile Safari can throttle or stall animation frames, leaving a chart blank until reload.
 if (window.Chart) Chart.defaults.animation = false;
+const lineTip = () => ({ backgroundColor: css('--surface'), titleColor: css('--text'), bodyColor: css('--text'), borderColor: css('--border'), borderWidth: 1, padding: 10, cornerRadius: 10, boxPadding: 4 });
+// Soft gradient under a line (colour at top fading to clear), shared by every line chart.
+const areaFill = col => ctx => {
+  const a = ctx.chart.chartArea;
+  if (!a) return col + '22';
+  const g = ctx.chart.ctx.createLinearGradient(0, a.top, 0, a.bottom);
+  g.addColorStop(0, col + '55'); g.addColorStop(1, col + '04');
+  return g;
+};
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 let charts = [];
 // Tapping anywhere outside a chart closes any open chart tooltip.
@@ -2101,8 +2110,8 @@ function drawFat(id) {
   if (!el || !window.Chart) return;
   const p = S.people[id], pts = sorted(p).filter(x => x.fat != null), pl = fatPlan(p), goal = +p.goalFat;
   const text = css('--muted'), grid = css('--border'), col = css(id === 'ton' ? '--ton' : '--patt'), surface = css('--surface');
-  const datasets = [{ data: pts.map(x => ({ x: dayMs(x.date), y: +x.fat, w: +x.weight })), borderColor: col, backgroundColor: col,
-    borderWidth: 2.5, tension: .3, pointRadius: 3.5, pointHoverRadius: 6, pointBackgroundColor: surface, pointBorderColor: col, pointBorderWidth: 2 }];
+  const datasets = [{ data: pts.map(x => ({ x: dayMs(x.date), y: +x.fat, w: +x.weight })), borderColor: col, backgroundColor: areaFill(col), fill: 'start',
+    borderWidth: 3, tension: .35, pointRadius: 4, pointHoverRadius: 6, pointBackgroundColor: surface, pointBorderColor: col, pointBorderWidth: 2 }];
   if (pl) datasets.push({ plan: true, data: pl.points, borderColor: col + '80', borderWidth: 1.5, borderDash: [3, 4], pointRadius: 0, pointHitRadius: 0, tension: .2 });
   const xEnd = Math.max(dayMs(pts.at(-1).date), dayMs(pts[0].date) + 7 * 864e5, pl ? pl.end : 0);
   charts.push(new Chart(el, {
@@ -2111,7 +2120,7 @@ function drawFat(id) {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'nearest', intersect: false },
       layout: { padding: { top: 10, right: 8 } },
       plugins: { legend: { display: false }, tags: { goals: goal ? [{ y: goal, color: col, tag: `เป้า ${fmt(goal, 1)}%` }] : [] },
-        tooltip: { filter: it => !it.dataset.plan, callbacks: {
+        tooltip: { ...lineTip(), filter: it => !it.dataset.plan, callbacks: {
         title: it => new Date(it[0].parsed.x).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }),
         label: it => `${fmt(it.parsed.y, 1)}% · ไขมัน ${fmt(it.raw.w * it.parsed.y / 100, 1)} กก.` } } },
       scales: {
@@ -2547,12 +2556,12 @@ function bodyFigure(cur, prev) {
 
 let scanMetric = 'fat';
 const SCAN_TRENDS = {
-  fat: ['ไขมัน %', [{ l: 'ไขมัน', g: fatPct, u: '%', dg: 1, c: 'ton' }]],
-  mass: ['ไขมัน / กล้ามเนื้อ', [{ l: 'ไขมัน', g: s => s.FatMass, u: 'กก.', dg: 1, c: 'ton', ax: 'y' }, { l: 'กล้ามเนื้อ', g: s => s.MuscleMass, u: 'กก.', dg: 1, c: 'good', ax: 'y2' }]],
+  fat: ['ไขมัน %', [{ l: 'ไขมัน', g: fatPct, u: '%', dg: 1, c: 'fat' }]],
+  mass: ['ไขมัน / กล้ามเนื้อ', [{ l: 'ไขมัน', g: s => s.FatMass, u: 'กก.', dg: 1, c: 'fat', ax: 'y' }, { l: 'กล้ามเนื้อ', g: s => s.MuscleMass, u: 'กก.', dg: 1, c: 'good', ax: 'y2' }]],
   weight: ['น้ำหนัก', [{ l: 'น้ำหนัก', g: s => s.BodyWeight, u: 'กก.', dg: 1, c: 'ton' }]],
-  bmr: ['BMR', [{ l: 'BMR', g: s => s.BasalMetabolicRatekJ / 4.184, u: 'kcal', dg: 0, c: 'ton' }]],
-  age: ['อายุเมตาบอลิก', [{ l: 'อายุเมตาบอลิก', g: s => s.MetabolicAge, u: 'ปี', dg: 0, c: 'ton' }, { l: 'อายุจริง', g: s => s.Age, u: 'ปี', dg: 0, c: 'muted', dash: true }]],
-  visc: ['ไขมันช่องท้อง', [{ l: 'ไขมันช่องท้อง', g: s => s.VisceralFatRating, u: '', dg: 0, c: 'ton' }]]
+  bmr: ['BMR', [{ l: 'BMR', g: s => s.BasalMetabolicRatekJ / 4.184, u: 'kcal', dg: 0, c: 'carb' }]],
+  age: ['อายุเมตาบอลิก', [{ l: 'อายุเมตาบอลิก', g: s => s.MetabolicAge, u: 'ปี', dg: 0, c: 'losing' }, { l: 'อายุจริง', g: s => s.Age, u: 'ปี', dg: 0, c: 'muted', dash: true }]],
+  visc: ['ไขมันช่องท้อง', [{ l: 'ไขมันช่องท้อง', g: s => s.VisceralFatRating, u: '', dg: 0, c: 'warn' }]]
 };
 
 function scanPage(id) {
@@ -2601,11 +2610,11 @@ function drawScan(id) {
   const axis = (pos, show) => ({ position: pos, grace: '15%', display: show, grid: pos === 'left' ? { color: grid } : { display: false }, border: { display: false }, ticks: { color: text, maxTicksLimit: 6, callback: v => +v.toFixed(1) } });
   charts.push(new Chart(el, {
     type: 'line', data: { datasets: specs.map(m => { const c = colOf(m); return {
-      yAxisID: m.ax || 'y', data: pt(m.g), borderColor: c, backgroundColor: c, borderWidth: m.dash ? 1.5 : 2.5, borderDash: m.dash ? [4, 4] : [], tension: m.dash ? 0 : .3,
-      pointRadius: m.dash ? 0 : 3.5, pointBackgroundColor: surface, pointBorderColor: c, pointBorderWidth: 2 }; }) },
+      yAxisID: m.ax || 'y', data: pt(m.g), borderColor: c, backgroundColor: m.dash ? c : areaFill(c), fill: m.dash || two ? false : 'start', borderWidth: m.dash ? 1.5 : 3, borderDash: m.dash ? [4, 4] : [], tension: m.dash ? 0 : .35,
+      pointRadius: m.dash ? 0 : 4, pointBackgroundColor: surface, pointBorderColor: c, pointBorderWidth: 2 }; }) },
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'nearest', intersect: false },
-      plugins: { legend: { display: false }, tooltip: { callbacks: {
+      plugins: { legend: { display: false }, tooltip: { ...lineTip(), callbacks: {
         title: it => new Date(it[0].parsed.x).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }),
         label: it => { const m = specs[it.datasetIndex]; return `${m.l} ${fmt(it.parsed.y, m.dg)} ${m.u}`; } } } },
       scales: {
@@ -2748,8 +2757,8 @@ function drawChart(canvasId, ids) {
   people.forEach(({ id, p, e }) => {
     const col = css(id === 'ton' ? '--ton' : '--patt');
     datasets.push({ label: p.name, tag: p.name, data: e.map(v => ({ x: dayMs(v.date), y: +v.weight })),
-      borderColor: col, backgroundColor: col, borderWidth: 2.5, tension: .3,
-      pointRadius: 3.5, pointHoverRadius: 6, pointBackgroundColor: surface, pointBorderColor: col, pointBorderWidth: 2 });
+      borderColor: col, backgroundColor: areaFill(col), fill: 'start', borderWidth: 3, tension: .35,
+      pointRadius: 4, pointHoverRadius: 7, pointBackgroundColor: surface, pointBorderColor: col, pointBorderWidth: 2 });
     if (+p.goalWeight) goals.push({ y: +p.goalWeight, color: col, tag: `เป้า ${p.name} ${fmt(p.goalWeight, 1)}` });
     if (pl) datasets.push({ label: 'แผน', plan: true, data: [{ x: pl.d0, y: pl.w0 }, { x: pl.end, y: pl.goal }],
       borderColor: col + '80', borderWidth: 1.5, borderDash: [3, 4], pointRadius: 0, pointHitRadius: 0, fill: false });
@@ -2762,7 +2771,7 @@ function drawChart(canvasId, ids) {
       plugins: {
         legend: { display: false },
         tags: { goals },
-        tooltip: { filter: it => !it.dataset.plan, callbacks: {
+        tooltip: { ...lineTip(), filter: it => !it.dataset.plan, callbacks: {
           title: it => new Date(it[0].parsed.x).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }),
           label: it => `${it.dataset.label}: ${fmt(it.parsed.y, 1)} กก.` } }
       },
