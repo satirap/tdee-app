@@ -180,6 +180,12 @@ button.x:hover{color:var(--danger)}
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
 .chips button{font:inherit;font-size:13px;border:1px solid var(--border);background:transparent;color:var(--text);border-radius:99px;padding:3px 11px;cursor:pointer}
 .chips button.on{background:var(--c);border-color:var(--c);color:#fff}
+.gauge{margin:10px 0}.gauge .gh{display:flex;justify-content:space-between;align-items:baseline;font-size:14px}.gauge .gh small{font-size:12px;margin-left:3px}
+.gbar{position:relative;display:flex;height:10px;border-radius:99px;margin-top:6px;gap:2px}.gbar i{display:block;height:100%;opacity:.55}.gbar i:first-child{border-radius:99px 0 0 99px}.gbar i:last-of-type{border-radius:0 99px 99px 0}
+.gbar u{position:absolute;top:-4px;width:4px;height:18px;margin-left:-2px;border-radius:2px;background:var(--text);box-shadow:0 0 0 2px var(--surface)}
+.comp{display:flex;gap:2px;height:30px;border-radius:10px;overflow:hidden}.comp span{display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;min-width:0}
+.sgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px}.stile{background:var(--surface-2);border-radius:10px;padding:8px 10px;display:flex;flex-direction:column}.stile b{font-size:19px}
+.figure{display:block;width:100%;max-width:340px;margin:0 auto}.figure .sbox{fill:var(--surface-2)}.figure .sg{fill:var(--good)}.figure .sw{fill:var(--warn)}
 .eaten{margin-top:4px}
 .seg.mealpick{display:flex;margin-bottom:10px}
 .mealpick button{flex:1;padding:6px 4px;font-size:13px;white-space:nowrap}
@@ -537,7 +543,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.16.1', APP_BUILD = '2026-10-24 13:26'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.17.0', APP_BUILD = '2026-10-24 18:24'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -2493,50 +2499,118 @@ const SCAN_MORE = [
   ['อายุเมตาบอลิก', 'MetabolicAge', 0, 'ปี'], ['Boditrax score', 'BoditraxScore', 0, ''], ['Muscle score', 'MuscleScore', 0, ''], ['BMR score', 'BmrScore', 0, '']
 ];
 
+// Reference bands (adult male) for the gauges: [upper bound, colour]; amber not red for "high".
+const GAUGES = {
+  fat: { l: 'ไขมันในร่างกาย', get: fatPct, dg: 1, u: '%', min: 5, max: 35, z: [[11, 'var(--losing)'], [22, 'var(--good)'], [35, 'var(--warn)']] },
+  visc: { l: 'ไขมันช่องท้อง', get: s => s.VisceralFatRating, dg: 0, u: '', min: 1, max: 20, z: [[12, 'var(--good)'], [20, 'var(--warn)']] },
+  bmi: { l: 'BMI', get: s => s.BodyMassIndex, dg: 1, u: '', min: 15, max: 35, z: [[18.5, 'var(--losing)'], [25, 'var(--good)'], [35, 'var(--warn)']] }
+};
+function gaugeHtml(g, cur, prev) {
+  const v = g.get(cur); if (v == null) return '';
+  const pct = x => Math.max(0, Math.min(100, (x - g.min) / (g.max - g.min) * 100));
+  let lo = g.min;
+  const segs = g.z.map(([hi, c]) => { const w = pct(hi) - pct(lo); lo = hi; return `<i style="width:${w}%;background:${c}"></i>`; }).join('');
+  const zone = (g.z.find(([hi]) => v <= hi) || g.z.at(-1))[1], pv = prev ? g.get(prev) : null, d = pv != null ? v - pv : null;
+  return `<div class="gauge"><div class="gh"><span>${g.l}</span><span><b style="color:${zone}">${fmt(v, g.dg)}</b><small>${g.u}</small>${d != null && Math.abs(d) >= Math.pow(10, -g.dg) / 2 ? ` <span class="muted" style="font-size:12px">${d > 0 ? '+' : ''}${fmt(d, g.dg)}</span>` : ''}</span></div>
+    <div class="gbar">${segs}<u style="left:${pct(v)}%"></u></div></div>`;
+}
+// Metabolic age against real age: marker on a ±10 year scale, green at or under real age.
+function ageGauge(cur, prev) {
+  const ma = cur.MetabolicAge, age = cur.Age; if (!(ma > 0) || !(age > 0)) return '';
+  return gaugeHtml({ l: `อายุเมตาบอลิก <span class="muted">(อายุจริง ${age})</span>`, get: s => s.MetabolicAge, dg: 0, u: 'ปี', min: age - 20, max: age + 10, z: [[age, 'var(--good)'], [age + 10, 'var(--warn)']] }, cur, prev);
+}
+// Weight split into fat / muscle / everything else (bone, organs, water outside muscle).
+function compBar(cur) {
+  const w = cur.BodyWeight, f = cur.FatMass, m = cur.MuscleMass; if (!(w > 0 && f > 0 && m > 0)) return '';
+  const o = Math.max(0, w - f - m), seg = (v, c, l) => `<span style="flex:${v};background:${c}"><b>${fmt(v, 1)}</b></span>`;
+  return `<div class="comp">${seg(f, 'var(--fat)')}${seg(m, 'var(--good)')}${seg(o, 'var(--muted)')}</div>
+    <div class="legend" style="margin-top:6px"><span><i class="lg band" style="--lc:var(--fat);background:var(--fat)"></i>ไขมัน กก.</span><span><i class="lg band" style="--lc:var(--good);background:var(--good)"></i>กล้ามเนื้อ กก.</span><span><i class="lg band" style="--lc:var(--muted);background:var(--muted)"></i>อื่น ๆ</span></div>`;
+}
+// Segmental figure: muscle kg (big) and fat kg (small) per limb/trunk, change vs the previous scan. The person's left sits on the viewer's right.
+function bodyFigure(cur, prev) {
+  const seg = (x, y, w, h, mk, fk) => {
+    const m = cur[mk], f = cur[fk]; if (m == null) return '';
+    const dm = prev && prev[mk] != null ? m - prev[mk] : null, df = prev && prev[fk] != null ? f - prev[fk] : null;
+    const dl = (d, lowGood, dy) => d == null || Math.abs(d) < .05 ? '' : `<text x="${x + w / 2}" y="${y + dy}" text-anchor="middle" font-size="11" class="${(d < 0) === lowGood ? 'sg' : 'sw'}">${d > 0 ? '+' : ''}${fmt(d, 1)}</text>`;
+    return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="14" class="sbox"/>
+      <text x="${x + w / 2}" y="${y + h / 2 - 14}" text-anchor="middle" font-size="17" font-weight="700" fill="var(--good)">${fmt(m, 1)}</text>${dl(dm, false, h / 2 + 2)}
+      <text x="${x + w / 2}" y="${y + h / 2 + 24}" text-anchor="middle" font-size="13" fill="var(--fat)">${fmt(f, 1)}</text>${dl(df, true, h / 2 + 38)}`;
+  };
+  return `<svg viewBox="0 0 320 400" class="figure" role="img" aria-label="กล้ามเนื้อและไขมันแยกส่วน">
+    <circle cx="160" cy="26" r="20" class="sbox"/>
+    ${seg(104, 56, 112, 140, 'TrunkMuscleMass', 'TrunkFatMass')}
+    ${seg(30, 62, 66, 96, 'RightArmMuscleMass', 'RightArmFatMass')}${seg(224, 62, 66, 96, 'LeftArmMuscleMass', 'LeftArmFatMass')}
+    ${seg(86, 206, 70, 180, 'RightLegMuscleMass', 'RightLegFatMass')}${seg(164, 206, 70, 180, 'LeftLegMuscleMass', 'LeftLegFatMass')}
+  </svg>
+  <div class="legend" style="justify-content:center"><span><b class="good">ตัวใหญ่</b> กล้ามเนื้อ กก.</span><span><b style="color:var(--fat)">ตัวเล็ก</b> ไขมัน กก.</span></div>`;
+}
+
+let scanMetric = 'fat';
+const SCAN_TRENDS = {
+  fat: ['ไขมัน %', [{ l: 'ไขมัน', g: fatPct, u: '%', dg: 1, c: 'ton' }]],
+  mass: ['ไขมัน / กล้ามเนื้อ', [{ l: 'ไขมัน', g: s => s.FatMass, u: 'กก.', dg: 1, c: 'ton', ax: 'y' }, { l: 'กล้ามเนื้อ', g: s => s.MuscleMass, u: 'กก.', dg: 1, c: 'good', ax: 'y2' }]],
+  weight: ['น้ำหนัก', [{ l: 'น้ำหนัก', g: s => s.BodyWeight, u: 'กก.', dg: 1, c: 'ton' }]],
+  bmr: ['BMR', [{ l: 'BMR', g: s => s.BasalMetabolicRatekJ / 4.184, u: 'kcal', dg: 0, c: 'ton' }]],
+  age: ['อายุเมตาบอลิก', [{ l: 'อายุเมตาบอลิก', g: s => s.MetabolicAge, u: 'ปี', dg: 0, c: 'ton' }, { l: 'อายุจริง', g: s => s.Age, u: 'ปี', dg: 0, c: 'muted', dash: true }]],
+  visc: ['ไขมันช่องท้อง', [{ l: 'ไขมันช่องท้อง', g: s => s.VisceralFatRating, u: '', dg: 0, c: 'ton' }]]
+};
+
 function scanPage(id) {
-  const p = S.people[id], ds = scanDates(p).reverse();
+  const p = S.people[id], asc = scanDates(p), ds = asc.slice().reverse();
   const upload = `<label style="cursor:pointer;display:inline-block;background:var(--${id});color:#fff;padding:9px 16px;border-radius:10px;font-size:14px;font-weight:600">นำเข้า CSV จาก Boditrax<input type="file" accept=".csv,text/csv" data-scan-file="${id}" hidden></label>${scanMsg ? `<div class="muted" style="margin-top:8px;font-size:13px">${scanMsg}</div>` : ''}`;
   if (!ds.length) return `<div class="card"><h2>🧬 ผลสแกน</h2>${upload}</div>`;
-  const cur = p.scans[ds[0]], prev = p.scans[ds[1]];
+  const cur = p.scans[ds[0]], prev = p.scans[ds[1]], first = p.scans[asc[0]];
   const row = ([l, g, dg, u, lowGood]) => {
     const v = g(cur), pv = prev ? g(prev) : null, d = v != null && pv != null ? v - pv : null;
     const cls = d == null || Math.abs(d) < Math.pow(10, -dg) / 2 ? 'muted' : (d < 0) === lowGood ? 'good' : 'bad';
     return `<div><span>${l}</span><span><b>${fmt(v, dg)}</b><small>${u}</small> <span class="${cls}" style="font-size:12px">${d == null ? '' : (d > 0 ? '+' : '') + fmt(d, dg)}</span></span></div>`;
   };
   const more = ([l, k, dg, u]) => cur[k] != null ? `<div><span class="muted">${l}</span><span>${fmt(cur[k], dg)}<small>${u}</small></span></div>` : '';
+  // change since the first scan in view: the periodic "how am I doing" read-out
+  const since = ds.length > 1 ? [['น้ำหนัก', s => s.BodyWeight, true], ['ไขมัน', s => s.FatMass, true], ['กล้ามเนื้อ', s => s.MuscleMass, false]].map(([l, g, lowGood]) => {
+    const d = g(cur) - g(first), cls = Math.abs(d) < .05 ? 'muted' : (d < 0) === lowGood ? 'good' : 'bad';
+    return `<div class="stile"><span class="muted">${l}</span><b class="${cls}">${d > 0 ? '+' : ''}${fmt(d, 1)}</b><small class="muted">กก.</small></div>`;
+  }).join('') : '';
   return `<div class="grid g2">
     <div class="card"><h2>🧬 ผลสแกนล่าสุด <span class="muted" style="font-weight:400">${fmtDate(ds[0])} ${cur.t || ''}</span></h2>
-      <div class="wsum">${SCAN_CORE.map(row).join('')}</div>
+      <div class="muted" style="font-size:13px;margin-bottom:4px">${fmt(cur.BodyWeight, 1)} กก. แยกเป็น</div>
+      ${compBar(cur)}
+      <div style="margin-top:14px">${gaugeHtml(GAUGES.fat, cur, prev)}${gaugeHtml(GAUGES.visc, cur, prev)}${gaugeHtml(GAUGES.bmi, cur, prev)}${ageGauge(cur, prev)}</div>
+      <div class="wsum" style="margin-top:6px">${[SCAN_CORE[3], SCAN_CORE[4], SCAN_CORE[6]].map(row).join('')}</div>
       <details class="wlist wsum wwatch"><summary><span class="wh">รายละเอียดทั้งหมด</span><span class="muted">${ds.length} สแกน</span></summary>${SCAN_MORE.map(more).join('')}</details>
       <div style="margin-top:12px">${upload}</div>
     </div>
     <div class="card"><h2>📈 แนวโน้ม</h2>
-      ${legendHtml([['line', `var(--${id})`, 'ไขมัน %'], ['dash', 'var(--muted)', 'กล้ามเนื้อ กก.']])}
+      ${since ? `<div class="sgrid">${since}</div><div class="muted" style="font-size:12px;margin:-2px 0 8px">ตั้งแต่สแกนแรก ${fmtDate(asc[0])}</div>` : ''}
+      <div class="chips" style="--c:var(--${id});margin-bottom:8px">${Object.entries(SCAN_TRENDS).map(([k, [l]]) => `<button data-scanmetric="${k}" class="${scanMetric === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      ${legendHtml(SCAN_TRENDS[scanMetric][1].map(m => [m.dash ? 'dash' : 'line', m.c === 'muted' ? 'var(--muted)' : `var(--${m.c === 'ton' ? id : m.c})`, m.l + (m.u ? ' ' + m.u : '')]))}
       <div class="chart-box"><canvas id="scanChart"></canvas></div>
     </div>
+    <div class="card"><h2>🧍 สัดส่วนร่างกาย</h2>${bodyFigure(cur, prev)}</div>
   </div>`;
 }
 
 function drawScan(id) {
   const el = document.getElementById('scanChart');
   if (!el || !window.Chart) return;
-  const p = S.people[id], ds = scanDates(p), text = css('--muted'), grid = css('--border'), col = css('--' + id), surface = css('--surface');
-  const pt = g => ds.map(d => ({ x: dayMs(d), y: g(p.scans[d]) })).filter(q => q.y != null);
+  const p = S.people[id], ds = scanDates(p), text = css('--muted'), grid = css('--border'), surface = css('--surface');
+  const specs = SCAN_TRENDS[scanMetric][1], two = specs.some(m => m.ax === 'y2');
+  const colOf = m => m.c === 'muted' ? text : css('--' + (m.c === 'ton' ? id : m.c));
+  const pt = g => ds.map(d => ({ x: dayMs(d), y: g(p.scans[d]) })).filter(q => q.y != null && q.y > 0);
+  const day = x => new Date(x).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const axis = (pos, show) => ({ position: pos, grace: '15%', display: show, grid: pos === 'left' ? { color: grid } : { display: false }, border: { display: false }, ticks: { color: text, maxTicksLimit: 6, callback: v => +v.toFixed(1) } });
   charts.push(new Chart(el, {
-    type: 'line', data: { datasets: [
-      { yAxisID: 'y', data: pt(fatPct), borderColor: col, backgroundColor: col, borderWidth: 2.5, tension: .3, pointRadius: 3.5, pointBackgroundColor: surface, pointBorderColor: col, pointBorderWidth: 2 },
-      { yAxisID: 'y2', data: pt(s => s.MuscleMass), borderColor: text, borderWidth: 1.8, borderDash: [4, 4], tension: .3, pointRadius: 2.5, pointBackgroundColor: text }
-    ] },
+    type: 'line', data: { datasets: specs.map(m => { const c = colOf(m); return {
+      yAxisID: m.ax || 'y', data: pt(m.g), borderColor: c, backgroundColor: c, borderWidth: m.dash ? 1.5 : 2.5, borderDash: m.dash ? [4, 4] : [], tension: m.dash ? 0 : .3,
+      pointRadius: m.dash ? 0 : 3.5, pointBackgroundColor: surface, pointBorderColor: c, pointBorderWidth: 2 }; }) },
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'nearest', intersect: false },
       plugins: { legend: { display: false }, tooltip: { callbacks: {
         title: it => new Date(it[0].parsed.x).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }),
-        label: it => it.datasetIndex ? `กล้ามเนื้อ ${fmt(it.parsed.y, 1)} กก.` : `ไขมัน ${fmt(it.parsed.y, 1)}%` } } },
+        label: it => { const m = specs[it.datasetIndex]; return `${m.l} ${fmt(it.parsed.y, m.dg)} ${m.u}`; } } } },
       scales: {
-        x: { type: 'linear', grid: { display: false }, border: { color: grid },
-          ticks: { color: text, maxTicksLimit: 6, callback: v => new Date(v).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', timeZone: 'UTC' }) } },
-        y: { position: 'left', grace: '15%', grid: { color: grid }, border: { display: false }, ticks: { color: text, maxTicksLimit: 6, callback: v => +v.toFixed(1) + '%' } },
-        y2: { position: 'right', grace: '15%', grid: { display: false }, border: { display: false }, ticks: { color: text, maxTicksLimit: 6 } }
+        x: { type: 'linear', grid: { display: false }, border: { color: grid }, ticks: { color: text, maxTicksLimit: 6, callback: day } },
+        y: axis('left', true), ...(two ? { y2: axis('right', true) } : {})
       }
     }
   }));
@@ -2730,6 +2804,7 @@ function bind() {
     p.entries = p.entries.filter(x => x.id !== b.dataset.del); save(); render();
   });
   document.querySelectorAll('[data-f]').forEach(inp => inp.onchange = () => { p[inp.dataset.f] = inp.dataset.f === 'exPct' ? +inp.value : inp.value; save(); render(); });
+  document.querySelectorAll('[data-scanmetric]').forEach(b => b.onclick = () => { scanMetric = b.dataset.scanmetric; render(); });
   document.querySelectorAll('[data-chip]').forEach(b => b.onclick = ev => { ev.preventDefault(); p[b.dataset.chip] = +b.dataset.v; save(); render(); });
   // Workout tab: pick a type (fills its last kcal), then save; ✕ removes; tapping a muscle marks/unmarks it for today.
   const wkcal = document.getElementById('wkcal'), werr = document.getElementById('werr');
