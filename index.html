@@ -543,7 +543,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.18.0', APP_BUILD = '2026-10-24 18:29'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.17.1', APP_BUILD = '2026-10-27 10:37'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -2475,16 +2475,20 @@ function importScans(id, text) {
   const p = S.people[id], found = parseBoditrax(text), keys = Object.keys(found);
   if (!keys.length) { scanMsg = 'ไม่พบข้อมูลสแกนในไฟล์นี้'; return render(); }
   p.scans ||= {};
-  let nScan = 0, nWeight = 0;
+  let nScan = 0, nWeight = 0, nFill = 0;
   for (const d of keys.sort()) {
     if (!p.scans[d]) { p.scans[d] = found[d]; nScan++; }
+    else { // a scan typed in from the Boditrax app has no segment data: fill only the metrics it lacks
+      const add = Object.entries(found[d]).filter(([k]) => p.scans[d][k] == null);
+      if (add.length) { Object.assign(p.scans[d], Object.fromEntries(add)); nFill++; }
+    }
     if (!p.entries.some(x => x.date === d)) {
       const s = found[d];
       p.entries.push({ id: uid(), date: d, weight: s.BodyWeight, ...(s.FatMass ? { fat: Math.round(s.FatMass / s.BodyWeight * 1000) / 10 } : {}) });
       nWeight++;
     }
   }
-  scanMsg = `นำเข้า ${nScan} สแกนใหม่ · เพิ่มน้ำหนัก ${nWeight} วัน`;
+  scanMsg = `นำเข้า ${nScan} สแกนใหม่${nFill ? ` · เติมข้อมูล ${nFill} สแกน` : ''} · เพิ่มน้ำหนัก ${nWeight} วัน`;
   save(); render();
 }
 
@@ -2595,7 +2599,10 @@ function scanPage(id) {
       ${legendHtml(SCAN_TRENDS[scanMetric][1].map(m => [m.dash ? 'dash' : 'line', m.c === 'muted' ? 'var(--muted)' : `var(--${m.c === 'ton' ? id : m.c})`, m.l + (m.u ? ' ' + m.u : '')]))}
       <div class="chart-box"><canvas id="scanChart"></canvas></div>
     </div>
-    <div class="card"><h2>🧍 สัดส่วนร่างกาย</h2>${bodyFigure(cur, prev)}</div>
+    ${(() => { // segment data comes only from the CSV export, so use the newest scan that has it
+      const seg = ds.filter(d => p.scans[d].TrunkMuscleMass != null);
+      return seg.length ? `<div class="card"><h2>🧍 สัดส่วนร่างกาย${seg[0] !== ds[0] ? ` <span class="muted" style="font-weight:400">${fmtDate(seg[0])}</span>` : ''}</h2>${bodyFigure(p.scans[seg[0]], p.scans[seg[1]])}</div>` : '';
+    })()}
   </div>`;
 }
 
