@@ -2,6 +2,7 @@
 <html lang="th">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://www.gstatic.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://*.googleapis.com https://*.gstatic.com https://cdn.jsdelivr.net https://world.openfoodfacts.org https://api.anthropic.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>TDEE ต้น & พัช</title>
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -15,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" integrity="sha512-CQBWl4fJHWbryGE+Pc7UAxWMUMNMWzWxF4SQo9CgkJIN1kx6djDQZjh3Y8SZ1d+6I+1zze6Z7kHXO7q3UyZAWw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <style>
 :root{
   --bg:#f6f5f2; --surface:#ffffff; --surface-2:#f0eee9; --text:#1d1c1a; --muted:#6b6862;
@@ -543,7 +544,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.17.1', APP_BUILD = '2026-10-27 10:37'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.18.1', APP_BUILD = '2026-11-06 22:20'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -3510,16 +3511,31 @@ document.getElementById('exportBtn').onclick = () => {
   const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `tdee-backup-${todayStr()}.json` });
   a.click(); URL.revokeObjectURL(a.href);
 };
+// A person's data must at least be an object with the right shapes, so a truncated or
+// wrong file can't quietly wipe real data. A shrink is still allowed (save()'s guard
+// blocks an all-gone write) but the counts are shown so an old/partial file is obvious.
+const personShapeOk = p => p && typeof p === 'object'
+  && (p.entries == null || Array.isArray(p.entries))
+  && (p.log == null || (typeof p.log === 'object' && !Array.isArray(p.log)))
+  && (p.days == null || (typeof p.days === 'object' && !Array.isArray(p.days)));
 document.getElementById('importFile').onchange = async ev => {
   const f = ev.target.files[0]; if (!f) return;
   try {
     const data = JSON.parse(await f.text());
-    if (!data.people?.ton || !data.people?.patt) throw 0;
-    if (confirm('แทนที่ข้อมูลของทั้งสองคนด้วยไฟล์นี้?')) {
-      S.people = data.people; IDS.forEach(id => { dropMet(S.people[id]); moveToday(S.people[id]); }); save();
-      if (data.shared) setDoc(sharedDoc(), data.shared).catch(onSharedError);
-      render();
-    }
+    if (!personShapeOk(data.people?.ton) || !personShapeOk(data.people?.patt)) throw 0;
+    const line = IDS.map(id => {
+      const c = sizeOf(S.people[id]), n = sizeOf(data.people[id]);
+      return `${id}: น้ำหนัก ${c.entries}→${n.entries} รายการ, log ${c.logDays}→${n.logDays} วัน`;
+    }).join('\n');
+    if (!confirm(`จะแทนที่ข้อมูลของทั้งสองคนด้วยไฟล์นี้\n\n${line}\n\nระบบจะดาวน์โหลดข้อมูลปัจจุบันเก็บไว้ก่อน แล้วจึงแทนที่ — ทำต่อไหม?`)) { ev.target.value = ''; return; }
+    // Save a rollback copy of the current data to disk before overwriting anything.
+    const roll = Object.assign(document.createElement('a'), {
+      href: URL.createObjectURL(new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' })),
+      download: `tdee-before-import-${todayStr()}.json` });
+    roll.click(); URL.revokeObjectURL(roll.href);
+    S.people = data.people; IDS.forEach(id => { dropMet(S.people[id]); moveToday(S.people[id]); }); save();
+    if (data.shared) setDoc(sharedDoc(), data.shared).catch(onSharedError);
+    render();
   } catch { alert('ไฟล์ไม่ถูกต้อง'); }
   ev.target.value = '';
 };
