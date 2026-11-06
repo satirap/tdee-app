@@ -544,9 +544,9 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.18.1', APP_BUILD = '2026-11-06 22:20'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.18.2', APP_BUILD = '2026-11-06 22:40'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField, FieldPath } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
 import { STD_FOODS } from './foods-th.js';
 
@@ -610,6 +610,30 @@ const serverSize = {};
 const sizeOf = p => ({ entries: (p?.entries || []).length, logDays: Object.keys(p?.log || {}).length });
 let writeBlocked = false;
 
+// Maps keyed by date (or by name, e.g. trained) grow over time; write only the keys that
+// changed so two devices editing different days/sections don't overwrite each other's whole
+// document. FieldPath is used (not a "map.key" string) because date keys like "2026-11-06"
+// start with a digit and contain "-", which a dot-path string would misparse.
+const MAP_FIELDS = ['log', 'days', 'dayType', 'workouts', 'scans', 'typeKcal'];
+// Build the [FieldPath, value, …] args for updateDoc: only top-level fields and only the
+// map keys that differ from the last synced snapshot; a removed key becomes deleteField().
+function personUpdates(prev, next) {
+  prev = prev || {};
+  const args = [];
+  for (const k of new Set([...Object.keys(prev), ...Object.keys(next)])) {
+    if (MAP_FIELDS.includes(k)) continue;
+    if (JSON.stringify(prev[k]) === JSON.stringify(next[k])) continue;
+    args.push(new FieldPath(k), (k in next) ? next[k] : deleteField());
+  }
+  for (const mf of MAP_FIELDS) {
+    const pm = prev[mf] || {}, nm = next[mf] || {};
+    for (const key of new Set([...Object.keys(pm), ...Object.keys(nm)])) {
+      if (JSON.stringify(pm[key]) === JSON.stringify(nm[key])) continue;
+      args.push(new FieldPath(mf, key), (key in nm) ? nm[key] : deleteField());
+    }
+  }
+  return args;
+}
 function save() {
   try { localStorage.setItem(PREF_KEY, JSON.stringify({ tab: S.tab, intakeRange: S.intakeRange })); } catch {}
   if (!pin || loaded.size < IDS.length) return;
@@ -623,8 +647,16 @@ function save() {
       if (!writeBlocked) { writeBlocked = true; alert('ระบบหยุดการบันทึกไว้ เพราะข้อมูลที่จะบันทึกว่างผิดปกติ (กันข้อมูลหาย)\nกด ↻ รีเฟรช แล้วลองใหม่'); }
       continue;
     }
-    synced[id] = json;
-    setDoc(personDoc(id), JSON.parse(json)).catch(onDbError);
+    const clean = JSON.parse(json);
+    if (!synced[id]) {
+      // The document may not exist yet (new person) — updateDoc would fail, so create it whole.
+      synced[id] = json;
+      setDoc(personDoc(id), clean).catch(onDbError);
+    } else {
+      const args = personUpdates(JSON.parse(synced[id]), clean);
+      synced[id] = json;
+      if (args.length) updateDoc(personDoc(id), ...args).catch(onDbError);
+    }
   }
 }
 
