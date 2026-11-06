@@ -539,12 +539,13 @@ button:focus:not(:focus-visible){outline:none}
       <label class="ghost importbtn">⬆︎ Import<input type="file" id="importFile" accept=".json" hidden></label>
       <span>ข้อมูลซิงก์ผ่าน Firebase · Export ไว้สำรองเป็นระยะ</span>
     </div>
+    <div class="appver" id="backupStat"></div>
     <div class="appver" id="appVer"></div>
   </footer>
 </div>
 
 <script type="module">
-const APP_VERSION = '1.18.2', APP_BUILD = '2026-11-06 22:40'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.18.3', APP_BUILD = '2026-11-06 22:57'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField, FieldPath } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -703,13 +704,29 @@ function moveToday(p) {
 // Once a day, keep a full copy of everyone's data at vault/{pin}/backups/{date} as a recovery point.
 // Skipped when the data looks empty so a broken state never replaces a good copy.
 const backupDoc = d => doc(db, 'vault', pin, 'backups', d);
+let backupFail = null; // {at} when the last automatic backup write failed, so it isn't silent
 function dailyBackup() {
   const d = todayStr(), key = 'tdee-backup-' + pin;
   if (!S.shared || loaded.size < IDS.length) return;
   try { if (localStorage.getItem(key) === d) return; } catch {}
   if (!IDS.some(id => sizeOf(S.people[id]).entries || sizeOf(S.people[id]).logDays)) return;
   const copy = JSON.parse(JSON.stringify({ at: Date.now(), people: S.people, shared: S.shared }));
-  setDoc(backupDoc(d), copy).then(() => { try { localStorage.setItem(key, d); } catch {} }).catch(e => console.warn('backup failed', e));
+  setDoc(backupDoc(d), copy)
+    .then(() => { try { localStorage.setItem(key, d); } catch {} backupFail = null; renderBackup(); })
+    .catch(e => { console.warn('backup failed', e); backupFail = { at: Date.now() }; renderBackup(); });
+}
+// Show when the app last kept its daily in-Firestore copy, and warn (not silently) if the
+// last attempt failed — so a broken backup is noticed instead of discovered only when needed.
+function renderBackup() {
+  const el = document.getElementById('backupStat');
+  if (!el) return;
+  let last = null; try { last = localStorage.getItem('tdee-backup-' + pin); } catch {}
+  if (backupFail) {
+    const t = new Date(backupFail.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+    el.innerHTML = `<span style="color:var(--warn,#d08700)">⚠︎ สำรองอัตโนมัติล้มเหลว ${t} — กด Export เก็บไฟล์ไว้เอง</span>`;
+  } else {
+    el.textContent = last ? `สำรองอัตโนมัติล่าสุด ${last}` : 'ยังไม่มีสำรองอัตโนมัติวันนี้';
+  }
 }
 
 function onDbError(err) {
@@ -1354,6 +1371,7 @@ function render() {
   const blocked = gate();
   document.getElementById('tabs').classList.toggle('hidden', !!blocked);
   document.getElementById('footer').classList.toggle('hidden', !!blocked);
+  if (!blocked) renderBackup();
   if (blocked) {
     charts.forEach(c => c.destroy()); charts = [];
     document.getElementById('app').innerHTML = blocked;
