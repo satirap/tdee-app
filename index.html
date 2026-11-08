@@ -539,13 +539,14 @@ button:focus:not(:focus-visible){outline:none}
       <label class="ghost importbtn">⬆︎ Import<input type="file" id="importFile" accept=".json" hidden></label>
       <span>ข้อมูลซิงก์ผ่าน Firebase · Export ไว้สำรองเป็นระยะ</span>
     </div>
+    <div class="appver" id="saveStat"></div>
     <div class="appver" id="backupStat"></div>
     <div class="appver" id="appVer"></div>
   </footer>
 </div>
 
 <script type="module">
-const APP_VERSION = '1.18.3', APP_BUILD = '2026-11-06 22:57'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.19.0', APP_BUILD = '2026-11-08 13:21'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField, FieldPath } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -635,6 +636,50 @@ function personUpdates(prev, next) {
   }
   return args;
 }
+// Honest write-ack queue. A person write is only "done" once the server acks it; until then
+// the footer shows กำลังบันทึก… and a write the server didn't accept is kept at the head of the
+// queue and resent (in order) instead of being silently dropped — so data that is still only on
+// this device is never mistaken for saved. permission-denied is terminal (wrong PIN) → it locks.
+const writeQ = [];        // {label, run} jobs waiting to be (re)sent, FIFO so edits land in order
+let sending = false;      // a write is in flight
+let lastSaved = null;     // ms of the last server ack
+let writeFail = null;     // {at} of the last failure not yet cleared by a later success
+function enqueueWrite(label, run) { writeQ.push({ label, run }); renderSave(); pumpWrites(); }
+function pumpWrites() {
+  if (sending || !writeQ.length) return;
+  sending = true; renderSave();
+  writeQ[0].run()
+    .then(() => {
+      writeQ.shift(); sending = false; lastSaved = Date.now();
+      if (!writeQ.length) writeFail = null;
+      renderSave(); pumpWrites();
+    })
+    .catch(err => {
+      sending = false;
+      if (err.code === 'permission-denied') { writeQ.length = 0; renderSave(); onDbError(err); return; } // wrong PIN → drop all, lock
+      console.warn('write failed, will retry', err.code || err.message);
+      writeFail = { at: Date.now() };
+      renderSave();
+      setTimeout(pumpWrites, 15000); // leave the job at the head of the queue and try again later
+    });
+}
+// Show saving / saved / not-saved honestly. Warn only once a write has actually failed; a write
+// merely in flight (e.g. offline) stays as กำลังบันทึก… without alarming.
+function renderSave() {
+  const el = document.getElementById('saveStat');
+  if (!el) return;
+  if (writeFail) {
+    const t = new Date(writeFail.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+    el.innerHTML = `<span style="color:var(--warn,#d08700)">⚠︎ ยังบันทึกไม่สำเร็จ ${t} — กำลังลองใหม่ อย่าเพิ่งปิดแอป</span>`;
+  } else if (sending || writeQ.length) {
+    el.textContent = 'กำลังบันทึก…';
+  } else if (lastSaved) {
+    const t = new Date(lastSaved).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+    el.textContent = `บันทึกแล้ว ${t}`;
+  } else {
+    el.textContent = '';
+  }
+}
 function save() {
   try { localStorage.setItem(PREF_KEY, JSON.stringify({ tab: S.tab, intakeRange: S.intakeRange })); } catch {}
   if (!pin || loaded.size < IDS.length) return;
@@ -652,11 +697,11 @@ function save() {
     if (!synced[id]) {
       // The document may not exist yet (new person) — updateDoc would fail, so create it whole.
       synced[id] = json;
-      setDoc(personDoc(id), clean).catch(onDbError);
+      enqueueWrite('p:' + id, () => setDoc(personDoc(id), clean));
     } else {
       const args = personUpdates(JSON.parse(synced[id]), clean);
       synced[id] = json;
-      if (args.length) updateDoc(personDoc(id), ...args).catch(onDbError);
+      if (args.length) enqueueWrite('p:' + id, () => updateDoc(personDoc(id), ...args));
     }
   }
 }
@@ -1371,7 +1416,7 @@ function render() {
   const blocked = gate();
   document.getElementById('tabs').classList.toggle('hidden', !!blocked);
   document.getElementById('footer').classList.toggle('hidden', !!blocked);
-  if (!blocked) renderBackup();
+  if (!blocked) { renderBackup(); renderSave(); }
   if (blocked) {
     charts.forEach(c => c.destroy()); charts = [];
     document.getElementById('app').innerHTML = blocked;
