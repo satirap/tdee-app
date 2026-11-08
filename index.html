@@ -2,7 +2,7 @@
 <html lang="th">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://www.gstatic.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://*.googleapis.com https://*.gstatic.com https://cdn.jsdelivr.net https://world.openfoodfacts.org https://api.anthropic.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdnjs.cloudflare.com https://www.gstatic.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://*.googleapis.com https://*.gstatic.com https://cdn.jsdelivr.net https://fastly.jsdelivr.net https://world.openfoodfacts.org https://api.anthropic.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>TDEE ต้น & พัช</title>
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -546,7 +546,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.19.0', APP_BUILD = '2026-11-08 13:21'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.19.1', APP_BUILD = '2026-11-08 18:47'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField, FieldPath } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
