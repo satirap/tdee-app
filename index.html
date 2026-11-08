@@ -546,7 +546,7 @@ button:focus:not(:focus-visible){outline:none}
 </div>
 
 <script type="module">
-const APP_VERSION = '1.19.1', APP_BUILD = '2026-11-08 18:47'; // stamped by stamp.sh before each commit
+const APP_VERSION = '1.20.0', APP_BUILD = '2026-11-09 00:24'; // stamped by stamp.sh before each commit
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, deleteField, FieldPath } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -1356,10 +1356,16 @@ const rulesAlert = () => `<div class="alert">ใช้ My Food ไม่ได�
 const openProg = {};
 const dayItems = (p, d) => p.log?.[d] || [];
 // Which day the person page is logging; null means today (so it rolls over at midnight on its own).
+// Future days (up to PLAN_AHEAD) are allowed for meal planning: items added there are plans.
+const PLAN_AHEAD = 14;
+const maxDayStr = () => new Date(dayMs(todayStr()) + PLAN_AHEAD * 864e5).toISOString().slice(0, 10);
 let logDate = null;
 const viewDay = () => logDate || todayStr();
-const dayLabel = d => d === todayStr() ? 'วันนี้' : new Date(dayMs(d)).toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
-const goDay = d => { logDate = !d || d >= todayStr() ? null : d; };
+const isFutureDay = d => d > todayStr();
+const dayLabel = d => d === todayStr() ? 'วันนี้'
+  : d === new Date(dayMs(todayStr()) + 864e5).toISOString().slice(0, 10) ? 'พรุ่งนี้'
+  : new Date(dayMs(d)).toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+const goDay = d => { logDate = !d || d === todayStr() ? null : (d > maxDayStr() ? maxDayStr() : d); };
 
 
 
@@ -1698,7 +1704,7 @@ function renameKind(x) {
   if (x.foodId && STD_BY_ID[x.foodId]) return null;
   return 'line';
 }
-function itemChip(x, ns = '') {
+function itemChip(x, ns = '', fut = false) {
   const us = unitsOf(x.foodId ? getFood(x.foodId) : null), cur = x.unit || 's', amt = x.amount ?? x.qty ?? 1, q = x.qty ?? 1;
   const unit = us.some(u => u.k === cur)
     ? (us.length > 1 ? `<select data-${ns}unit="${x.id}">${us.map(u => `<option value="${u.k}" ${u.k === cur ? 'selected' : ''}>${esc(u.n)}</option>`).join('')}</select>` : `<em>${esc(us[0].n)}</em>`)
@@ -1707,7 +1713,7 @@ function itemChip(x, ns = '') {
   const badge = [pct !== 100 ? `${pct}%` : '', ...[['p', 'P'], ['c', 'C'], ['f', 'F']].filter(([k]) => (adj[k] ?? 100) !== 100).map(([k, l]) => `${l} ${adj[k]}%`)].filter(Boolean).join(' · ');
   const parts = !ns && x.parts?.length ? x.parts : null;
   return `<div class="it${open ? ' open' : ''}${x.id === flashId ? ' flash' : ''}${!ns && x.plan ? ' plan' : ''}" data-${ns}row="${x.id}">
-    <div class="l1">${!ns && x.plan ? `<button class="pchk" data-eatplan="${x.id}" aria-label="กินแล้ว นับแคล" title="กินแล้ว"></button>` : ''}<span class="nm">${x.plan && !ns ? '<span class="plantag">แผน</span>' : ''}${x.mealId || getFood(x.foodId)?.meal || parts ? '🍱 ' : ''}${esc(x.name)}${parts ? `<span class="pcount">${parts.length} รายการ</span>` : ''}${!ns && badge ? `<span class="pbadge">${badge}</span>` : ''}</span><span class="kc">${fmt(lineKcal(x))} <small>kcal</small></span><button class="x" data-${ns || 'un'}${ns ? 'del' : 'eat'}="${x.id}" title="ลบ">✕</button></div>
+    <div class="l1">${!ns && x.plan && !fut ? `<button class="pchk" data-eatplan="${x.id}" aria-label="กินแล้ว นับแคล" title="กินแล้ว"></button>` : ''}<span class="nm">${x.plan && !ns ? '<span class="plantag">แผน</span>' : ''}${x.mealId || getFood(x.foodId)?.meal || parts ? '🍱 ' : ''}${esc(x.name)}${parts ? `<span class="pcount">${parts.length} รายการ</span>` : ''}${!ns && badge ? `<span class="pbadge">${badge}</span>` : ''}</span><span class="kc">${fmt(lineKcal(x))} <small>kcal</small></span><button class="x" data-${ns || 'un'}${ns ? 'del' : 'eat'}="${x.id}" title="ลบ">✕</button></div>
     ${open && !ns && renameKind(x) ? `<label class="nmrow">ชื่อ<input data-rename="${x.id}" value="${esc(x.name)}" autocomplete="off" enterkeyhint="done"></label>` : ''}
     ${open && parts ? `<div class="parts">${parts.map(y => `<div><span>${esc(y.name)}</span><span>${fmt(eff(y).kcal)}</span></div>`).join('')}
       <button class="ghost sm" data-ungroup="${x.id}">แยกรายการ</button></div>` : ''}
@@ -1753,11 +1759,11 @@ const servingOf = f => {
 
 // Day navigator shared by Cal in and Cal out (same picked day on both tabs).
 function dayNav(d) {
-  const isToday = d === todayStr();
+  const isToday = d === todayStr(), atMax = d >= maxDayStr(), fut = isFutureDay(d);
   return `<div class="daynav">
       <button class="x" data-day="-1" aria-label="วันก่อนหน้า">‹</button>
-      <label class="dlabel">${dayLabel(d)}<input type="date" data-pickday max="${todayStr()}" value="${d}" aria-label="เลือกวันที่"></label>
-      <button class="x" data-day="1" aria-label="วันถัดไป" ${isToday ? 'disabled' : ''}>›</button>
+      <label class="dlabel${fut ? ' plan' : ''}">${fut ? '🗓 ' : ''}${dayLabel(d)}<input type="date" data-pickday max="${maxDayStr()}" value="${d}" aria-label="เลือกวันที่"></label>
+      <button class="x" data-day="1" aria-label="วันถัดไป" ${atMax ? 'disabled' : ''}>›</button>
       ${isToday ? '' : '<button class="ghost sm" data-day="0">กลับวันนี้</button>'}
     </div>`;
 }
@@ -1854,8 +1860,10 @@ const thumbs = (imgs, big) => imgs?.length ? `<div class="aithumbs${big ? ' big'
 function sheetHtml(id) {
   if (!sheet || sheet.id !== id) return '';
   const [mk, mn0, ic] = MEALS.find(m => m[0] === sheet.meal) || MEALS[0], r = sheet.result, mn = mk === 's' ? mn0 : 'มื้อ' + mn0;
-  const head = `<div class="sh-head"><b>${ic} เพิ่ม · ${mn}</b><button class="x" data-sheetclose aria-label="ปิด">✕</button></div>
-    <div class="seg planseg-toggle">${[[false, '✓ กินแล้ว'], [true, '○ วางแผน']].map(([v, l]) => `<button type="button" data-planmode="${v ? 1 : 0}" class="${planMode === v ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+  const fut = isFutureDay(viewDay());
+  const head = `<div class="sh-head"><b>${ic} เพิ่ม · ${mn}${fut ? ` <span class="muted" style="font-weight:400">· ${dayLabel(viewDay())}</span>` : ''}</b><button class="x" data-sheetclose aria-label="ปิด">✕</button></div>
+    ${fut ? '<div class="plan-note muted" style="padding:4px 2px">🗓 วางแผนล่วงหน้า — อาหารที่เพิ่มจะถูกบันทึกเป็น “แผน”</div>'
+      : `<div class="seg planseg-toggle">${[[false, '✓ กินแล้ว'], [true, '○ วางแผน']].map(([v, l]) => `<button type="button" data-planmode="${v ? 1 : 0}" class="${planMode === v ? 'on' : ''}">${l}</button>`).join('')}</div>`}`;
   const err = sheet.err ? `<div class="alert">${esc(sheet.err)}</div>` : '';
   let body;
   if (sheet.mode === 'loading') body = `<div class="ai-wait">
@@ -2014,6 +2022,7 @@ function planSummary(p, d, m) {
 }
 
 function mealGroups(p, d, items) {
+  const fut = isFutureDay(d);
   const groups = [...MEALS, ['', 'ไม่ระบุมื้อ', '•']].map(([k, n, ic]) => {
     const its = items.filter(x => k ? x.meal === k : !MEALS.some(m => m[0] === x.meal));
     if (!k && !its.length) return '';
@@ -2035,7 +2044,7 @@ function mealGroups(p, d, items) {
         <span class="mright">${kp ? `<em class="plank">แผน ${fmt(kp)}</em>` : ''}${its.length ? `<b>${fmt(kc)} <small>kcal</small></b>` : '<span class="muted">–</span>'}
         ${fold ? `<button class="micon plus" data-addto="${k}" aria-label="เพิ่มอาหาร">+</button>` : ''}
         ${k && its.length ? '<i class="mchev" aria-hidden="true"></i>' : ''}</span></div>
-      ${fold ? '' : its.map(x => itemChip(x)).join('')}
+      ${fold ? '' : its.map(x => itemChip(x, '', fut)).join('')}
       ${k && !fold ? `<button class="addin" data-addto="${k}">+ เพิ่ม</button>` : ''}
     </div>`;
   }).join('');
@@ -2740,7 +2749,7 @@ function personPage(id) {
   if (sub === 'today') body = `
     <div class="today-grid">
       <div class="card ta-rings"><h2>🍽️ ควรกินต่อวัน${viewDay() === todayStr() ? '' : ` <span class="muted" style="font-weight:400">· ${dayLabel(viewDay())}</span>`}<button class="ringtog${ringMin ? ' min' : ''}" data-ringtoggle aria-label="${ringMin ? 'แสดงวงแหวน' : 'ย่อเป็นแถบ'}"><i></i></button></h2>${energyBlock(id, viewDay())}</div>
-      <div class="card ta-eaten"><h2>🥗 ${viewDay() === todayStr() ? 'วันนี้กินไปแล้ว' : 'กินไปแล้ว'}</h2>${eatenBlock(id)}</div>
+      <div class="card ta-eaten"><h2>${isFutureDay(viewDay()) ? '🗓 วางแผนไว้' : `🥗 ${viewDay() === todayStr() ? 'วันนี้กินไปแล้ว' : 'กินไปแล้ว'}`}</h2>${eatenBlock(id)}</div>
     </div>`;
   else if (sub === 'workout') body = workoutPage(id);
   else if (sub === 'scan') body = scanPage(id);
@@ -2959,7 +2968,7 @@ function bind() {
     // A day that only had a total (from before per-day lists) keeps it as a line item, so adding food doesn't wipe it.
     if (!dayItems(p, day).length && p.days?.[day]?.kcal) list().push({ id: uid(), name: 'ยอดที่บันทึกไว้ก่อนหน้า', p: 0, c: 0, f: 0, kcal: p.days[day].kcal, qty: 1, amount: 1, unit: 's' });
     const nid = uid();
-    list().push({ id: nid, qty: 1, meal: curMeal(), ...item, ...(planMode ? { plan: true } : {}) });
+    list().push({ id: nid, qty: 1, meal: curMeal(), ...item, ...(planMode || isFutureDay(day) ? { plan: true } : {}) });
     flashId = nid; setTimeout(() => { if (flashId === nid) flashId = null; }, 2000);
     if (sheet) { const key = 'eat-' + sheet.id; searchQ[key] = ''; delete scanDraft[key]; sheet = null; saveSheet(); }
     changed();
